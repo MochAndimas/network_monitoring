@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 
-from sqlalchemy import Select, desc, distinct, select
+from sqlalchemy import Select, desc, distinct, func, select
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm import Session
 
 from ..models.metric import Metric
@@ -39,13 +40,25 @@ class MetricRepository:
         return list(self.db.scalars(query).all())
 
     def list_latest_metrics(self) -> list[Metric]:
-        metrics = self.list_recent_metrics(limit=1000)
-        latest_by_key: dict[tuple[int, str], Metric] = {}
-        for metric in metrics:
-            key = (metric.device_id, metric.metric_name)
-            if key not in latest_by_key:
-                latest_by_key[key] = metric
-        return list(latest_by_key.values())
+        ranked_metrics = (
+            select(
+                Metric.id,
+                func.row_number()
+                .over(
+                    partition_by=(Metric.device_id, Metric.metric_name),
+                    order_by=(desc(Metric.checked_at), desc(Metric.id)),
+                )
+                .label("row_number"),
+            )
+            .subquery()
+        )
+        latest_metric = aliased(Metric)
+        query = (
+            select(latest_metric)
+            .join(ranked_metrics, latest_metric.id == ranked_metrics.c.id)
+            .where(ranked_metrics.c.row_number == 1)
+        )
+        return list(self.db.scalars(query).all())
 
     def latest_metric_map(self) -> dict[tuple[int, str], Metric]:
         return {(metric.device_id, metric.metric_name): metric for metric in self.list_latest_metrics()}

@@ -44,7 +44,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
-    init_db()
+    if settings.app_env.lower() != "production":
+        init_db()
     scheduler = None
     if settings.scheduler_enabled:
         scheduler = create_scheduler()

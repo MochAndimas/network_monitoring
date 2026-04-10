@@ -1,4 +1,4 @@
-from sqlalchemy import Select, desc, select
+from sqlalchemy import Select, desc, func, select
 from sqlalchemy.orm import Session
 
 from ..models.alert import Alert
@@ -15,7 +15,8 @@ class AlertRepository:
         return list(self.db.scalars(query).all())
 
     def count_active_alerts(self) -> int:
-        return len(self.list_active_alerts())
+        query = select(func.count()).select_from(Alert).where(Alert.status == "active")
+        return int(self.db.scalar(query) or 0)
 
     def get_active_alert(self, device_id: int | None, alert_type: str) -> Alert | None:
         query: Select[tuple[Alert]] = select(Alert).where(

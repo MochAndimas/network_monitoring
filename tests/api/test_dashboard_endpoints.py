@@ -14,6 +14,10 @@ from backend.app.repositories.metric_repository import MetricRepository
 from backend.app.services.monitoring_service import utcnow
 
 
+TEST_API_KEY = "test-internal-key"
+API_HEADERS = {"x-api-key": TEST_API_KEY}
+
+
 class DummyScheduler:
     def start(self) -> None:
         return None
@@ -42,14 +46,19 @@ def client_context():
     app.dependency_overrides[get_db] = override_get_db
 
     import backend.app.main as main_module
+    import backend.app.api.deps as deps_module
 
     original_init_db = main_module.init_db
     original_scheduler_enabled = main_module.settings.scheduler_enabled
     original_create_scheduler = main_module.create_scheduler
+    original_main_api_key = main_module.settings.internal_api_key
+    original_deps_api_key = deps_module.settings.internal_api_key
 
     main_module.init_db = lambda: None
     main_module.settings.scheduler_enabled = False
     main_module.create_scheduler = lambda: DummyScheduler()
+    main_module.settings.internal_api_key = TEST_API_KEY
+    deps_module.settings.internal_api_key = TEST_API_KEY
 
     try:
         with TestClient(app) as client:
@@ -58,6 +67,8 @@ def client_context():
         main_module.init_db = original_init_db
         main_module.settings.scheduler_enabled = original_scheduler_enabled
         main_module.create_scheduler = original_create_scheduler
+        main_module.settings.internal_api_key = original_main_api_key
+        deps_module.settings.internal_api_key = original_deps_api_key
         app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=engine)
         engine.dispose()
@@ -174,6 +185,7 @@ def test_create_and_update_device_endpoint():
     with client_context() as (client, _session_factory):
         create_response = client.post(
             "/devices",
+            headers=API_HEADERS,
             json={
                 "name": "AP Lobby",
                 "ip_address": "192.168.1.77",
@@ -191,6 +203,7 @@ def test_create_and_update_device_endpoint():
 
         update_response = client.put(
             f'/devices/{created_payload["id"]}',
+            headers=API_HEADERS,
             json={
                 "name": "AP Lobby Updated",
                 "description": "Updated description",
@@ -209,10 +222,12 @@ def test_device_type_metadata_and_validation():
         types_response = client.get("/devices/meta/types")
         invalid_ip_response = client.post(
             "/devices",
+            headers=API_HEADERS,
             json={"name": "Broken Device", "ip_address": "not-an-ip", "device_type": "switch"},
         )
         invalid_type_response = client.post(
             "/devices",
+            headers=API_HEADERS,
             json={"name": "Broken Device", "ip_address": "192.168.1.91", "device_type": "unknown_type"},
         )
 
@@ -311,7 +326,7 @@ def test_run_cycle_creates_alerts_and_incidents():
             run_cycle_module.run_server_checks = lambda _db: []
             run_cycle_module.run_mikrotik_checks = lambda _db: []
 
-            cycle_response = client.post("/system/run-cycle")
+            cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
             incidents_response = client.get("/incidents?status=active")
             alerts_response = client.get("/alerts/active")
         finally:
@@ -351,7 +366,7 @@ def test_threshold_endpoints_and_update():
         assert any(item["key"] == "dns_resolution_warning" for item in payload)
         assert any(item["key"] == "http_response_warning" for item in payload)
 
-        update_response = client.put("/thresholds/cpu_warning", json={"value": 92})
+        update_response = client.put("/thresholds/cpu_warning", headers=API_HEADERS, json={"value": 92})
         assert update_response.status_code == 200
         assert update_response.json()["value"] == 92
 
@@ -395,7 +410,7 @@ def test_run_cycle_creates_ping_latency_alert():
             run_cycle_module.run_server_checks = lambda _db: []
             run_cycle_module.run_mikrotik_checks = lambda _db: []
 
-            cycle_response = client.post("/system/run-cycle")
+            cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
             alerts_response = client.get("/alerts/active")
         finally:
             run_cycle_module.run_internet_checks = original_internet
@@ -482,7 +497,7 @@ def test_run_cycle_creates_internet_quality_alerts():
             run_cycle_module.run_server_checks = lambda _db: []
             run_cycle_module.run_mikrotik_checks = lambda _db: []
 
-            cycle_response = client.post("/system/run-cycle")
+            cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
             alerts_response = client.get("/alerts/active")
         finally:
             run_cycle_module.run_internet_checks = original_internet
@@ -507,33 +522,43 @@ def test_run_cycle_creates_internet_quality_alerts():
 
 
 def test_internal_api_key_protects_mutation_endpoints():
-    import backend.app.core.config as config_module
+    with client_context() as (client, _session_factory):
+        unauthorized_device = client.post(
+            "/devices",
+            json={"name": "Secured Device", "ip_address": "192.168.1.90", "device_type": "switch"},
+        )
+        unauthorized_cycle = client.post("/system/run-cycle")
+        authorized_device = client.post(
+            "/devices",
+            headers=API_HEADERS,
+            json={"name": "Secured Device", "ip_address": "192.168.1.90", "device_type": "switch"},
+        )
+
+        assert unauthorized_device.status_code == 401
+        assert unauthorized_cycle.status_code == 401
+        assert authorized_device.status_code == 201
+
+
+def test_production_requires_internal_api_key():
     import backend.app.api.deps as deps_module
 
-    original_config_key = config_module.settings.internal_api_key
-    original_deps_key = deps_module.settings.internal_api_key
-    config_module.settings.internal_api_key = "secret-key"
-    deps_module.settings.internal_api_key = "secret-key"
+    with client_context() as (client, _session_factory):
+        original_api_key = deps_module.settings.internal_api_key
+        original_app_env = deps_module.settings.app_env
+        deps_module.settings.internal_api_key = ""
+        deps_module.settings.app_env = "production"
 
-    try:
-        with client_context() as (client, _session_factory):
-            unauthorized_device = client.post(
+        try:
+            response = client.post(
                 "/devices",
-                json={"name": "Secured Device", "ip_address": "192.168.1.90", "device_type": "switch"},
+                json={"name": "Missing Key", "ip_address": "192.168.1.91", "device_type": "switch"},
             )
-            unauthorized_cycle = client.post("/system/run-cycle")
-            authorized_device = client.post(
-                "/devices",
-                headers={"x-api-key": "secret-key"},
-                json={"name": "Secured Device", "ip_address": "192.168.1.90", "device_type": "switch"},
-            )
+        finally:
+            deps_module.settings.internal_api_key = original_api_key
+            deps_module.settings.app_env = original_app_env
 
-            assert unauthorized_device.status_code == 401
-            assert unauthorized_cycle.status_code == 401
-            assert authorized_device.status_code == 201
-    finally:
-        config_module.settings.internal_api_key = original_config_key
-        deps_module.settings.internal_api_key = original_deps_key
+        assert response.status_code == 503
+        assert response.json()["detail"] == "INTERNAL_API_KEY is required in production"
 
 
 def test_health_endpoint_and_request_id_header():

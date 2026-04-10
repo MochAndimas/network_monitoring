@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.orm import Session
 
 from ...core.config import settings
@@ -11,6 +13,9 @@ try:
     from librouteros import connect
 except ImportError:  # pragma: no cover - dependency is declared but kept defensive
     connect = None
+
+
+logger = logging.getLogger("network_monitoring.mikrotik")
 
 
 def run_mikrotik_checks(db: Session) -> list[dict]:
@@ -68,6 +73,7 @@ def run_mikrotik_checks(db: Session) -> list[dict]:
             ]
         )
     except Exception:
+        logger.exception("Mikrotik API check failed for host %s", settings.mikrotik_host)
         checked_at = utcnow()
         target_device = devices[0]
         metrics.append(

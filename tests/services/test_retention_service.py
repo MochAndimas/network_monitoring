@@ -160,6 +160,41 @@ def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypa
         engine.dispose()
 
 
+def test_latest_metric_map_uses_latest_metric_for_each_device_metric_pair():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    now = utcnow()
+
+    try:
+        with SessionLocal() as db:
+            device = DeviceRepository(db).upsert_devices(
+                [{"name": "Gateway", "ip_address": "192.168.1.1", "device_type": "internet_target"}]
+            )[0]
+            device_id = device.id
+            MetricRepository(db).create_metrics(
+                [
+                    _metric(device_id, "ping", "10.00", "up", "ms", now - timedelta(minutes=2)),
+                    _metric(device_id, "ping", "timeout", "down", None, now),
+                    _metric(device_id, "packet_loss", "0.00", "up", "%", now - timedelta(minutes=1)),
+                ]
+            )
+
+            latest_metrics = MetricRepository(db).latest_metric_map()
+
+        assert latest_metrics[(device_id, "ping")].metric_value == "timeout"
+        assert latest_metrics[(device_id, "packet_loss")].metric_value == "0.00"
+        assert len(latest_metrics) == 2
+    finally:
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
+
+
 def _metric(device_id: int, name: str, value: str, status: str, unit: str | None, checked_at):
     return {
         "device_id": device_id,

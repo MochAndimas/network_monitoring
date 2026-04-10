@@ -1,4 +1,4 @@
-# Network Monitoring MVP
+# Network Monitoring
 
 Project monitoring internal untuk:
 - target internet
@@ -54,7 +54,7 @@ copy .env.example .env
 docker compose up -d postgres
 ```
 
-5. Jalankan migration database
+5. Jalankan migration database untuk setup lokal tanpa Docker Compose
 
 ```bash
 alembic upgrade head
@@ -85,6 +85,9 @@ python scripts/run_monitor_cycle.py
 ```bash
 uvicorn backend.app.main:app --reload
 ```
+
+Endpoint mutasi membutuhkan header `x-api-key` saat `INTERNAL_API_KEY` terisi. Di `APP_ENV=production`,
+`INTERNAL_API_KEY` wajib diisi dan request mutasi akan ditolak kalau key belum tersedia.
 
 API utama:
 - `GET /dashboard/summary`
@@ -118,11 +121,11 @@ Service default:
 - FastAPI backend di `http://localhost:8000`
 - Streamlit dashboard di `http://localhost:8501`
 
-Kalau database baru pertama kali dijalankan, tetap jalankan migration:
-
-```bash
-alembic upgrade head
-```
+Saat backend container start, entrypoint menjalankan `alembic upgrade head` otomatis sebelum Uvicorn.
+Compose juga memakai healthcheck: backend menunggu PostgreSQL sehat, dashboard menunggu backend sehat,
+dan `/health` akan mengembalikan HTTP 503 kalau database belum siap.
+Di `APP_ENV=production`, backend tidak menjalankan `create_all()` saat startup; schema database
+dikelola lewat Alembic migration.
 
 Dashboard utama sekarang bisa:
 - melihat summary status internet, server, Mikrotik, dan alert aktif
@@ -133,10 +136,17 @@ Dashboard utama sekarang bisa:
 - melihat histori metric dan chart untuk metric numerik
 - melihat dan mengubah threshold alert
 
+## Security
+
+- Jangan pakai password database default di production. `.env` lokal sudah memakai kredensial random yang digenerate untuk mesin ini.
+- Set `APP_ENV=production` dan isi `INTERNAL_API_KEY` dengan nilai random panjang di setiap deployment.
+- Dashboard mengirim header `x-api-key` otomatis kalau `INTERNAL_API_KEY` tersedia di environment.
+- `.env` masuk `.gitignore`; simpan secret production di secret manager atau environment deployment.
+
 ## Testing
 
 ```bash
-python -m pytest tests/api/test_dashboard_endpoints.py
+python -m pytest
 ```
 
 ## Migration
@@ -160,5 +170,5 @@ alembic upgrade head
 - Monitor Mikrotik mencoba akses RouterOS API jika kredensial di `.env` tersedia
 - Alert aktif akan menghasilkan incident aktif per device
 - Threshold alert disimpan di database dan otomatis dibuat saat belum ada
-- Jika `INTERNAL_API_KEY` diisi, endpoint mutasi seperti `POST /devices`, `PUT /devices/{device_id}`, `PUT /thresholds/{key}`, dan `POST /system/run-cycle` akan meminta header `x-api-key`
+- Endpoint mutasi seperti `POST /devices`, `PUT /devices/{device_id}`, `PUT /thresholds/{key}`, dan `POST /system/run-cycle` memakai header `x-api-key`
 - Endpoint `GET /health` dan `GET /observability/summary` bisa dipakai untuk readiness check dan ringkasan operasional
