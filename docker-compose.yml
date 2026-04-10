@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: network_monitoring_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-network_monitoring}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: network_monitoring_backend
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      APP_NAME: ${APP_NAME:-Network Monitoring}
+      APP_ENV: ${APP_ENV:-development}
+      API_HOST: ${API_HOST:-0.0.0.0}
+      API_PORT: ${API_PORT:-8000}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-network_monitoring}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      MIKROTIK_HOST: ${MIKROTIK_HOST:-}
+      MIKROTIK_USERNAME: ${MIKROTIK_USERNAME:-}
+      MIKROTIK_PASSWORD: ${MIKROTIK_PASSWORD:-}
+      DASHBOARD_API_URL: http://backend:8000
+      PING_TIMEOUT_SECONDS: ${PING_TIMEOUT_SECONDS:-2}
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      SCHEDULER_INTERVAL_INTERNET_SECONDS: ${SCHEDULER_INTERVAL_INTERNET_SECONDS:-30}
+      SCHEDULER_INTERVAL_DEVICE_SECONDS: ${SCHEDULER_INTERVAL_DEVICE_SECONDS:-60}
+      SCHEDULER_INTERVAL_SERVER_SECONDS: ${SCHEDULER_INTERVAL_SERVER_SECONDS:-60}
+      SCHEDULER_INTERVAL_MIKROTIK_SECONDS: ${SCHEDULER_INTERVAL_MIKROTIK_SECONDS:-60}
+      SCHEDULER_INTERVAL_ALERT_SECONDS: ${SCHEDULER_INTERVAL_ALERT_SECONDS:-30}
+      CPU_WARNING_THRESHOLD: ${CPU_WARNING_THRESHOLD:-90}
+      RAM_WARNING_THRESHOLD: ${RAM_WARNING_THRESHOLD:-90}
+      DISK_WARNING_THRESHOLD: ${DISK_WARNING_THRESHOLD:-85}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: network_monitoring_dashboard
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      DASHBOARD_API_URL: http://backend:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+    ports:
+      - "8501:8501"
+
+volumes:
+  postgres_data:

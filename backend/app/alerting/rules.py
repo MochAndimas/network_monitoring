@@ -1,0 +1,18 @@
+ALERT_RULES = {
+    "device_down": {"severity": "critical"},
+    "internet_loss": {"severity": "critical"},
+    "high_ping_latency_warning": {"severity": "warning"},
+    "high_ping_latency_critical": {"severity": "critical"},
+    "high_packet_loss_warning": {"severity": "warning"},
+    "high_packet_loss_critical": {"severity": "critical"},
+    "high_jitter_warning": {"severity": "warning"},
+    "high_jitter_critical": {"severity": "critical"},
+    "dns_resolution_failed": {"severity": "critical"},
+    "slow_dns_resolution": {"severity": "warning"},
+    "http_check_failed": {"severity": "critical"},
+    "slow_http_response": {"severity": "warning"},
+    "public_ip_changed": {"severity": "warning"},
+    "high_cpu": {"severity": "warning"},
+    "high_ram": {"severity": "warning"},
+    "high_disk": {"severity": "warning"},
+}
