@@ -1,8 +1,9 @@
 from contextlib import contextmanager
+import asyncio
+from datetime import timedelta
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from backend.app.db.base import Base
@@ -18,6 +19,10 @@ TEST_API_KEY = "test-internal-key"
 API_HEADERS = {"x-api-key": TEST_API_KEY}
 
 
+def run(coro):
+    return asyncio.run(coro)
+
+
 class DummyScheduler:
     def start(self) -> None:
         return None
@@ -28,20 +33,17 @@ class DummyScheduler:
 
 @contextmanager
 def client_context():
-    engine = create_engine(
-        "sqlite:///:memory:",
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
+    TestingSessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    run(_create_all(engine))
 
-    def override_get_db():
-        db = TestingSessionLocal()
-        try:
+    async def override_get_db():
+        async with TestingSessionLocal() as db:
             yield db
-        finally:
-            db.close()
 
     app.dependency_overrides[get_db] = override_get_db
 
@@ -54,7 +56,10 @@ def client_context():
     original_main_api_key = main_module.settings.internal_api_key
     original_deps_api_key = deps_module.settings.internal_api_key
 
-    main_module.init_db = lambda: None
+    async def fake_init_db():
+        return None
+
+    main_module.init_db = fake_init_db
     main_module.settings.scheduler_enabled = False
     main_module.create_scheduler = lambda: DummyScheduler()
     main_module.settings.internal_api_key = TEST_API_KEY
@@ -70,21 +75,38 @@ def client_context():
         main_module.settings.internal_api_key = original_main_api_key
         deps_module.settings.internal_api_key = original_deps_api_key
         app.dependency_overrides.clear()
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        run(_drop_all(engine))
+
+
+async def _create_all(engine) -> None:
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+
+async def _drop_all(engine) -> None:
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
+
+
+async def _seed_devices_and_metrics(session_factory, devices_payload: list[dict], metrics_payload: list[dict]):
+    async with session_factory() as db:
+        devices = await DeviceRepository(db).upsert_devices(devices_payload)
+        if metrics_payload:
+            await MetricRepository(db).create_metrics(metrics_payload(devices) if callable(metrics_payload) else metrics_payload)
+        return devices
 
 
 def test_devices_endpoint_returns_latest_status():
     with client_context() as (client, session_factory):
-        with session_factory() as db:
-            devices = DeviceRepository(db).upsert_devices(
+        run(
+            _seed_devices_and_metrics(
+                session_factory,
                 [
                     {"name": "Google DNS", "ip_address": "8.8.8.8", "device_type": "internet_target"},
                     {"name": "Printer Finance", "ip_address": "192.168.1.50", "device_type": "printer"},
-                ]
-            )
-            MetricRepository(db).create_metrics(
-                [
+                ],
+                lambda devices: [
                     {
                         "device_id": devices[0].id,
                         "metric_name": "ping",
@@ -101,8 +123,9 @@ def test_devices_endpoint_returns_latest_status():
                         "unit": None,
                         "checked_at": utcnow(),
                     },
-                ]
+                ],
             )
+        )
 
         response = client.get("/devices")
 
@@ -114,53 +137,56 @@ def test_devices_endpoint_returns_latest_status():
 
 def test_dashboard_summary_and_alerts_endpoint():
     with client_context() as (client, session_factory):
-        with session_factory() as db:
-            devices = DeviceRepository(db).upsert_devices(
-                [
-                    {"name": "Gateway Lokal", "ip_address": "192.168.1.1", "device_type": "internet_target"},
-                    {"name": "Mikrotik Utama", "ip_address": "192.168.1.254", "device_type": "mikrotik"},
-                    {"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"},
-                ]
-            )
-            MetricRepository(db).create_metrics(
-                [
-                    {
-                        "device_id": devices[0].id,
-                        "metric_name": "ping",
-                        "metric_value": "timeout",
-                        "status": "down",
-                        "unit": None,
-                        "checked_at": utcnow(),
-                    },
-                    {
-                        "device_id": devices[1].id,
-                        "metric_name": "ping",
-                        "metric_value": "4.25",
-                        "status": "up",
-                        "unit": "ms",
-                        "checked_at": utcnow(),
-                    },
-                    {
-                        "device_id": devices[2].id,
-                        "metric_name": "ping",
-                        "metric_value": "1.11",
-                        "status": "up",
-                        "unit": "ms",
-                        "checked_at": utcnow(),
-                    },
-                ]
-            )
-            db.add(
-                Alert(
-                    device_id=devices[0].id,
-                    alert_type="internet_loss",
-                    severity="critical",
-                    message="Gateway Lokal is unreachable",
-                    status="active",
-                    created_at=utcnow(),
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [
+                        {"name": "Gateway Lokal", "ip_address": "192.168.1.1", "device_type": "internet_target"},
+                        {"name": "Mikrotik Utama", "ip_address": "192.168.1.254", "device_type": "mikrotik"},
+                        {"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"},
+                    ]
                 )
-            )
-            db.commit()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "ping",
+                            "metric_value": "timeout",
+                            "status": "down",
+                            "unit": None,
+                            "checked_at": utcnow(),
+                        },
+                        {
+                            "device_id": devices[1].id,
+                            "metric_name": "ping",
+                            "metric_value": "4.25",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": utcnow(),
+                        },
+                        {
+                            "device_id": devices[2].id,
+                            "metric_name": "ping",
+                            "metric_value": "1.11",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": utcnow(),
+                        },
+                    ]
+                )
+                db.add(
+                    Alert(
+                        device_id=devices[0].id,
+                        alert_type="internet_loss",
+                        severity="critical",
+                        message="Gateway Lokal is unreachable",
+                        status="active",
+                        created_at=utcnow(),
+                    )
+                )
+                await db.commit()
+
+        run(scenario())
 
         summary_response = client.get("/dashboard/summary")
         alerts_response = client.get("/alerts/active")
@@ -241,42 +267,45 @@ def test_device_type_metadata_and_validation():
 
 def test_metrics_history_filters():
     with client_context() as (client, session_factory):
-        with session_factory() as db:
-            devices = DeviceRepository(db).upsert_devices(
-                [
-                    {"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"},
-                    {"name": "Mikrotik Utama", "ip_address": "192.168.1.254", "device_type": "mikrotik"},
-                ]
-            )
-            MetricRepository(db).create_metrics(
-                [
-                    {
-                        "device_id": devices[0].id,
-                        "metric_name": "cpu_percent",
-                        "metric_value": "95.50",
-                        "status": "warning",
-                        "unit": "%",
-                        "checked_at": utcnow(),
-                    },
-                    {
-                        "device_id": devices[0].id,
-                        "metric_name": "memory_percent",
-                        "metric_value": "70.25",
-                        "status": "ok",
-                        "unit": "%",
-                        "checked_at": utcnow(),
-                    },
-                    {
-                        "device_id": devices[1].id,
-                        "metric_name": "cpu_percent",
-                        "metric_value": "20.00",
-                        "status": "ok",
-                        "unit": "%",
-                        "checked_at": utcnow(),
-                    },
-                ]
-            )
-            server_device_id = devices[0].id
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [
+                        {"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"},
+                        {"name": "Mikrotik Utama", "ip_address": "192.168.1.254", "device_type": "mikrotik"},
+                    ]
+                )
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "95.50",
+                            "status": "warning",
+                            "unit": "%",
+                            "checked_at": utcnow(),
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "memory_percent",
+                            "metric_value": "70.25",
+                            "status": "ok",
+                            "unit": "%",
+                            "checked_at": utcnow(),
+                        },
+                        {
+                            "device_id": devices[1].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "20.00",
+                            "status": "ok",
+                            "unit": "%",
+                            "checked_at": utcnow(),
+                        },
+                    ]
+                )
+                return devices[0].id
+
+        server_device_id = run(scenario())
 
         response = client.get(f"/metrics/history?device_id={server_device_id}&metric_name=cpu_percent&status=warning")
         names_response = client.get(f"/metrics/names?device_id={server_device_id}")
@@ -290,16 +319,118 @@ def test_metrics_history_filters():
         assert names_response.json() == ["cpu_percent", "memory_percent"]
 
 
+def test_devices_endpoint_supports_filters_and_pagination():
+    with client_context() as (client, session_factory):
+        run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [
+                    {"name": "AP Lobby", "ip_address": "192.168.1.40", "device_type": "access_point"},
+                    {"name": "Switch Core", "ip_address": "192.168.1.30", "device_type": "switch"},
+                    {"name": "Printer Finance", "ip_address": "192.168.1.50", "device_type": "printer", "is_active": False},
+                ],
+                lambda devices: [
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "ping",
+                        "metric_value": "timeout",
+                        "status": "down",
+                        "unit": None,
+                        "checked_at": utcnow(),
+                    },
+                    {
+                        "device_id": devices[1].id,
+                        "metric_name": "ping",
+                        "metric_value": "2.10",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow(),
+                    },
+                ],
+            )
+        )
+
+        filtered_response = client.get("/devices?active_only=true&device_type=access_point&latest_status=down&search=Lobby")
+        paged_response = client.get("/devices?limit=1&offset=1")
+
+        assert filtered_response.status_code == 200
+        filtered_payload = filtered_response.json()
+        assert len(filtered_payload) == 1
+        assert filtered_payload[0]["name"] == "AP Lobby"
+
+        assert paged_response.status_code == 200
+        assert len(paged_response.json()) == 1
+
+        paged_meta_response = client.get("/devices/paged?active_only=true&limit=1&offset=0")
+        assert paged_meta_response.status_code == 200
+        paged_payload = paged_meta_response.json()
+        assert paged_payload["meta"]["total"] == 2
+        assert paged_payload["meta"]["limit"] == 1
+        assert len(paged_payload["items"]) == 1
+
+
+def test_metrics_history_supports_time_window_filters():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [{"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"}]
+                )
+                now = utcnow()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "10.00",
+                            "status": "ok",
+                            "unit": "%",
+                            "checked_at": now - timedelta(hours=2),
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "35.00",
+                            "status": "warning",
+                            "unit": "%",
+                            "checked_at": now - timedelta(minutes=20),
+                        },
+                    ]
+                )
+                return now
+
+        now = run(scenario())
+        checked_from = (now - timedelta(hours=1)).isoformat()
+        checked_to = now.isoformat()
+
+        response = client.get(f"/metrics/history?metric_name=cpu_percent&checked_from={checked_from}&checked_to={checked_to}")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["metric_value"] == "35.00"
+
+        paged_response = client.get(
+            f"/metrics/history/paged?metric_name=cpu_percent&checked_from={checked_from}&checked_to={checked_to}&limit=10&offset=0"
+        )
+        assert paged_response.status_code == 200
+        paged_payload = paged_response.json()
+        assert paged_payload["meta"]["total"] == 1
+        assert len(paged_payload["items"]) == 1
+
+
 def test_run_cycle_creates_alerts_and_incidents():
     with client_context() as (client, session_factory):
-        with session_factory() as db:
-            devices = DeviceRepository(db).upsert_devices(
+        internet_device_id = run(
+            _seed_devices_and_metrics(
+                session_factory,
                 [
                     {"name": "Google DNS", "ip_address": "8.8.8.8", "device_type": "internet_target"},
                     {"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"},
-                ]
+                ],
+                [],
             )
-            internet_device_id = devices[0].id
+        )[0].id
 
         import backend.app.services.run_cycle_service as run_cycle_module
 
@@ -308,7 +439,7 @@ def test_run_cycle_creates_alerts_and_incidents():
         original_server = run_cycle_module.run_server_checks
         original_mikrotik = run_cycle_module.run_mikrotik_checks
 
-        def fake_internet_checks(_db):
+        async def fake_internet_checks(_db):
             return [
                 {
                     "device_id": internet_device_id,
@@ -322,9 +453,12 @@ def test_run_cycle_creates_alerts_and_incidents():
 
         try:
             run_cycle_module.run_internet_checks = fake_internet_checks
-            run_cycle_module.run_device_checks = lambda _db: []
-            run_cycle_module.run_server_checks = lambda _db: []
-            run_cycle_module.run_mikrotik_checks = lambda _db: []
+            async def empty_checks(_db):
+                return []
+
+            run_cycle_module.run_device_checks = empty_checks
+            run_cycle_module.run_server_checks = empty_checks
+            run_cycle_module.run_mikrotik_checks = empty_checks
 
             cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
             incidents_response = client.get("/incidents?status=active")
@@ -377,13 +511,13 @@ def test_threshold_endpoints_and_update():
 
 def test_run_cycle_creates_ping_latency_alert():
     with client_context() as (client, session_factory):
-        with session_factory() as db:
-            devices = DeviceRepository(db).upsert_devices(
-                [
-                    {"name": "MyRepublic", "ip_address": "8.8.8.8", "device_type": "internet_target"},
-                ]
+        internet_device_id = run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "MyRepublic", "ip_address": "8.8.8.8", "device_type": "internet_target"}],
+                [],
             )
-            internet_device_id = devices[0].id
+        )[0].id
 
         import backend.app.services.run_cycle_service as run_cycle_module
 
@@ -392,7 +526,7 @@ def test_run_cycle_creates_ping_latency_alert():
         original_server = run_cycle_module.run_server_checks
         original_mikrotik = run_cycle_module.run_mikrotik_checks
 
-        def fake_internet_checks(_db):
+        async def fake_internet_checks(_db):
             return [
                 {
                     "device_id": internet_device_id,
@@ -406,9 +540,12 @@ def test_run_cycle_creates_ping_latency_alert():
 
         try:
             run_cycle_module.run_internet_checks = fake_internet_checks
-            run_cycle_module.run_device_checks = lambda _db: []
-            run_cycle_module.run_server_checks = lambda _db: []
-            run_cycle_module.run_mikrotik_checks = lambda _db: []
+            async def empty_checks(_db):
+                return []
+
+            run_cycle_module.run_device_checks = empty_checks
+            run_cycle_module.run_server_checks = empty_checks
+            run_cycle_module.run_mikrotik_checks = empty_checks
 
             cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
             alerts_response = client.get("/alerts/active")
@@ -432,13 +569,13 @@ def test_run_cycle_creates_ping_latency_alert():
 
 def test_run_cycle_creates_internet_quality_alerts():
     with client_context() as (client, session_factory):
-        with session_factory() as db:
-            devices = DeviceRepository(db).upsert_devices(
-                [
-                    {"name": "MyRepublic", "ip_address": "8.8.8.8", "device_type": "internet_target"},
-                ]
+        internet_device_id = run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "MyRepublic", "ip_address": "8.8.8.8", "device_type": "internet_target"}],
+                [],
             )
-            internet_device_id = devices[0].id
+        )[0].id
 
         import backend.app.services.run_cycle_service as run_cycle_module
 
@@ -447,7 +584,7 @@ def test_run_cycle_creates_internet_quality_alerts():
         original_server = run_cycle_module.run_server_checks
         original_mikrotik = run_cycle_module.run_mikrotik_checks
 
-        def fake_internet_checks(_db):
+        async def fake_internet_checks(_db):
             return [
                 {
                     "device_id": internet_device_id,
@@ -493,9 +630,12 @@ def test_run_cycle_creates_internet_quality_alerts():
 
         try:
             run_cycle_module.run_internet_checks = fake_internet_checks
-            run_cycle_module.run_device_checks = lambda _db: []
-            run_cycle_module.run_server_checks = lambda _db: []
-            run_cycle_module.run_mikrotik_checks = lambda _db: []
+            async def empty_checks(_db):
+                return []
+
+            run_cycle_module.run_device_checks = empty_checks
+            run_cycle_module.run_server_checks = empty_checks
+            run_cycle_module.run_mikrotik_checks = empty_checks
 
             cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
             alerts_response = client.get("/alerts/active")
@@ -565,7 +705,10 @@ def test_health_endpoint_and_request_id_header():
     import backend.app.api.routes.health as health_module
 
     original_check = health_module.check_database_connection
-    health_module.check_database_connection = lambda: True
+    async def fake_check_database_connection():
+        return True
+
+    health_module.check_database_connection = fake_check_database_connection
 
     try:
         with client_context() as (client, _session_factory):
@@ -582,39 +725,45 @@ def test_observability_summary_endpoint():
     import backend.app.api.routes.observability as observability_module
 
     original_check = observability_module.check_database_connection
-    observability_module.check_database_connection = lambda: True
+    async def fake_check_database_connection():
+        return True
+
+    observability_module.check_database_connection = fake_check_database_connection
 
     try:
         with client_context() as (client, session_factory):
-            with session_factory() as db:
-                devices = DeviceRepository(db).upsert_devices(
-                    [
-                        {"name": "Google DNS", "ip_address": "8.8.8.8", "device_type": "internet_target"},
-                    ]
-                )
-                MetricRepository(db).create_metrics(
-                    [
-                        {
-                            "device_id": devices[0].id,
-                            "metric_name": "ping",
-                            "metric_value": "10.50",
-                            "status": "up",
-                            "unit": "ms",
-                            "checked_at": utcnow(),
-                        }
-                    ]
-                )
-                db.add(
-                    Alert(
-                        device_id=devices[0].id,
-                        alert_type="internet_loss",
-                        severity="critical",
-                        message="test",
-                        status="active",
-                        created_at=utcnow(),
+            async def scenario():
+                async with session_factory() as db:
+                    devices = await DeviceRepository(db).upsert_devices(
+                        [
+                            {"name": "Google DNS", "ip_address": "8.8.8.8", "device_type": "internet_target"},
+                        ]
                     )
-                )
-                db.commit()
+                    await MetricRepository(db).create_metrics(
+                        [
+                            {
+                                "device_id": devices[0].id,
+                                "metric_name": "ping",
+                                "metric_value": "10.50",
+                                "status": "up",
+                                "unit": "ms",
+                                "checked_at": utcnow(),
+                            }
+                        ]
+                    )
+                    db.add(
+                        Alert(
+                            device_id=devices[0].id,
+                            alert_type="internet_loss",
+                            severity="critical",
+                            message="test",
+                            status="active",
+                            created_at=utcnow(),
+                        )
+                    )
+                    await db.commit()
+
+            run(scenario())
 
             response = client.get("/observability/summary")
 

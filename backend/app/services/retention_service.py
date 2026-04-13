@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime, time, timedelta
+from math import inf
 
-from sqlalchemy import and_, delete, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, delete, or_, select, tuple_
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
 from ..models.alert import Alert
@@ -17,11 +17,12 @@ from .monitoring_service import utcnow
 UP_STATUSES = {"up", "ok"}
 
 
-def cleanup_monitoring_data(db: Session) -> dict[str, int]:
-    rolled_up_days = rollup_completed_raw_metrics(db)
-    deleted_metrics = delete_expired_raw_metrics(db)
-    deleted_alerts = delete_expired_alerts(db)
-    deleted_incidents = delete_expired_incidents(db)
+async def cleanup_monitoring_data(db: AsyncSession) -> dict[str, int]:
+    rolled_up_days = await rollup_completed_raw_metrics(db, commit=False)
+    deleted_metrics = await delete_expired_raw_metrics(db, commit=False)
+    deleted_alerts = await delete_expired_alerts(db, commit=False)
+    deleted_incidents = await delete_expired_incidents(db, commit=False)
+    await db.commit()
     return {
         "rolled_up_days": rolled_up_days,
         "deleted_metrics": deleted_metrics,
@@ -30,42 +31,47 @@ def cleanup_monitoring_data(db: Session) -> dict[str, int]:
     }
 
 
-def rollup_completed_raw_metrics(db: Session) -> int:
+async def rollup_completed_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:
     cutoff = _today_start()
-    metrics = list(db.scalars(select(Metric).where(Metric.checked_at < cutoff)).all())
-    grouped_metrics: dict[tuple[int, object], list[Metric]] = defaultdict(list)
-    for metric in metrics:
-        grouped_metrics[(metric.device_id, metric.checked_at.date())].append(metric)
+    payloads = await _build_rollup_payloads(db, cutoff)
+    if not payloads:
+        if commit:
+            await db.commit()
+        else:
+            await db.flush()
+        return 0
 
+    existing_rollups = await _load_existing_rollups(db, payloads.keys())
     now = utcnow()
-    for (device_id, rollup_date), rows in grouped_metrics.items():
-        payload = _build_daily_rollup(device_id, rollup_date, rows, now)
-        existing = db.scalars(
-            select(MetricDailyRollup).where(
-                MetricDailyRollup.device_id == device_id,
-                MetricDailyRollup.rollup_date == rollup_date,
-            )
-        ).first()
+    for key, payload in payloads.items():
+        payload["updated_at"] = now
+        existing = existing_rollups.get(key)
         if existing is None:
             db.add(MetricDailyRollup(**payload))
             continue
 
-        for key, value in payload.items():
-            setattr(existing, key, value)
+        for field_name, value in payload.items():
+            setattr(existing, field_name, value)
 
-    db.commit()
-    return len(grouped_metrics)
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
+    return len(payloads)
 
 
-def delete_expired_raw_metrics(db: Session) -> int:
-    result = db.execute(delete(Metric).where(Metric.checked_at < _raw_metric_cutoff()))
-    db.commit()
+async def delete_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:
+    result = await db.execute(delete(Metric).where(Metric.checked_at < _raw_metric_cutoff()))
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return int(result.rowcount or 0)
 
 
-def delete_expired_alerts(db: Session) -> int:
+async def delete_expired_alerts(db: AsyncSession, *, commit: bool = True) -> int:
     cutoff = utcnow() - timedelta(days=settings.alert_retention_days)
-    result = db.execute(
+    result = await db.execute(
         delete(Alert).where(
             Alert.status != "active",
             or_(
@@ -74,13 +80,16 @@ def delete_expired_alerts(db: Session) -> int:
             ),
         )
     )
-    db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return int(result.rowcount or 0)
 
 
-def delete_expired_incidents(db: Session) -> int:
+async def delete_expired_incidents(db: AsyncSession, *, commit: bool = True) -> int:
     cutoff = utcnow() - timedelta(days=settings.incident_retention_days)
-    result = db.execute(
+    result = await db.execute(
         delete(Incident).where(
             Incident.status != "active",
             or_(
@@ -89,7 +98,10 @@ def delete_expired_incidents(db: Session) -> int:
             ),
         )
     )
-    db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return int(result.rowcount or 0)
 
 
@@ -102,42 +114,47 @@ def _today_start() -> datetime:
     return datetime.combine(utcnow().date(), time.min)
 
 
-def _build_daily_rollup(device_id: int, rollup_date, rows: list[Metric], now) -> dict:
-    ping_rows = [row for row in rows if row.metric_name == "ping"]
-    ping_values = [_safe_float(row.metric_value) for row in ping_rows]
-    ping_values = [value for value in ping_values if value is not None]
-    packet_loss_values = _numeric_values(rows, "packet_loss")
-    jitter_values = _numeric_values(rows, "jitter")
-    ping_statuses = [str(row.status or "").lower() for row in ping_rows]
-    ping_count = len(ping_statuses)
-    uptime_count = sum(1 for status in ping_statuses if status in UP_STATUSES)
+async def _build_rollup_payloads(db: AsyncSession, cutoff: datetime) -> dict[tuple[int, object], dict]:
+    query = (
+        select(
+            Metric.device_id,
+            Metric.checked_at,
+            Metric.metric_name,
+            Metric.metric_value,
+            Metric.status,
+        )
+        .where(Metric.checked_at < cutoff)
+        .order_by(Metric.device_id.asc(), Metric.checked_at.asc(), Metric.id.asc())
+    )
+    result = await db.stream(query)
+    grouped_stats: dict[tuple[int, object], _RollupAccumulator] = {}
 
-    return {
-        "device_id": device_id,
-        "rollup_date": rollup_date,
-        "total_samples": len(rows),
-        "ping_samples": ping_count,
-        "down_count": sum(1 for status in ping_statuses if status == "down"),
-        "uptime_percentage": (uptime_count / ping_count) * 100 if ping_count else None,
-        "average_ping_ms": _average(ping_values),
-        "min_ping_ms": min(ping_values) if ping_values else None,
-        "max_ping_ms": max(ping_values) if ping_values else None,
-        "average_packet_loss_percent": _average(packet_loss_values),
-        "average_jitter_ms": _average(jitter_values),
-        "max_jitter_ms": max(jitter_values) if jitter_values else None,
-        "updated_at": now,
-    }
+    async for device_id, checked_at, metric_name, metric_value, status in result:
+        key = (device_id, checked_at.date())
+        accumulator = grouped_stats.setdefault(key, _RollupAccumulator(device_id=device_id, rollup_date=checked_at.date()))
+        accumulator.add(metric_name, metric_value, status)
+
+    return {key: accumulator.to_payload() for key, accumulator in grouped_stats.items()}
 
 
-def _numeric_values(rows: list[Metric], metric_name: str) -> list[float]:
-    values = [_safe_float(row.metric_value) for row in rows if row.metric_name == metric_name]
-    return [value for value in values if value is not None]
+async def _load_existing_rollups(db: AsyncSession, keys) -> dict[tuple[int, object], MetricDailyRollup]:
+    key_list = list(keys)
+    if not key_list:
+        return {}
+
+    existing: dict[tuple[int, object], MetricDailyRollup] = {}
+    for chunk in _chunked(key_list, 500):
+        query = select(MetricDailyRollup).where(
+            tuple_(MetricDailyRollup.device_id, MetricDailyRollup.rollup_date).in_(chunk)
+        )
+        for rollup in (await db.scalars(query)).all():
+            existing[(rollup.device_id, rollup.rollup_date)] = rollup
+    return existing
 
 
-def _average(values: list[float]) -> float | None:
-    if not values:
-        return None
-    return sum(values) / len(values)
+def _chunked(items: list[tuple[int, object]], size: int):
+    for index in range(0, len(items), size):
+        yield items[index : index + size]
 
 
 def _safe_float(value: str) -> float | None:
@@ -145,3 +162,82 @@ def _safe_float(value: str) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+class _RollupAccumulator:
+    def __init__(self, *, device_id: int, rollup_date) -> None:
+        self.device_id = device_id
+        self.rollup_date = rollup_date
+        self.total_samples = 0
+        self.ping_samples = 0
+        self.down_count = 0
+        self.uptime_count = 0
+        self.ping_sum = 0.0
+        self.ping_value_count = 0
+        self.min_ping_ms = inf
+        self.max_ping_ms = float("-inf")
+        self.packet_loss_sum = 0.0
+        self.packet_loss_count = 0
+        self.jitter_sum = 0.0
+        self.jitter_count = 0
+        self.max_jitter_ms = float("-inf")
+
+    def add(self, metric_name: str, metric_value: str, status: str | None) -> None:
+        self.total_samples += 1
+        normalized_status = str(status or "").lower()
+
+        if metric_name == "ping":
+            self.ping_samples += 1
+            if normalized_status == "down":
+                self.down_count += 1
+            if normalized_status in UP_STATUSES:
+                self.uptime_count += 1
+            self._track_ping(metric_value)
+            return
+
+        if metric_name == "packet_loss":
+            self._track_packet_loss(metric_value)
+            return
+
+        if metric_name == "jitter":
+            self._track_jitter(metric_value)
+
+    def to_payload(self) -> dict:
+        return {
+            "device_id": self.device_id,
+            "rollup_date": self.rollup_date,
+            "total_samples": self.total_samples,
+            "ping_samples": self.ping_samples,
+            "down_count": self.down_count,
+            "uptime_percentage": (self.uptime_count / self.ping_samples) * 100 if self.ping_samples else None,
+            "average_ping_ms": (self.ping_sum / self.ping_value_count) if self.ping_value_count else None,
+            "min_ping_ms": self.min_ping_ms if self.ping_value_count else None,
+            "max_ping_ms": self.max_ping_ms if self.ping_value_count else None,
+            "average_packet_loss_percent": (self.packet_loss_sum / self.packet_loss_count) if self.packet_loss_count else None,
+            "average_jitter_ms": (self.jitter_sum / self.jitter_count) if self.jitter_count else None,
+            "max_jitter_ms": self.max_jitter_ms if self.jitter_count else None,
+        }
+
+    def _track_ping(self, metric_value: str) -> None:
+        value = _safe_float(metric_value)
+        if value is None:
+            return
+        self.ping_sum += value
+        self.ping_value_count += 1
+        self.min_ping_ms = min(self.min_ping_ms, value)
+        self.max_ping_ms = max(self.max_ping_ms, value)
+
+    def _track_packet_loss(self, metric_value: str) -> None:
+        value = _safe_float(metric_value)
+        if value is None:
+            return
+        self.packet_loss_sum += value
+        self.packet_loss_count += 1
+
+    def _track_jitter(self, metric_value: str) -> None:
+        value = _safe_float(metric_value)
+        if value is None:
+            return
+        self.jitter_sum += value
+        self.jitter_count += 1
+        self.max_jitter_ms = max(self.max_jitter_ms, value)

@@ -1,5 +1,5 @@
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
 from ..repositories.threshold_repository import ThresholdRepository
@@ -20,34 +20,43 @@ DEFAULT_THRESHOLDS = {
 }
 
 
-def ensure_default_thresholds(db: Session) -> list:
+async def ensure_default_thresholds(db: AsyncSession) -> list:
     repository = ThresholdRepository(db)
-    thresholds = []
+    existing_thresholds = {threshold.key: threshold for threshold in await repository.list_thresholds()}
+    thresholds = list(existing_thresholds.values())
+    created_any = False
+
     for key, (value, description) in DEFAULT_THRESHOLDS.items():
-        existing = repository.get_by_key(key)
-        if existing is None:
-            thresholds.append(repository.upsert_threshold(key, value, description))
-        else:
-            thresholds.append(existing)
-    return thresholds
+        existing = existing_thresholds.get(key)
+        if existing is not None:
+            continue
+        threshold = await repository.upsert_threshold(key, value, description, commit=False)
+        existing_thresholds[key] = threshold
+        thresholds.append(threshold)
+        created_any = True
+
+    if created_any:
+        await db.commit()
+
+    return sorted(thresholds, key=lambda threshold: threshold.key)
 
 
-def list_threshold_rows(db: Session) -> list[dict]:
-    ensure_default_thresholds(db)
+async def list_threshold_rows(db: AsyncSession) -> list[dict]:
+    await ensure_default_thresholds(db)
     return [
         {"id": threshold.id, "key": threshold.key, "value": threshold.value, "description": threshold.description}
-        for threshold in ThresholdRepository(db).list_thresholds()
+        for threshold in await ThresholdRepository(db).list_thresholds()
     ]
 
 
-def get_threshold_map(db: Session) -> dict[str, float]:
-    ensure_default_thresholds(db)
-    return {threshold.key: threshold.value for threshold in ThresholdRepository(db).list_thresholds()}
+async def get_threshold_map(db: AsyncSession) -> dict[str, float]:
+    await ensure_default_thresholds(db)
+    return {threshold.key: threshold.value for threshold in await ThresholdRepository(db).list_thresholds()}
 
 
-def update_threshold_value(db: Session, key: str, value: float) -> dict:
+async def update_threshold_value(db: AsyncSession, key: str, value: float) -> dict:
     if key not in DEFAULT_THRESHOLDS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Threshold not found")
     _, description = DEFAULT_THRESHOLDS[key]
-    threshold = ThresholdRepository(db).upsert_threshold(key, value, description)
+    threshold = await ThresholdRepository(db).upsert_threshold(key, value, description)
     return {"id": threshold.id, "key": threshold.key, "value": threshold.value, "description": threshold.description}

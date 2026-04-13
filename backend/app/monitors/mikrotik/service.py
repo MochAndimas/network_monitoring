@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.config import settings
 from ...repositories.device_repository import DeviceRepository
@@ -18,27 +19,27 @@ except ImportError:  # pragma: no cover - dependency is declared but kept defens
 logger = logging.getLogger("network_monitoring.mikrotik")
 
 
-def run_mikrotik_checks(db: Session) -> list[dict]:
-    devices = DeviceRepository(db).list_by_type("mikrotik", active_only=True)
-    metrics: list[dict] = []
-
-    for device in devices:
-        samples = collect_ping_samples(device.ip_address)
-        metrics.append(build_ping_metric(device.id, latest_successful_ping(samples)))
-        metrics.extend(build_ping_quality_metrics(device.id, samples))
+async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
+    devices = await DeviceRepository(db).list_by_type("mikrotik", active_only=True)
+    metrics: list[dict] = [
+        metric
+        for device_metrics in await asyncio.gather(*[_build_ping_metrics(device.id, device.ip_address) for device in devices])
+        for metric in device_metrics
+    ]
 
     if not devices or not settings.mikrotik_host or connect is None:
         return metrics
 
     api = None
     try:
-        api = connect(
+        api = await asyncio.to_thread(
+            connect,
             host=settings.mikrotik_host,
             username=settings.mikrotik_username,
             password=settings.mikrotik_password,
         )
-        resources = list(api.path("system", "resource"))
-        interfaces = list(api.path("interface").select("running"))
+        resources = await asyncio.to_thread(lambda: list(api.path("system", "resource")))
+        interfaces = await asyncio.to_thread(lambda: list(api.path("interface").select("running")))
         resource = resources[0] if resources else {}
         checked_at = utcnow()
         target_device = devices[0]
@@ -88,9 +89,17 @@ def run_mikrotik_checks(db: Session) -> list[dict]:
         )
     finally:
         if api is not None:
-            api.close()
+            await asyncio.to_thread(api.close)
 
     return metrics
+
+
+async def _build_ping_metrics(device_id: int, ip_address: str) -> list[dict]:
+    samples = await collect_ping_samples(ip_address)
+    return [
+        build_ping_metric(device_id, latest_successful_ping(samples)),
+        *build_ping_quality_metrics(device_id, samples),
+    ]
 
 
 def _mikrotik_memory_percent(resource: dict) -> str:

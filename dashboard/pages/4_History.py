@@ -1,10 +1,11 @@
+from datetime import datetime, time, timedelta
 from urllib.parse import urlencode
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
-from components.api import get_json
+from components.api import get_json, paged_items, paged_meta
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
@@ -130,11 +131,6 @@ def _metric_filter_label(metric_name: str) -> str:
     return f"{_friendly_metric_name(metric_name)} ({metric_name})"
 
 
-def _metric_label(metric_name: str, unit: str | None) -> str:
-    unit_label = f" ({unit})" if unit else ""
-    return f"{_friendly_metric_name(metric_name)}{unit_label}"
-
-
 def _y_axis_label(metric_name: str, unit: str | None) -> str:
     friendly_name = _friendly_metric_name(metric_name)
     if unit:
@@ -159,6 +155,19 @@ def _format_duration(delta: pd.Timedelta | None) -> str:
     if seconds or not parts:
         parts.append(f"{seconds}dtk")
     return " ".join(parts)
+
+
+def _status_rollup(statuses: list[str]) -> str:
+    normalized = [str(status).lower() for status in statuses if status]
+    if not normalized:
+        return "unknown"
+    if any(status in {"down", "critical", "error"} for status in normalized):
+        return "down"
+    if any(status in {"warning", "degraded", "unavailable"} for status in normalized):
+        return "warning"
+    if all(status in {"up", "healthy", "ok"} for status in normalized):
+        return "up"
+    return normalized[0]
 
 
 def _continuous_up_duration(series_frame: pd.DataFrame) -> str:
@@ -186,6 +195,33 @@ def _continuous_up_duration(series_frame: pd.DataFrame) -> str:
     return _format_duration(duration)
 
 
+def _prepare_history_frame(history: list[dict]) -> pd.DataFrame:
+    dataframe = pd.DataFrame(history)
+    if dataframe.empty:
+        return dataframe
+
+    dataframe["checked_at"] = to_wib_timestamp(dataframe["checked_at"])
+    dataframe = dataframe.sort_values("checked_at", ascending=False).copy()
+    dataframe["metric_label"] = dataframe["metric_name"].map(lambda name: _friendly_metric_name(name))
+    dataframe["checked_at_wib"] = dataframe["checked_at"].map(format_wib_timestamp)
+    unit_series = dataframe["unit"].fillna("")
+    dataframe["display_value"] = dataframe["metric_value"] + unit_series.map(lambda unit: f" {unit}" if unit else "")
+    return dataframe
+
+
+def _latest_snapshot_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
+    return dataframe.drop_duplicates(subset=["device_name", "metric_name"]).copy()
+
+
+def _build_uptime_map(dataframe: pd.DataFrame) -> dict[tuple[str, str], str]:
+    uptime_map: dict[tuple[str, str], str] = {}
+    for (device_name, metric_name), series_frame in dataframe.groupby(["device_name", "metric_name"], sort=False):
+        uptime_map[(device_name, metric_name)] = _continuous_up_duration(
+            series_frame.sort_values("checked_at", ascending=True)
+        )
+    return uptime_map
+
+
 def _render_stat_card(column, label: str, value: str | int, *, compact: bool = False) -> None:
     value_class = "history-card-value compact" if compact else "history-card-value"
     column.markdown(
@@ -203,7 +239,8 @@ st.markdown(HISTORY_CSS, unsafe_allow_html=True)
 st.title("History")
 st.caption("Halaman ini menampilkan histori pengecekan metric. Pilih device dan metric supaya grafik lebih jelas dibaca.")
 
-devices = get_json("/devices", [])
+devices_payload = get_json("/devices/paged?active_only=false&limit=1000&offset=0", {"items": [], "meta": {}})
+devices = paged_items(devices_payload)
 device_options = {"All Devices": None}
 for device in devices:
     device_options[_format_device_label(device)] = device["id"]
@@ -231,6 +268,11 @@ chart_window_label = st.selectbox(
     index=2,
     help="Pilih rentang waktu yang dipakai untuk chart trend.",
 )
+date_filter_col1, date_filter_col2 = st.columns(2)
+today = datetime.now().date()
+default_start_date = today - timedelta(days=7)
+checked_from_date = date_filter_col1.date_input("Checked From", value=default_start_date)
+checked_to_date = date_filter_col2.date_input("Checked To", value=today)
 auto_refresh, interval_seconds = refresh_controls("history", default_enabled=True, default_interval=15)
 
 
@@ -242,15 +284,23 @@ def _render_history_body() -> None:
         query_params["metric_name"] = selected_metric
     if status_value != "All":
         query_params["status"] = status_value
+    if checked_from_date:
+        query_params["checked_from"] = datetime.combine(checked_from_date, time.min).isoformat()
+    if checked_to_date:
+        query_params["checked_to"] = datetime.combine(checked_to_date, time.max).isoformat()
 
-    history = get_json(f"/metrics/history?{urlencode(query_params)}", [])
+    history_payload = get_json(f"/metrics/history/paged?{urlencode(query_params)}", {"items": [], "meta": {}})
+    history = paged_items(history_payload)
+    history_meta = paged_meta(history_payload)
     st.markdown(
         f"""
         <div class="history-meta">
             <div class="history-pill">{live_status_text(auto_refresh, interval_seconds)}</div>
             <div class="history-pill">Render terakhir: {rendered_at_label()}</div>
             <div class="history-pill">Filter aktif: {selected_device}</div>
+            <div class="history-pill">Rentang: {checked_from_date} s/d {checked_to_date}</div>
             <div class="history-pill">Window chart: {chart_window_label}</div>
+            <div class="history-pill">Total match: {history_meta.get("total", 0)}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -260,41 +310,28 @@ def _render_history_body() -> None:
         st.info("Belum ada histori metric yang tersimpan untuk filter ini.")
         return
 
-    dataframe = pd.DataFrame(history)
-    if selected_device_id is not None:
-        dataframe = dataframe[dataframe["device_id"] == selected_device_id].copy()
-    if selected_metric != "All Metrics":
-        dataframe = dataframe[dataframe["metric_name"] == selected_metric].copy()
-    if status_value != "All":
-        dataframe = dataframe[dataframe["status"] == status_value].copy()
+    dataframe = _prepare_history_frame(history)
     if dataframe.empty:
         st.info("Belum ada histori metric yang tersimpan untuk filter ini.")
         return
 
-    dataframe["checked_at"] = to_wib_timestamp(dataframe["checked_at"])
-    dataframe = dataframe.sort_values("checked_at", ascending=False)
-    dataframe["display_value"] = dataframe.apply(_format_metric_value, axis=1)
-    dataframe["metric_label"] = dataframe["metric_name"].apply(_friendly_metric_name)
-    dataframe["checked_at_wib"] = dataframe["checked_at"].apply(format_wib_timestamp)
-
     latest_timestamp = dataframe["checked_at"].max()
-    latest_per_series = (
-        dataframe.sort_values("checked_at", ascending=False)
-        .drop_duplicates(subset=["device_name", "metric_name"])
-        .copy()
-    )
-    uptime_map: dict[tuple[str, str], str] = {}
-    for (device_name, metric_name), series_frame in dataframe.groupby(["device_name", "metric_name"]):
-        uptime_map[(device_name, metric_name)] = _continuous_up_duration(series_frame)
+    latest_per_series = _latest_snapshot_frame(dataframe)
+    uptime_map = _build_uptime_map(dataframe)
     latest_per_series["uptime"] = latest_per_series.apply(
         lambda row: uptime_map.get((row["device_name"], row["metric_name"]), "-"),
         axis=1,
     )
+    latest_per_device = (
+        latest_per_series.groupby("device_name", as_index=False)["status"]
+        .agg(lambda series: _status_rollup(series.tolist()))
+        .copy()
+    )
 
     summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
     _render_stat_card(summary_col1, "Rows Loaded", int(len(dataframe)))
-    _render_stat_card(summary_col2, "Latest Check", format_wib_timestamp(latest_timestamp), compact=True)
-    _render_stat_card(summary_col3, "Distinct Devices", int(dataframe["device_name"].nunique()))
+    _render_stat_card(summary_col2, "Total Match", int(history_meta.get("total", len(dataframe))))
+    _render_stat_card(summary_col3, "Latest Check", format_wib_timestamp(latest_timestamp), compact=True)
     _render_stat_card(summary_col4, "Distinct Metrics", int(dataframe["metric_name"].nunique()))
 
     st.markdown("### Latest Snapshot")
@@ -313,7 +350,7 @@ def _render_history_body() -> None:
     st.dataframe(snapshot_view, width="stretch")
 
     st.markdown("### Status Summary")
-    status_counts = latest_per_series["status"].fillna("unknown").value_counts().rename_axis("status").reset_index(name="count")
+    status_counts = latest_per_device["status"].fillna("unknown").value_counts().rename_axis("status").reset_index(name="count")
     status_left, status_right = st.columns([1, 2])
     status_left.dataframe(status_counts, width="stretch", hide_index=True)
     status_right.bar_chart(status_counts.set_index("status"))
@@ -324,10 +361,8 @@ def _render_history_body() -> None:
         st.info("Tidak ada metric numerik pada filter ini, jadi grafik trend belum bisa ditampilkan.")
         return
     else:
-        numeric_frame["metric_option"] = numeric_frame.apply(
-            lambda row: f'{row["device_name"]} - {_metric_label(row["metric_name"], row["unit"])}',
-            axis=1,
-        )
+        unit_label = numeric_frame["unit"].fillna("").map(lambda unit: f" ({unit})" if unit else "")
+        numeric_frame["metric_option"] = numeric_frame["device_name"] + " - " + numeric_frame["metric_label"] + unit_label
         metric_placeholder = "Pilih metric dulu"
         metric_options = sorted(numeric_frame["metric_option"].unique().tolist())
         selected_metric_option = st.selectbox(

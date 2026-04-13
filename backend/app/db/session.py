@@ -1,25 +1,32 @@
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from ..core.config import settings
 
 
-engine = create_engine(settings.database_url, future=True, pool_pre_ping=True)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+def _async_database_url(database_url: str) -> str:
+    if database_url.startswith("sqlite:///") and not database_url.startswith("sqlite+aiosqlite:///"):
+        return database_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+    return database_url
 
 
-def get_db():
-    db = SessionLocal()
-    try:
+engine = create_async_engine(_async_database_url(settings.database_url), future=True, pool_pre_ping=True)
+SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, autoflush=False, autocommit=False, expire_on_commit=False)
+
+
+async def get_db() -> AsyncIterator[AsyncSession]:
+    async with SessionLocal() as db:
         yield db
-    finally:
-        db.close()
 
 
-def check_database_connection() -> bool:
+async def check_database_connection() -> bool:
     try:
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
         return True
     except Exception:
         return False

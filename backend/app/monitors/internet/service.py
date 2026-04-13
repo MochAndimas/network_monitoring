@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import socket
 from time import perf_counter
 
 import httpx
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.config import settings
 from ...repositories.device_repository import DeviceRepository
@@ -13,29 +14,42 @@ from ...services.monitoring_service import utcnow
 from ..helpers import build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping
 
 
-def run_internet_checks(db: Session) -> list[dict]:
-    devices = DeviceRepository(db).list_by_type("internet_target", active_only=True)
+async def run_internet_checks(db: AsyncSession) -> list[dict]:
+    devices = await DeviceRepository(db).list_by_type("internet_target", active_only=True)
     metrics: list[dict] = []
-
-    for device in devices:
-        samples = collect_ping_samples(device.ip_address)
-        metrics.append(build_ping_metric(device.id, latest_successful_ping(samples)))
-        metrics.extend(build_ping_quality_metrics(device.id, samples))
+    if devices:
+        metrics.extend(
+            metric
+            for device_metrics in await asyncio.gather(*[_build_device_ping_metrics(device.id, device.ip_address) for device in devices])
+            for metric in device_metrics
+        )
 
     if devices:
         anchor_device = devices[0]
-        metrics.append(_build_dns_metric(anchor_device.id))
-        metrics.append(_build_http_metric(anchor_device.id))
-        metrics.append(_build_public_ip_metric(db, anchor_device.id))
+        async with httpx.AsyncClient(timeout=settings.ping_timeout_seconds) as client:
+            dns_metric, http_metric, public_ip_metric = await asyncio.gather(
+                _build_dns_metric(anchor_device.id),
+                _build_http_metric(anchor_device.id, client),
+                _build_public_ip_metric(db, anchor_device.id, client),
+            )
+            metrics.extend([dns_metric, http_metric, public_ip_metric])
 
     return metrics
 
 
-def _build_dns_metric(device_id: int) -> dict:
+async def _build_device_ping_metrics(device_id: int, ip_address: str) -> list[dict]:
+    samples = await collect_ping_samples(ip_address)
+    return [
+        build_ping_metric(device_id, latest_successful_ping(samples)),
+        *build_ping_quality_metrics(device_id, samples),
+    ]
+
+
+async def _build_dns_metric(device_id: int) -> dict:
     checked_at = utcnow()
     started_at = perf_counter()
     try:
-        socket.getaddrinfo(settings.dns_check_host, None)
+        await asyncio.get_running_loop().getaddrinfo(settings.dns_check_host, None)
     except OSError:
         return {
             "device_id": device_id,
@@ -57,11 +71,11 @@ def _build_dns_metric(device_id: int) -> dict:
     }
 
 
-def _build_http_metric(device_id: int) -> dict:
+async def _build_http_metric(device_id: int, client: httpx.AsyncClient) -> dict:
     checked_at = utcnow()
     started_at = perf_counter()
     try:
-        response = httpx.get(settings.http_check_url, timeout=settings.ping_timeout_seconds)
+        response = await client.get(settings.http_check_url)
         response.raise_for_status()
     except httpx.HTTPError:
         return {
@@ -84,10 +98,10 @@ def _build_http_metric(device_id: int) -> dict:
     }
 
 
-def _build_public_ip_metric(db: Session, device_id: int) -> dict:
+async def _build_public_ip_metric(db: AsyncSession, device_id: int, client: httpx.AsyncClient) -> dict:
     checked_at = utcnow()
     try:
-        response = httpx.get(settings.public_ip_check_url, timeout=settings.ping_timeout_seconds)
+        response = await client.get(settings.public_ip_check_url)
         response.raise_for_status()
         public_ip = response.text.strip()
     except httpx.HTTPError:
@@ -100,7 +114,7 @@ def _build_public_ip_metric(db: Session, device_id: int) -> dict:
             "checked_at": checked_at,
         }
 
-    latest_public_ip = MetricRepository(db).latest_metric_map().get((device_id, "public_ip"))
+    latest_public_ip = await MetricRepository(db).get_latest_metric(device_id, "public_ip")
     status = "warning" if latest_public_ip is not None and latest_public_ip.metric_value != public_ip else "up"
     return {
         "device_id": device_id,

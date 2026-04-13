@@ -10,13 +10,21 @@ from .notifiers.telegram_notifier import send_telegram_alert
 from .rules import ALERT_RULES
 
 
-def evaluate_alerts(db) -> list[dict]:
+async def evaluate_alerts(db) -> list[dict]:
     alert_repository = AlertRepository(db)
     incident_repository = IncidentRepository(db)
-    latest_metrics = MetricRepository(db).latest_metric_map()
-    devices = DeviceRepository(db).list_devices(active_only=True)
+    latest_metrics = await MetricRepository(db).latest_metric_map()
+    devices = await DeviceRepository(db).list_devices(active_only=True)
     notifications: list[dict] = []
-    thresholds = get_threshold_map(db)
+    thresholds = await get_threshold_map(db)
+    active_alerts = {(alert.device_id, alert.alert_type): alert for alert in await alert_repository.list_active_alerts()}
+    active_incidents_by_device = {
+        incident.device_id: incident for incident in await incident_repository.list_active_incidents()
+    }
+    active_alert_count_by_device: dict[int | None, int] = {}
+    for alert in active_alerts.values():
+        active_alert_count_by_device[alert.device_id] = active_alert_count_by_device.get(alert.device_id, 0) + 1
+    has_pending_writes = False
 
     expected_alerts: dict[tuple[int | None, str], dict] = {}
 
@@ -144,13 +152,19 @@ def evaluate_alerts(db) -> list[dict]:
                     message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
                 )
 
-    active_alerts = {(alert.device_id, alert.alert_type): alert for alert in alert_repository.list_active_alerts()}
-
     for key, payload in expected_alerts.items():
         if key in active_alerts:
             continue
-        created_alert = alert_repository.create_alert(payload)
-        incident_action = _ensure_incident_for_alert(incident_repository, created_alert.device_id, created_alert.message)
+        created_alert = await alert_repository.create_alert(payload, commit=False)
+        active_alerts[key] = created_alert
+        active_alert_count_by_device[created_alert.device_id] = active_alert_count_by_device.get(created_alert.device_id, 0) + 1
+        incident_action = await _ensure_incident_for_alert(
+            incident_repository,
+            active_incidents_by_device,
+            created_alert.device_id,
+            created_alert.message,
+        )
+        has_pending_writes = True
         notification = {
             "action": "created",
             "alert_type": created_alert.alert_type,
@@ -159,14 +173,22 @@ def evaluate_alerts(db) -> list[dict]:
             "incident_action": incident_action,
         }
         notifications.append(notification)
-        send_telegram_alert(created_alert.message)
+        await send_telegram_alert(created_alert.message)
 
     resolved_at = utcnow()
-    for key, alert in active_alerts.items():
+    for key, alert in list(active_alerts.items()):
         if key in expected_alerts:
             continue
-        alert_repository.resolve_alert(alert, resolved_at)
-        incident_action = _resolve_incident_if_cleared(incident_repository, alert_repository, alert.device_id, resolved_at)
+        await alert_repository.resolve_alert(alert, resolved_at, commit=False)
+        incident_action = await _resolve_incident_if_cleared(
+            incident_repository,
+            active_incidents_by_device,
+            active_alert_count_by_device,
+            alert.device_id,
+            resolved_at,
+        )
+        has_pending_writes = True
+        active_alerts.pop(key, None)
         notifications.append(
             {
                 "action": "resolved",
@@ -176,6 +198,9 @@ def evaluate_alerts(db) -> list[dict]:
                 "incident_action": incident_action,
             }
         )
+
+    if has_pending_writes:
+        await db.commit()
 
     return notifications
 
@@ -199,32 +224,42 @@ def _build_alert_payload(device_id: int | None, alert_type: str, message: str) -
     }
 
 
-def _ensure_incident_for_alert(incident_repository: IncidentRepository, device_id: int | None, message: str) -> str | None:
-    active_incident = incident_repository.get_active_incident_by_device(device_id)
+async def _ensure_incident_for_alert(
+    incident_repository: IncidentRepository,
+    active_incidents_by_device: dict[int | None, object],
+    device_id: int | None,
+    message: str,
+) -> str | None:
+    active_incident = active_incidents_by_device.get(device_id)
     if active_incident is not None:
         return None
-    incident_repository.create_incident(
+    created_incident = await incident_repository.create_incident(
         {
             "device_id": device_id,
             "status": "active",
             "summary": message,
             "started_at": utcnow(),
-        }
+        },
+        commit=False,
     )
+    active_incidents_by_device[device_id] = created_incident
     return "created"
 
 
-def _resolve_incident_if_cleared(
+async def _resolve_incident_if_cleared(
     incident_repository: IncidentRepository,
-    alert_repository: AlertRepository,
+    active_incidents_by_device: dict[int | None, object],
+    active_alert_count_by_device: dict[int | None, int],
     device_id: int | None,
     resolved_at,
 ) -> str | None:
-    remaining_alerts = [alert for alert in alert_repository.list_active_alerts() if alert.device_id == device_id]
-    if remaining_alerts:
+    remaining_count = max(active_alert_count_by_device.get(device_id, 0) - 1, 0)
+    active_alert_count_by_device[device_id] = remaining_count
+    if remaining_count:
         return None
-    active_incident = incident_repository.get_active_incident_by_device(device_id)
+    active_incident = active_incidents_by_device.get(device_id)
     if active_incident is None:
         return None
-    incident_repository.resolve_incident(active_incident, resolved_at)
+    await incident_repository.resolve_incident(active_incident, resolved_at, commit=False)
+    active_incidents_by_device.pop(device_id, None)
     return "resolved"

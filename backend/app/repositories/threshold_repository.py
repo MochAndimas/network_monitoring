@@ -1,29 +1,34 @@
-from sqlalchemy import Select, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Select, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.threshold import Threshold
 
 
 class ThresholdRepository:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def list_thresholds(self) -> list[Threshold]:
+    async def list_thresholds(self) -> list[Threshold]:
         query: Select[tuple[Threshold]] = select(Threshold).order_by(Threshold.key.asc())
-        return list(self.db.scalars(query).all())
+        return list((await self.db.scalars(query)).all())
 
-    def get_by_key(self, key: str) -> Threshold | None:
+    async def count_thresholds(self) -> int:
+        query = select(func.count()).select_from(Threshold)
+        return int(await self.db.scalar(query) or 0)
+
+    async def get_by_key(self, key: str) -> Threshold | None:
         query: Select[tuple[Threshold]] = select(Threshold).where(Threshold.key == key)
-        return self.db.scalars(query).first()
+        return (await self.db.scalars(query)).first()
 
-    def upsert_threshold(self, key: str, value: float, description: str | None = None) -> Threshold:
-        threshold = self.get_by_key(key)
+    async def upsert_threshold(self, key: str, value: float, description: str | None = None, *, commit: bool = True) -> Threshold:
+        threshold = await self.get_by_key(key)
         if threshold is None:
             threshold = Threshold(key=key, value=value, description=description)
             self.db.add(threshold)
         else:
             threshold.value = value
             threshold.description = description
-        self.db.commit()
-        self.db.refresh(threshold)
+        await self.db.flush()
+        if commit:
+            await self.db.commit()
         return threshold

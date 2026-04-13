@@ -27,6 +27,17 @@ class DeviceListItem(BaseModel):
     latest_checked_at: datetime | None = None
 
 
+class PageMeta(BaseModel):
+    total: int
+    limit: int
+    offset: int
+
+
+class DeviceListPage(BaseModel):
+    items: list["DeviceListItem"]
+    meta: PageMeta
+
+
 class DeviceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     ip_address: str = Field(min_length=1, max_length=50)
@@ -85,6 +96,11 @@ class MetricHistoryItem(BaseModel):
     status: str | None = None
     unit: str | None = None
     checked_at: datetime
+
+
+class MetricHistoryPage(BaseModel):
+    items: list["MetricHistoryItem"]
+    meta: PageMeta
 
 
 class AlertItem(BaseModel):

@@ -7,7 +7,7 @@ router = APIRouter()
 
 @router.get("")
 async def health(response: Response) -> dict:
-    database_ok = check_database_connection()
+    database_ok = await check_database_connection()
     if not database_ok:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return {

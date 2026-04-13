@@ -3,10 +3,13 @@ from .session import engine
 from ..models import alert, device, incident, metric, metric_daily_rollup, threshold  # noqa: F401
 
 
-def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
+async def init_db() -> None:
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
 
 
 if __name__ == "__main__":
-    init_db()
+    import asyncio
+
+    asyncio.run(init_db())
     print("Database tables created.")

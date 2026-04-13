@@ -80,6 +80,12 @@ Kalau hanya ingin menjalankan satu siklus monitoring manual:
 python scripts/run_monitor_cycle.py
 ```
 
+Kalau ingin benchmark endpoint backend lokal:
+
+```bash
+python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --runs 5
+```
+
 ## Menjalankan Backend
 
 ```bash
@@ -92,9 +98,11 @@ Endpoint mutasi membutuhkan header `x-api-key` saat `INTERNAL_API_KEY` terisi. D
 API utama:
 - `GET /dashboard/summary`
 - `GET /devices`
+- `GET /devices/paged`
 - `POST /devices`
 - `PUT /devices/{device_id}`
 - `GET /metrics/history`
+- `GET /metrics/history/paged`
 - `GET /alerts/active`
 - `GET /incidents`
 - `GET /thresholds`
@@ -130,10 +138,10 @@ dikelola lewat Alembic migration.
 Dashboard utama sekarang bisa:
 - melihat summary status internet, server, Mikrotik, dan alert aktif
 - trigger manual monitoring cycle
-- melihat daftar device dan filter berdasarkan type
+- melihat daftar device dengan filter server-side dan pagination
 - melihat alert aktif
 - melihat incident aktif/resolved
-- melihat histori metric dan chart untuk metric numerik
+- melihat histori metric dengan filter waktu dan chart untuk metric numerik
 - melihat dan mengubah threshold alert
 
 ## Security
@@ -148,6 +156,20 @@ Dashboard utama sekarang bisa:
 ```bash
 python -m pytest
 ```
+
+## Benchmark
+
+Script benchmark sederhana tersedia untuk mengukur latency endpoint yang sering dipakai dashboard:
+
+```bash
+python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --runs 10
+```
+
+Opsional:
+- `--path /dashboard/summary`
+- `--path /devices/paged?limit=100&offset=0`
+- `--path /metrics/history/paged?limit=100&offset=0`
+- `--api-key your-internal-key`
 
 ## Migration
 
@@ -172,3 +194,12 @@ alembic upgrade head
 - Threshold alert disimpan di database dan otomatis dibuat saat belum ada
 - Endpoint mutasi seperti `POST /devices`, `PUT /devices/{device_id}`, `PUT /thresholds/{key}`, dan `POST /system/run-cycle` memakai header `x-api-key`
 - Endpoint `GET /health` dan `GET /observability/summary` bisa dipakai untuk readiness check dan ringkasan operasional
+
+## Checklist Arsitektur
+- Backend API, DB session, dan HTTP outbound utama sudah async-friendly.
+- Library blocking seperti `ping3`, `psutil`, dan `librouteros` diisolasi lewat `asyncio.to_thread`.
+- Monitoring cycle berjalan paralel dengan session terpisah per runner, lalu persist dan evaluasi alert di fase akhir.
+- Scheduler dan manual run-cycle sudah punya guard supaya tidak overlap.
+- Endpoint list besar yang dipakai dashboard sudah punya versi paged untuk menjaga performa saat data tumbuh.
+- Retention rollup sudah diproses secara streaming agar tidak memuat semua raw metric lama ke memory sekaligus.
+- Dashboard Streamlit tetap model sinkron, jadi optimasi difokuskan ke query server-side, pagination, dan pengurangan kerja dataframe di client.

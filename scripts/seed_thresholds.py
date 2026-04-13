@@ -12,15 +12,20 @@ SEED_THRESHOLDS = {
 
 
 if __name__ == "__main__":
+    import asyncio
+
     from backend.app.db.init_db import init_db
     from backend.app.db.session import SessionLocal
     from backend.app.services.threshold_service import DEFAULT_THRESHOLDS
     from backend.app.repositories.threshold_repository import ThresholdRepository
 
-    init_db()
-    with SessionLocal() as db:
-        repository = ThresholdRepository(db)
-        for key, value in SEED_THRESHOLDS.items():
-            description = DEFAULT_THRESHOLDS.get(key, (value, None))[1]
-            repository.upsert_threshold(key, float(value), description)
-    print(f"Seeded {len(SEED_THRESHOLDS)} thresholds.")
+    async def main() -> None:
+        await init_db()
+        async with SessionLocal() as db:
+            repository = ThresholdRepository(db)
+            for key, value in SEED_THRESHOLDS.items():
+                description = DEFAULT_THRESHOLDS.get(key, (value, None))[1]
+                await repository.upsert_threshold(key, float(value), description)
+        print(f"Seeded {len(SEED_THRESHOLDS)} thresholds.")
+
+    asyncio.run(main())

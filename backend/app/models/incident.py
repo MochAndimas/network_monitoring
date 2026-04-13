@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db.base import Base
@@ -8,6 +8,10 @@ from ..db.base import Base
 
 class Incident(Base):
     __tablename__ = "incidents"
+    __table_args__ = (
+        Index("ix_incidents_status_started_at", "status", "started_at"),
+        Index("ix_incidents_device_status", "device_id", "status"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id"), nullable=True, index=True)

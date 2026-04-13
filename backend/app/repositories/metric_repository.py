@@ -2,27 +2,27 @@ from collections.abc import Iterable
 
 from sqlalchemy import Select, desc, distinct, func, select
 from sqlalchemy.orm import aliased
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..models.device import Device
 from ..models.metric import Metric
 
 
 class MetricRepository:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def create_metrics(self, payloads: Iterable[dict]) -> list[Metric]:
+    async def create_metrics(self, payloads: Iterable[dict]) -> list[Metric]:
         metrics = [Metric(**payload) for payload in payloads]
         if not metrics:
             return []
 
         self.db.add_all(metrics)
-        self.db.commit()
-        for metric in metrics:
-            self.db.refresh(metric)
+        await self.db.flush()
+        await self.db.commit()
         return metrics
 
-    def list_recent_metrics(
+    async def list_recent_metrics(
         self,
         limit: int = 100,
         device_id: int | None = None,
@@ -37,9 +37,81 @@ class MetricRepository:
         if status:
             query = query.where(Metric.status == status)
         query = query.order_by(desc(Metric.checked_at), desc(Metric.id)).limit(limit)
-        return list(self.db.scalars(query).all())
+        return list((await self.db.scalars(query)).all())
 
-    def list_latest_metrics(self) -> list[Metric]:
+    async def list_recent_metric_rows(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        device_id: int | None = None,
+        metric_name: str | None = None,
+        status: str | None = None,
+        checked_from=None,
+        checked_to=None,
+    ) -> list[dict]:
+        query = (
+            select(
+                Metric.id,
+                Metric.device_id,
+                Device.name.label("device_name"),
+                Metric.metric_name,
+                Metric.metric_value,
+                Metric.status,
+                Metric.unit,
+                Metric.checked_at,
+            )
+            .outerjoin(Device, Device.id == Metric.device_id)
+        )
+        if device_id is not None:
+            query = query.where(Metric.device_id == device_id)
+        if metric_name:
+            query = query.where(Metric.metric_name == metric_name)
+        if status:
+            query = query.where(Metric.status == status)
+        if checked_from is not None:
+            query = query.where(Metric.checked_at >= checked_from)
+        if checked_to is not None:
+            query = query.where(Metric.checked_at <= checked_to)
+        query = query.order_by(desc(Metric.checked_at), desc(Metric.id)).offset(offset).limit(limit)
+        rows = (await self.db.execute(query)).all()
+        return [
+            {
+                "id": row.id,
+                "device_id": row.device_id,
+                "device_name": row.device_name or "Unknown Device",
+                "metric_name": row.metric_name,
+                "metric_value": row.metric_value,
+                "metric_value_numeric": _safe_float(row.metric_value),
+                "status": row.status,
+                "unit": row.unit,
+                "checked_at": row.checked_at,
+            }
+            for row in rows
+        ]
+
+    async def count_recent_metric_rows(
+        self,
+        *,
+        device_id: int | None = None,
+        metric_name: str | None = None,
+        status: str | None = None,
+        checked_from=None,
+        checked_to=None,
+    ) -> int:
+        query = select(func.count()).select_from(Metric)
+        if device_id is not None:
+            query = query.where(Metric.device_id == device_id)
+        if metric_name:
+            query = query.where(Metric.metric_name == metric_name)
+        if status:
+            query = query.where(Metric.status == status)
+        if checked_from is not None:
+            query = query.where(Metric.checked_at >= checked_from)
+        if checked_to is not None:
+            query = query.where(Metric.checked_at <= checked_to)
+        return int(await self.db.scalar(query) or 0)
+
+    async def list_latest_metrics(self) -> list[Metric]:
         ranked_metrics = (
             select(
                 Metric.id,
@@ -58,13 +130,48 @@ class MetricRepository:
             .join(ranked_metrics, latest_metric.id == ranked_metrics.c.id)
             .where(ranked_metrics.c.row_number == 1)
         )
-        return list(self.db.scalars(query).all())
+        return list((await self.db.scalars(query)).all())
 
-    def latest_metric_map(self) -> dict[tuple[int, str], Metric]:
-        return {(metric.device_id, metric.metric_name): metric for metric in self.list_latest_metrics()}
+    async def get_latest_metric(self, device_id: int, metric_name: str) -> Metric | None:
+        query: Select[tuple[Metric]] = (
+            select(Metric)
+            .where(
+                Metric.device_id == device_id,
+                Metric.metric_name == metric_name,
+            )
+            .order_by(desc(Metric.checked_at), desc(Metric.id))
+            .limit(1)
+        )
+        return (await self.db.scalars(query)).first()
 
-    def list_metric_names(self, device_id: int | None = None) -> list[str]:
+    async def latest_metric_map(self) -> dict[tuple[int, str], Metric]:
+        return {(metric.device_id, metric.metric_name): metric for metric in await self.list_latest_metrics()}
+
+    async def count_latest_metrics(self) -> int:
+        ranked_metrics = (
+            select(
+                Metric.id,
+                func.row_number()
+                .over(
+                    partition_by=(Metric.device_id, Metric.metric_name),
+                    order_by=(desc(Metric.checked_at), desc(Metric.id)),
+                )
+                .label("row_number"),
+            )
+            .subquery()
+        )
+        query = select(func.count()).select_from(ranked_metrics).where(ranked_metrics.c.row_number == 1)
+        return int(await self.db.scalar(query) or 0)
+
+    async def list_metric_names(self, device_id: int | None = None) -> list[str]:
         query = select(distinct(Metric.metric_name)).order_by(Metric.metric_name)
         if device_id is not None:
             query = query.where(Metric.device_id == device_id)
-        return list(self.db.scalars(query).all())
+        return list((await self.db.scalars(query)).all())
+
+
+def _safe_float(value: str) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

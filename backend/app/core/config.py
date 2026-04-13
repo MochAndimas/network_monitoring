@@ -17,12 +17,14 @@ class Settings(BaseSettings):
     dashboard_api_url: str = "http://localhost:8000"
     ping_timeout_seconds: float = 2.0
     ping_sample_count: int = 3
+    ping_concurrency_limit: int = 32
     scheduler_enabled: bool = True
     scheduler_interval_internet_seconds: int = 30
     scheduler_interval_device_seconds: int = 60
     scheduler_interval_server_seconds: int = 60
     scheduler_interval_mikrotik_seconds: int = 60
     scheduler_interval_alert_seconds: int = 30
+    scheduler_job_max_instances: int = 1
     dns_check_host: str = "google.com"
     http_check_url: str = "https://www.google.com/generate_204"
     public_ip_check_url: str = "https://api.ipify.org"

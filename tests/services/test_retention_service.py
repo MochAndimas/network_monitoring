@@ -1,7 +1,9 @@
+import asyncio
+
 from datetime import timedelta
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from backend.app.db.base import Base
@@ -15,14 +17,18 @@ from backend.app.services.monitoring_service import utcnow
 from backend.app.services.retention_service import cleanup_monitoring_data
 
 
+def run(coro):
+    return asyncio.run(coro)
+
+
 def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatch):
-    engine = create_engine(
-        "sqlite:///:memory:",
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
+    SessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    run(_create_all(engine))
 
     monkeypatch.setattr("backend.app.services.retention_service.settings.raw_metric_retention_days", 7)
     monkeypatch.setattr("backend.app.services.retention_service.settings.alert_retention_days", 180)
@@ -34,66 +40,9 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
     very_old_timestamp = now - timedelta(days=200)
 
     try:
-        with SessionLocal() as db:
-            device = DeviceRepository(db).upsert_devices(
-                [{"name": "AP Meeting Room", "ip_address": "192.168.1.40", "device_type": "access_point"}]
-            )[0]
-            MetricRepository(db).create_metrics(
-                [
-                    _metric(device.id, "ping", "10.00", "up", "ms", old_timestamp),
-                    _metric(device.id, "ping", "20.00", "up", "ms", old_timestamp + timedelta(minutes=1)),
-                    _metric(device.id, "ping", "timeout", "down", None, old_timestamp + timedelta(minutes=2)),
-                    _metric(device.id, "packet_loss", "33.33", "warning", "%", old_timestamp),
-                    _metric(device.id, "packet_loss", "0.00", "up", "%", old_timestamp + timedelta(minutes=1)),
-                    _metric(device.id, "jitter", "4.00", "up", "ms", old_timestamp),
-                    _metric(device.id, "jitter", "8.00", "up", "ms", old_timestamp + timedelta(minutes=1)),
-                    _metric(device.id, "ping", "5.00", "up", "ms", recent_timestamp),
-                ]
-            )
-            db.add_all(
-                [
-                    Alert(
-                        device_id=device.id,
-                        alert_type="old_resolved",
-                        severity="warning",
-                        message="old resolved",
-                        status="resolved",
-                        created_at=very_old_timestamp,
-                        resolved_at=very_old_timestamp,
-                    ),
-                    Alert(
-                        device_id=device.id,
-                        alert_type="old_active",
-                        severity="critical",
-                        message="old active",
-                        status="active",
-                        created_at=very_old_timestamp,
-                    ),
-                    Incident(
-                        device_id=device.id,
-                        status="resolved",
-                        summary="old resolved",
-                        started_at=very_old_timestamp,
-                        ended_at=very_old_timestamp,
-                    ),
-                    Incident(
-                        device_id=device.id,
-                        status="active",
-                        summary="old active",
-                        started_at=very_old_timestamp,
-                    ),
-                ]
-            )
-            db.commit()
-
-            result = cleanup_monitoring_data(db)
-
-            rollups = db.scalars(select(MetricDailyRollup)).all()
-            rollup_by_date = {rollup.rollup_date: rollup for rollup in rollups}
-            old_rollup = rollup_by_date[old_timestamp.date()]
-            remaining_metrics = db.scalars(select(Metric)).all()
-            remaining_alerts = db.scalars(select(Alert)).all()
-            remaining_incidents = db.scalars(select(Incident)).all()
+        result, rollup_by_date, old_rollup, remaining_metrics, remaining_alerts, remaining_incidents = run(
+            _cleanup_old_metrics(SessionLocal, old_timestamp, recent_timestamp, very_old_timestamp)
+        )
 
         assert result["rolled_up_days"] == 2
         assert result["deleted_metrics"] == 7
@@ -115,18 +64,17 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
         assert [alert.status for alert in remaining_alerts] == ["active"]
         assert [incident.status for incident in remaining_incidents] == ["active"]
     finally:
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        run(_drop_all(engine))
 
 
 def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypatch):
-    engine = create_engine(
-        "sqlite:///:memory:",
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
+    SessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    run(_create_all(engine))
 
     monkeypatch.setattr("backend.app.services.retention_service.settings.raw_metric_retention_days", 7)
 
@@ -134,21 +82,7 @@ def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypa
     yesterday = now - timedelta(days=1)
 
     try:
-        with SessionLocal() as db:
-            device = DeviceRepository(db).upsert_devices(
-                [{"name": "AP Meeting Room", "ip_address": "192.168.1.40", "device_type": "access_point"}]
-            )[0]
-            MetricRepository(db).create_metrics(
-                [
-                    _metric(device.id, "ping", "10.00", "up", "ms", yesterday),
-                    _metric(device.id, "packet_loss", "0.00", "up", "%", yesterday),
-                ]
-            )
-
-            result = cleanup_monitoring_data(db)
-
-            rollups = db.scalars(select(MetricDailyRollup)).all()
-            remaining_metrics = db.scalars(select(Metric)).all()
+        result, rollups, remaining_metrics = run(_cleanup_yesterday_metrics(SessionLocal, yesterday))
 
         assert result["rolled_up_days"] == 1
         assert result["deleted_metrics"] == 0
@@ -156,43 +90,28 @@ def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypa
         assert rollups[0].rollup_date == yesterday.date()
         assert len(remaining_metrics) == 2
     finally:
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        run(_drop_all(engine))
 
 
 def test_latest_metric_map_uses_latest_metric_for_each_device_metric_pair():
-    engine = create_engine(
-        "sqlite:///:memory:",
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
+    SessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    run(_create_all(engine))
 
     now = utcnow()
 
     try:
-        with SessionLocal() as db:
-            device = DeviceRepository(db).upsert_devices(
-                [{"name": "Gateway", "ip_address": "192.168.1.1", "device_type": "internet_target"}]
-            )[0]
-            device_id = device.id
-            MetricRepository(db).create_metrics(
-                [
-                    _metric(device_id, "ping", "10.00", "up", "ms", now - timedelta(minutes=2)),
-                    _metric(device_id, "ping", "timeout", "down", None, now),
-                    _metric(device_id, "packet_loss", "0.00", "up", "%", now - timedelta(minutes=1)),
-                ]
-            )
-
-            latest_metrics = MetricRepository(db).latest_metric_map()
+        device_id, latest_metrics = run(_latest_metric_map_for_device(SessionLocal, now))
 
         assert latest_metrics[(device_id, "ping")].metric_value == "timeout"
         assert latest_metrics[(device_id, "packet_loss")].metric_value == "0.00"
         assert len(latest_metrics) == 2
     finally:
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        run(_drop_all(engine))
 
 
 def _metric(device_id: int, name: str, value: str, status: str, unit: str | None, checked_at):
@@ -204,3 +123,120 @@ def _metric(device_id: int, name: str, value: str, status: str, unit: str | None
         "unit": unit,
         "checked_at": checked_at,
     }
+
+
+async def _create_all(engine) -> None:
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+
+async def _drop_all(engine) -> None:
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
+
+
+async def _cleanup_old_metrics(session_factory, old_timestamp, recent_timestamp, very_old_timestamp):
+    async with session_factory() as db:
+        device = (
+            await DeviceRepository(db).upsert_devices(
+                [{"name": "AP Meeting Room", "ip_address": "192.168.1.40", "device_type": "access_point"}]
+            )
+        )[0]
+        await MetricRepository(db).create_metrics(
+            [
+                _metric(device.id, "ping", "10.00", "up", "ms", old_timestamp),
+                _metric(device.id, "ping", "20.00", "up", "ms", old_timestamp + timedelta(minutes=1)),
+                _metric(device.id, "ping", "timeout", "down", None, old_timestamp + timedelta(minutes=2)),
+                _metric(device.id, "packet_loss", "33.33", "warning", "%", old_timestamp),
+                _metric(device.id, "packet_loss", "0.00", "up", "%", old_timestamp + timedelta(minutes=1)),
+                _metric(device.id, "jitter", "4.00", "up", "ms", old_timestamp),
+                _metric(device.id, "jitter", "8.00", "up", "ms", old_timestamp + timedelta(minutes=1)),
+                _metric(device.id, "ping", "5.00", "up", "ms", recent_timestamp),
+            ]
+        )
+        db.add_all(
+            [
+                Alert(
+                    device_id=device.id,
+                    alert_type="old_resolved",
+                    severity="warning",
+                    message="old resolved",
+                    status="resolved",
+                    created_at=very_old_timestamp,
+                    resolved_at=very_old_timestamp,
+                ),
+                Alert(
+                    device_id=device.id,
+                    alert_type="old_active",
+                    severity="critical",
+                    message="old active",
+                    status="active",
+                    created_at=very_old_timestamp,
+                ),
+                Incident(
+                    device_id=device.id,
+                    status="resolved",
+                    summary="old resolved",
+                    started_at=very_old_timestamp,
+                    ended_at=very_old_timestamp,
+                ),
+                Incident(
+                    device_id=device.id,
+                    status="active",
+                    summary="old active",
+                    started_at=very_old_timestamp,
+                ),
+            ]
+        )
+        await db.commit()
+
+        result = await cleanup_monitoring_data(db)
+
+        rollups = (await db.scalars(select(MetricDailyRollup))).all()
+        rollup_by_date = {rollup.rollup_date: rollup for rollup in rollups}
+        old_rollup = rollup_by_date[old_timestamp.date()]
+        remaining_metrics = (await db.scalars(select(Metric))).all()
+        remaining_alerts = (await db.scalars(select(Alert))).all()
+        remaining_incidents = (await db.scalars(select(Incident))).all()
+        return result, rollup_by_date, old_rollup, remaining_metrics, remaining_alerts, remaining_incidents
+
+
+async def _cleanup_yesterday_metrics(session_factory, yesterday):
+    async with session_factory() as db:
+        device = (
+            await DeviceRepository(db).upsert_devices(
+                [{"name": "AP Meeting Room", "ip_address": "192.168.1.40", "device_type": "access_point"}]
+            )
+        )[0]
+        await MetricRepository(db).create_metrics(
+            [
+                _metric(device.id, "ping", "10.00", "up", "ms", yesterday),
+                _metric(device.id, "packet_loss", "0.00", "up", "%", yesterday),
+            ]
+        )
+
+        result = await cleanup_monitoring_data(db)
+
+        rollups = (await db.scalars(select(MetricDailyRollup))).all()
+        remaining_metrics = (await db.scalars(select(Metric))).all()
+        return result, rollups, remaining_metrics
+
+
+async def _latest_metric_map_for_device(session_factory, now):
+    async with session_factory() as db:
+        device = (
+            await DeviceRepository(db).upsert_devices(
+                [{"name": "Gateway", "ip_address": "192.168.1.1", "device_type": "internet_target"}]
+            )
+        )[0]
+        device_id = device.id
+        await MetricRepository(db).create_metrics(
+            [
+                _metric(device_id, "ping", "10.00", "up", "ms", now - timedelta(minutes=2)),
+                _metric(device_id, "ping", "timeout", "down", None, now),
+                _metric(device_id, "packet_loss", "0.00", "up", "%", now - timedelta(minutes=1)),
+            ]
+        )
+        latest_metrics = await MetricRepository(db).latest_metric_map()
+        return device_id, latest_metrics

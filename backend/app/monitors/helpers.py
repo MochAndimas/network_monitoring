@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+
 from ping3 import ping
 
 from ..core.config import settings
 from ..services.monitoring_service import utcnow
+
+
+PING_SEMAPHORE = asyncio.Semaphore(max(settings.ping_concurrency_limit, 1))
 
 
 def build_ping_metric(device_id: int, latency_seconds: float | None) -> dict:
@@ -57,8 +62,9 @@ def build_ping_quality_metrics(device_id: int, samples: list[float | None]) -> l
     ]
 
 
-def collect_ping_samples(ip_address: str) -> list[float | None]:
-    return [safe_ping(ip_address) for _ in range(max(settings.ping_sample_count, 1))]
+async def collect_ping_samples(ip_address: str) -> list[float | None]:
+    sample_count = max(settings.ping_sample_count, 1)
+    return list(await asyncio.gather(*[safe_ping(ip_address) for _ in range(sample_count)]))
 
 
 def latest_successful_ping(samples: list[float | None]) -> float | None:
@@ -66,9 +72,10 @@ def latest_successful_ping(samples: list[float | None]) -> float | None:
     return successful_samples[-1] if successful_samples else None
 
 
-def safe_ping(ip_address: str) -> float | None:
+async def safe_ping(ip_address: str) -> float | None:
     try:
-        return ping(ip_address, timeout=settings.ping_timeout_seconds)
+        async with PING_SEMAPHORE:
+            return await asyncio.to_thread(ping, ip_address, timeout=settings.ping_timeout_seconds)
     except OSError:
         return None
 

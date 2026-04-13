@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from components.api import get_json, post_json
+from components.api import get_json_map, post_json
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
@@ -122,19 +122,28 @@ def _prepare_incidents_frame(incidents: list[dict]) -> pd.DataFrame:
 
 
 def _render_overview_body() -> None:
-    summary = get_json(
-        "/dashboard/summary",
+    payload = get_json_map(
         {
-            "internet_status": "unknown",
-            "mikrotik_status": "unknown",
-            "server_status": "unknown",
-            "active_alerts": 0,
-        },
+            "summary": (
+                "/dashboard/summary",
+                {
+                    "internet_status": "unknown",
+                    "mikrotik_status": "unknown",
+                    "server_status": "unknown",
+                    "active_alerts": 0,
+                },
+            ),
+            "devices": ("/devices", []),
+            "alerts": ("/alerts/active", []),
+            "incidents": ("/incidents?status=active", []),
+            "recent_history": ("/metrics/history?limit=100", []),
+        }
     )
-    devices = get_json("/devices", [])
-    alerts = get_json("/alerts/active", [])
-    incidents = get_json("/incidents?status=active", [])
-    recent_history = get_json("/metrics/history?limit=100", [])
+    summary = payload["summary"]
+    devices = payload["devices"]
+    alerts = payload["alerts"]
+    incidents = payload["incidents"]
+    recent_history = payload["recent_history"]
 
     devices_frame = _prepare_devices_frame(devices)
     alerts_frame = _prepare_alerts_frame(alerts)

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.schemas import DashboardSummary
 from ...db.session import get_db
@@ -9,5 +9,5 @@ router = APIRouter()
 
 
 @router.get("/summary", response_model=DashboardSummary)
-async def get_summary(db: Session = Depends(get_db)) -> DashboardSummary:
-    return DashboardSummary(**build_dashboard_summary(db))
+async def get_summary(db: AsyncSession = Depends(get_db)) -> DashboardSummary:
+    return DashboardSummary(**await build_dashboard_summary(db))

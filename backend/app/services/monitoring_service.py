@@ -1,75 +1,60 @@
 from __future__ import annotations
 
-from collections import defaultdict
+import logging
 from datetime import datetime, timezone
+from time import perf_counter
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.alert_repository import AlertRepository
 from ..repositories.device_repository import DeviceRepository
 from ..repositories.metric_repository import MetricRepository
 
 
+logger = logging.getLogger("network_monitoring.service")
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def persist_metrics(db: Session, metrics: list[dict]) -> list:
-    return MetricRepository(db).create_metrics(metrics)
+async def persist_metrics(db: AsyncSession, metrics: list[dict]) -> list:
+    return await MetricRepository(db).create_metrics(metrics)
 
 
-def latest_metric_snapshot(db: Session) -> dict[tuple[int, str], object]:
-    return MetricRepository(db).latest_metric_map()
+async def build_dashboard_summary(db: AsyncSession) -> dict:
+    started_at = perf_counter()
+    grouped_statuses = await DeviceRepository(db).summarize_active_device_statuses()
+    active_alerts = await AlertRepository(db).count_active_alerts()
 
-
-def status_rollup(statuses: list[str]) -> str:
-    if not statuses:
-        return "unknown"
-    if any(status in {"down", "critical", "error"} for status in statuses):
-        return "down"
-    if any(status in {"warning", "degraded", "unavailable"} for status in statuses):
-        return "warning"
-    if all(status in {"up", "healthy", "ok"} for status in statuses):
-        return "up"
-    return statuses[0]
-
-
-def build_device_status_rows(db: Session) -> list[dict]:
-    devices = DeviceRepository(db).list_devices(active_only=False)
-    latest_metrics = latest_metric_snapshot(db)
-
-    rows: list[dict] = []
-    for device in devices:
-        ping_metric = latest_metrics.get((device.id, "ping"))
-        rows.append(
-            {
-                "id": device.id,
-                "name": device.name,
-                "ip_address": device.ip_address,
-                "device_type": device.device_type,
-                "site": device.site,
-                "description": device.description,
-                "is_active": device.is_active,
-                "latest_status": getattr(ping_metric, "status", None) or "unknown",
-                "latest_checked_at": getattr(ping_metric, "checked_at", None),
-            }
-        )
-    return rows
-
-
-def build_dashboard_summary(db: Session) -> dict:
-    devices = DeviceRepository(db).list_devices(active_only=True)
-    latest_metrics = latest_metric_snapshot(db)
-
-    grouped_statuses: dict[str, list[str]] = defaultdict(list)
-    for device in devices:
-        metric = latest_metrics.get((device.id, "ping"))
-        if metric is not None:
-            grouped_statuses[device.device_type].append(metric.status or "unknown")
-
-    return {
-        "internet_status": status_rollup(grouped_statuses.get("internet_target", [])),
-        "mikrotik_status": status_rollup(grouped_statuses.get("mikrotik", [])),
-        "server_status": status_rollup(grouped_statuses.get("server", [])),
-        "active_alerts": AlertRepository(db).count_active_alerts(),
+    summary = {
+        "internet_status": status_rollup_from_counts(grouped_statuses.get("internet_target")),
+        "mikrotik_status": status_rollup_from_counts(grouped_statuses.get("mikrotik")),
+        "server_status": status_rollup_from_counts(grouped_statuses.get("server")),
+        "active_alerts": active_alerts,
     }
+    logger.info(
+        "build_dashboard_summary_completed duration_ms=%.2f internet=%s mikrotik=%s server=%s active_alerts=%s",
+        (perf_counter() - started_at) * 1000,
+        summary["internet_status"],
+        summary["mikrotik_status"],
+        summary["server_status"],
+        summary["active_alerts"],
+    )
+    return summary
+
+
+def status_rollup_from_counts(status_counts: dict[str, int] | None) -> str:
+    if not status_counts:
+        return "unknown"
+
+    normalized = {str(status).lower(): count for status, count in status_counts.items() if count}
+    if not normalized:
+        return "unknown"
+    if any(status in {"down", "critical", "error"} for status in normalized):
+        return "down"
+    if any(status in {"warning", "degraded", "unavailable"} for status in normalized):
+        return "warning"
+    if all(status in {"up", "healthy", "ok"} for status in normalized):
+        return "up"
+    return next(iter(normalized))

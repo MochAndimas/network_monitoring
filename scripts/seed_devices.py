@@ -12,11 +12,16 @@ SEED_DEVICES = [
 
 
 if __name__ == "__main__":
+    import asyncio
+
     from backend.app.db.init_db import init_db
     from backend.app.db.session import SessionLocal
     from backend.app.repositories.device_repository import DeviceRepository
 
-    init_db()
-    with SessionLocal() as db:
-        devices = DeviceRepository(db).upsert_devices(SEED_DEVICES)
-    print(f"Seeded {len(devices)} devices.")
+    async def main() -> None:
+        await init_db()
+        async with SessionLocal() as db:
+            devices = await DeviceRepository(db).upsert_devices(SEED_DEVICES)
+        print(f"Seeded {len(devices)} devices.")
+
+    asyncio.run(main())
