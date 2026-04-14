@@ -97,3 +97,30 @@ async def get_metrics_history_paged(
         ],
         meta=PageMeta(total=total, limit=limit, offset=offset),
     )
+
+
+@router.get("/latest-snapshot/paged", response_model=MetricHistoryPage)
+async def get_latest_metrics_snapshot_paged(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> MetricHistoryPage:
+    metrics = await MetricRepository(db).list_latest_metric_rows(limit=limit, offset=offset)
+    total = await MetricRepository(db).count_latest_metrics()
+    return MetricHistoryPage(
+        items=[
+            MetricHistoryItem(
+                id=metric["id"],
+                device_id=metric["device_id"],
+                device_name=metric["device_name"],
+                metric_name=metric["metric_name"],
+                metric_value=metric["metric_value"],
+                metric_value_numeric=metric["metric_value_numeric"],
+                status=metric["status"],
+                unit=metric["unit"],
+                checked_at=metric["checked_at"],
+            )
+            for metric in metrics
+        ],
+        meta=PageMeta(total=total, limit=limit, offset=offset),
+    )

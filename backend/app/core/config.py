@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    database_url: str = "postgresql+psycopg://network_monitoring:change-me@localhost:5432/network_monitoring"
+    database_url: str = "mysql+pymysql://network_monitoring:change-me@localhost:3306/network_monitoring"
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     mikrotik_host: str = ""

@@ -10,7 +10,7 @@ Project monitoring internal untuk:
 
 ## Stack
 - FastAPI
-- PostgreSQL
+- MySQL
 - SQLAlchemy
 - APScheduler
 - Streamlit
@@ -48,10 +48,10 @@ python -m pip install -r requirements.txt
 copy .env.example .env
 ```
 
-4. Jalankan PostgreSQL
+4. Jalankan MySQL
 
 ```bash
-docker compose up -d postgres
+docker compose up -d mysql
 ```
 
 5. Jalankan migration database untuk setup lokal tanpa Docker Compose
@@ -125,12 +125,12 @@ docker compose up --build
 ```
 
 Service default:
-- PostgreSQL di `localhost:5432`
+- MySQL di `localhost:3306`
 - FastAPI backend di `http://localhost:8000`
 - Streamlit dashboard di `http://localhost:8501`
 
 Saat backend container start, entrypoint menjalankan `alembic upgrade head` otomatis sebelum Uvicorn.
-Compose juga memakai healthcheck: backend menunggu PostgreSQL sehat, dashboard menunggu backend sehat,
+Compose juga memakai healthcheck: backend menunggu MySQL sehat, dashboard menunggu backend sehat,
 dan `/health` akan mengembalikan HTTP 503 kalau database belum siap.
 Di `APP_ENV=production`, backend tidak menjalankan `create_all()` saat startup; schema database
 dikelola lewat Alembic migration.

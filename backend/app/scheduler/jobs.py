@@ -113,12 +113,14 @@ async def run_cleanup_job() -> None:
 
 
 async def _persist_runner(runner) -> None:
-    async with monitoring_pipeline_guard(wait=False) as acquired:
-        if not acquired:
-            logger.info("Skipping %s because another monitoring pipeline run is active", runner.__name__)
-            return
+    # Metric jobs share one pipeline lock so they don't trample each other,
+    # but they should queue instead of being dropped when schedules overlap.
+    async with monitoring_pipeline_guard(wait=True) as acquired:
         async with SessionLocal() as db:
             await persist_metrics(db, await runner(db))
+            # Re-evaluate alerts immediately after fresh metrics land so alerting
+            # doesn't get starved by the separate scheduler tick.
+            await evaluate_alerts(db)
 
 
 def _misfire_grace_time(period_seconds: int) -> int:

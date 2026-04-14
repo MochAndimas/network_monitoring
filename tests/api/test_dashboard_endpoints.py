@@ -419,6 +419,59 @@ def test_metrics_history_supports_time_window_filters():
         assert len(paged_payload["items"]) == 1
 
 
+def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [
+                        {"name": "AP Alpha", "ip_address": "192.168.1.40", "device_type": "access_point"},
+                        {"name": "Printer Bravo", "ip_address": "192.168.1.50", "device_type": "printer"},
+                    ]
+                )
+                now = utcnow()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "ping",
+                            "metric_value": "30.00",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": now - timedelta(minutes=5),
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "ping",
+                            "metric_value": "10.00",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": now,
+                        },
+                        {
+                            "device_id": devices[1].id,
+                            "metric_name": "ping",
+                            "metric_value": "timeout",
+                            "status": "down",
+                            "unit": None,
+                            "checked_at": now,
+                        },
+                    ]
+                )
+
+        run(scenario())
+
+        response = client.get("/metrics/latest-snapshot/paged?limit=1&offset=0")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["meta"]["total"] == 2
+        assert payload["meta"]["limit"] == 1
+        assert len(payload["items"]) == 1
+        assert payload["items"][0]["device_name"] == "AP Alpha"
+        assert payload["items"][0]["metric_value"] == "10.00"
+
+
 def test_run_cycle_creates_alerts_and_incidents():
     with client_context() as (client, session_factory):
         internet_device_id = run(

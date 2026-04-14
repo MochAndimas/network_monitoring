@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 
-from sqlalchemy import Select, desc, distinct, func, select
+from sqlalchemy import Select, and_, case, desc, distinct, func, select
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -110,6 +110,97 @@ class MetricRepository:
         if checked_to is not None:
             query = query.where(Metric.checked_at <= checked_to)
         return int(await self.db.scalar(query) or 0)
+
+    async def list_latest_metric_rows(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        internet_target_name_priority = case(
+            (
+                and_(
+                    Device.device_type == "internet_target",
+                    func.lower(Device.name).like("%myrepublic%"),
+                ),
+                0,
+            ),
+            (
+                and_(
+                    Device.device_type == "internet_target",
+                    func.lower(Device.name).like("%isp%"),
+                ),
+                1,
+            ),
+            (
+                and_(
+                    Device.device_type == "internet_target",
+                    func.lower(Device.name).like("%mikrotik%"),
+                ),
+                3,
+            ),
+            (
+                Device.device_type == "internet_target",
+                2,
+            ),
+            else_=4,
+        )
+        device_type_priority = case(
+            (Device.device_type == "internet_target", 0),
+            (Device.device_type == "mikrotik", 1),
+            (Device.device_type == "access_point", 2),
+            else_=3,
+        )
+        ranked_metrics = (
+            select(
+                Metric.id.label("metric_id"),
+                func.row_number()
+                .over(
+                    partition_by=(Metric.device_id, Metric.metric_name),
+                    order_by=(desc(Metric.checked_at), desc(Metric.id)),
+                )
+                .label("row_number"),
+            )
+            .subquery()
+        )
+        query = (
+            select(
+                Metric.id,
+                Metric.device_id,
+                Device.name.label("device_name"),
+                Metric.metric_name,
+                Metric.metric_value,
+                Metric.status,
+                Metric.unit,
+                Metric.checked_at,
+            )
+            .join(ranked_metrics, Metric.id == ranked_metrics.c.metric_id)
+            .outerjoin(Device, Device.id == Metric.device_id)
+            .where(ranked_metrics.c.row_number == 1)
+            .order_by(
+                device_type_priority.asc(),
+                internet_target_name_priority.asc(),
+                Device.name.asc(),
+                Metric.metric_name.asc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+        rows = (await self.db.execute(query)).all()
+        return [
+            {
+                "id": row.id,
+                "device_id": row.device_id,
+                "device_name": row.device_name or "Unknown Device",
+                "metric_name": row.metric_name,
+                "metric_value": row.metric_value,
+                "metric_value_numeric": _safe_float(row.metric_value),
+                "status": row.status,
+                "unit": row.unit,
+                "checked_at": row.checked_at,
+            }
+            for row in rows
+        ]
 
     async def list_latest_metrics(self) -> list[Metric]:
         ranked_metrics = (

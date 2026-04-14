@@ -11,6 +11,10 @@ from ..core.config import settings
 def _async_database_url(database_url: str) -> str:
     if database_url.startswith("sqlite:///") and not database_url.startswith("sqlite+aiosqlite:///"):
         return database_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+    if database_url.startswith("mysql+pymysql://"):
+        return database_url.replace("mysql+pymysql://", "mysql+aiomysql://", 1)
+    if database_url.startswith("mysql://"):
+        return database_url.replace("mysql://", "mysql+aiomysql://", 1)
     return database_url
 
 
