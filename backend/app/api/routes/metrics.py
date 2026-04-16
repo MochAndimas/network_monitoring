@@ -124,3 +124,19 @@ async def get_latest_metrics_snapshot_paged(
         ],
         meta=PageMeta(total=total, limit=limit, offset=offset),
     )
+
+
+@router.get("/latest-snapshot/status-summary", response_model=dict[str, int])
+async def get_latest_snapshot_status_summary(
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, int]:
+    return await MetricRepository(db).summarize_latest_snapshot_status_counts()
+
+
+@router.get("/latest-snapshot/uptime-map", response_model=dict[str, str])
+async def get_latest_snapshot_uptime_map(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    return await MetricRepository(db).latest_snapshot_uptime_map(limit=limit, offset=offset)

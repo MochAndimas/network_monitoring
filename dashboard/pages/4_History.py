@@ -14,7 +14,7 @@ st.set_page_config(page_title="History", layout="wide", initial_sidebar_state="c
 collapse_sidebar_on_page_load()
 
 
-STATUS_OPTIONS = ["All", "up", "down", "ok", "error", "warning"]
+STATUS_OPTIONS = ["All", "up", "down", "ok", "error", "warning", "unknown"]
 CHART_WINDOW_OPTIONS = {
     "1 jam": 1,
     "6 jam": 6,
@@ -22,13 +22,20 @@ CHART_WINDOW_OPTIONS = {
     "24 jam": 24,
     "7 hari": 24 * 7,
 }
-HISTORY_CSS = """
+def _history_css() -> str:
+    return """
 <style>
 .stMainBlockContainer,
 [data-testid="stAppViewContainer"] .main .block-container {
     max-width: 100%;
     padding-left: 2rem;
     padding-right: 2rem;
+}
+.history-meta,
+.printer-panel,
+.printer-status-chip,
+.printer-ink-card {
+    color: var(--text-color);
 }
 .history-meta {
     display: flex;
@@ -37,32 +44,33 @@ HISTORY_CSS = """
     margin: 0.3rem 0 1.1rem 0;
 }
 .history-pill {
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.03);
+    border: 1px solid color-mix(in srgb, var(--text-color) 18%, transparent);
+    background: transparent;
     border-radius: 999px;
     padding: 0.45rem 0.8rem;
     font-size: 0.9rem;
-    color: rgba(250,250,250,0.8);
-}
-.history-card {
-    border: 1px solid rgba(255,255,255,0.08);
-    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
-    border-radius: 18px;
-    padding: 1rem 1rem 0.95rem 1rem;
-    min-height: 118px;
-    margin-bottom: 0.35rem;
+    color: color-mix(in srgb, var(--text-color) 58%, transparent);
 }
 .history-card-label {
     font-size: 0.9rem;
     line-height: 1.35;
-    color: rgba(250,250,250,0.72);
+    color: color-mix(in srgb, var(--text-color) 72%, transparent);
     margin-bottom: 0.6rem;
+}
+.history-card-content {
+    display: flex;
+    min-height: 92px;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+.history-card-content p {
+    margin: 0;
 }
 .history-card-value {
     font-size: clamp(1.35rem, 2vw, 2.5rem);
     line-height: 1.08;
     font-weight: 700;
-    color: #f8fafc;
+    color: var(--text-color);
     white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -71,26 +79,97 @@ HISTORY_CSS = """
     font-size: clamp(1rem, 1.35vw, 1.4rem);
     line-height: 1.25;
 }
-.history-note {
-    border: 1px solid rgba(255,255,255,0.08);
-    background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.015));
-    border-radius: 18px;
-    padding: 1rem 1.1rem;
+.printer-panel {
+    border: 1px solid color-mix(in srgb, var(--text-color) 18%, transparent);
+    background: transparent;
+    border-radius: 22px;
+    padding: 1.25rem 1.25rem 1.1rem 1.25rem;
     margin: 0.25rem 0 1rem 0;
+    box-shadow: none;
 }
-.history-note-title {
-    font-size: 0.95rem;
+.printer-panel-title {
+    font-size: 1.05rem;
     font-weight: 700;
+    color: var(--text-color);
     margin-bottom: 0.35rem;
-    color: #f8fafc;
 }
-.history-note-body {
-    font-size: 0.95rem;
+.printer-panel-subtitle {
+    font-size: 0.92rem;
     line-height: 1.5;
-    color: rgba(250,250,250,0.78);
+    color: color-mix(in srgb, var(--text-color) 72%, transparent);
+    margin-bottom: 1rem;
+}
+.printer-status-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.85rem;
+    margin-bottom: 0.9rem;
+}
+.printer-status-chip-label {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: color-mix(in srgb, var(--text-color) 58%, transparent);
+    margin-bottom: 0.7rem;
+}
+.printer-status-chip-value {
+    font-size: clamp(1.05rem, 1.45vw, 1.4rem);
+    font-weight: 700;
+    color: var(--text-color);
+    line-height: 1.3;
+    min-height: 2.25rem;
+    display: flex;
+    align-items: flex-start;
+}
+.printer-status-chip-meta {
+    margin-top: auto;
+    font-size: 0.8rem;
+    color: color-mix(in srgb, var(--text-color) 72%, transparent);
+    line-height: 1.5;
+}
+.printer-status-chip-content {
+    display: flex;
+    min-height: 112px;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0.15rem;
+}
+.printer-status-chip-content p {
+    margin: 0;
+}
+.printer-ink-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.85rem;
+}
+.printer-ink-card {
+    border-radius: 18px;
+    padding: 1rem;
+    border: 1px solid color-mix(in srgb, var(--text-color) 18%, transparent);
+    background: transparent;
+    box-shadow: none;
+}
+.printer-ink-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    margin-bottom: 0.7rem;
+    border: 1px solid color-mix(in srgb, var(--text-color) 16%, transparent);
+}
+.printer-ink-value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text-color);
+    line-height: 1.1;
+}
+.printer-ink-caption {
+    margin-top: 0.35rem;
+    font-size: 0.85rem;
+    color: color-mix(in srgb, var(--text-color) 72%, transparent);
 }
 </style>
 """
+
 METRIC_LABELS = {
     "ping": ("Ping Latency", "Waktu respon ping ke device/target."),
     "packet_loss": ("Packet Loss", "Persentase paket ping yang gagal sampai ke target."),
@@ -105,7 +184,23 @@ METRIC_LABELS = {
     "boot_time_epoch": ("Boot Time", "Waktu boot terakhir dalam epoch timestamp."),
     "interfaces_running": ("Active Interfaces", "Jumlah interface Mikrotik yang sedang running."),
     "mikrotik_api": ("Mikrotik API Status", "Status koneksi ke API Mikrotik."),
+    "printer_uptime_seconds": ("Printer Uptime", "Durasi hidup printer sejak reboot terakhir."),
+    "printer_status": ("Printer Status", "Status umum printer dari SNMP Host Resources MIB."),
+    "printer_error_state": ("Printer Error State", "Bitmask error printer yang sudah diterjemahkan ke label operasional."),
+    "printer_ink_status": ("Ink Status", "Status tinta overall yang diturunkan dari status/error printer."),
+    "printer_paper_status": ("Paper Status", "Kondisi kertas/tray printer berdasarkan SNMP."),
+    "printer_total_pages": ("Total Pages", "Counter total halaman yang sudah tercetak."),
 }
+PRINTER_METRIC_NAMES = [
+    "printer_uptime_seconds",
+    "printer_status",
+    "printer_error_state",
+    "printer_ink_status",
+    "printer_paper_status",
+    "printer_total_pages",
+]
+INTERNET_ONLY_METRICS = {"dns_resolution_time", "http_response_time", "public_ip"}
+PRINTER_DETAIL_ONLY_METRICS = {"printer_uptime_seconds", "printer_total_pages"}
 
 
 def _format_device_label(device: dict) -> str:
@@ -141,6 +236,17 @@ def _default_device_option_label(devices: list[dict]) -> str:
 
 
 def _format_metric_value(row: pd.Series) -> str:
+    metric_name = str(row.get("metric_name") or "")
+    metric_value = row.get("metric_value")
+    metric_value_numeric = row.get("metric_value_numeric")
+    if metric_name == "printer_uptime_seconds" and pd.notna(metric_value_numeric):
+        return _format_duration(pd.Timedelta(seconds=float(metric_value_numeric)))
+    if metric_name == "printer_total_pages" and pd.notna(metric_value_numeric):
+        return f"{int(metric_value_numeric):,} pages"
+    if metric_name == "printer_ink_status":
+        return _humanize_printer_text(str(metric_value or "-"))
+    if metric_name in {"printer_status", "printer_error_state", "printer_paper_status"}:
+        return _humanize_printer_text(str(metric_value or "-"))
     unit = f' {row["unit"]}' if row.get("unit") else ""
     return f'{row["metric_value"]}{unit}'
 
@@ -149,14 +255,53 @@ def _friendly_metric_name(metric_name: str) -> str:
     return METRIC_LABELS.get(metric_name, (metric_name.replace("_", " ").title(), ""))[0]
 
 
-def _metric_description(metric_name: str) -> str:
-    return METRIC_LABELS.get(metric_name, ("", "Metric monitoring."))[1]
-
-
 def _metric_filter_label(metric_name: str) -> str:
     if metric_name == "All Metrics":
         return metric_name
     return f"{_friendly_metric_name(metric_name)} ({metric_name})"
+
+
+def _humanize_printer_text(value: str) -> str:
+    normalized = value.replace(",", ", ").replace("_", " ").strip()
+    if not normalized:
+        return "-"
+    return normalized.title()
+
+
+def _is_mikrotik_device(device_type: str | None, device_name: str | None) -> bool:
+    normalized_type = str(device_type or "").lower()
+    normalized_name = str(device_name or "").lower()
+    return normalized_type == "mikrotik" or "mikrotik" in normalized_name
+
+
+def _should_hide_metric_for_device(metric_name: str, device_type: str | None, device_name: str | None) -> bool:
+    return _is_mikrotik_device(device_type, device_name) and metric_name in INTERNET_ONLY_METRICS
+
+
+def _filter_metric_names(metric_names: list[str], device_type: str | None, device_name: str | None = None) -> list[str]:
+    return [
+        metric_name
+        for metric_name in metric_names
+        if not _should_hide_metric_for_device(metric_name, device_type, device_name)
+        and not (device_type == "printer" and metric_name in PRINTER_DETAIL_ONLY_METRICS)
+    ]
+
+
+def _filter_history_rows(
+    rows: list[dict],
+    device_type_by_id: dict[int, str],
+    device_name_by_id: dict[int, str],
+) -> list[dict]:
+    filtered_rows: list[dict] = []
+    for row in rows:
+        device_id = int(row.get("device_id", 0) or 0)
+        device_type = device_type_by_id.get(device_id)
+        device_name = device_name_by_id.get(device_id) or str(row.get("device_name") or "")
+        metric_name = str(row.get("metric_name") or "")
+        if _should_hide_metric_for_device(metric_name, device_type, device_name):
+            continue
+        filtered_rows.append(row)
+    return filtered_rows
 
 
 def _y_axis_label(metric_name: str, unit: str | None) -> str:
@@ -185,44 +330,6 @@ def _format_duration(delta: pd.Timedelta | None) -> str:
     return " ".join(parts)
 
 
-def _status_rollup(statuses: list[str]) -> str:
-    normalized = [str(status).lower() for status in statuses if status]
-    if not normalized:
-        return "unknown"
-    if any(status in {"down", "critical", "error"} for status in normalized):
-        return "down"
-    if any(status in {"warning", "degraded", "unavailable"} for status in normalized):
-        return "warning"
-    if all(status in {"up", "healthy", "ok"} for status in normalized):
-        return "up"
-    return normalized[0]
-
-
-def _continuous_up_duration(series_frame: pd.DataFrame) -> str:
-    if series_frame.empty:
-        return "-"
-    ordered = series_frame.sort_values("checked_at").copy()
-    latest_row = ordered.iloc[-1]
-    latest_status = str(latest_row.get("status") or "").lower()
-    if latest_status not in {"up", "ok"}:
-        return "-"
-
-    consecutive_rows = []
-    for _, row in ordered.iloc[::-1].iterrows():
-        status = str(row.get("status") or "").lower()
-        if status in {"up", "ok"}:
-            consecutive_rows.append(row)
-            continue
-        break
-
-    if not consecutive_rows:
-        return "-"
-
-    oldest_consecutive = consecutive_rows[-1]
-    duration = latest_row["checked_at"] - oldest_consecutive["checked_at"]
-    return _format_duration(duration)
-
-
 def _prepare_history_frame(history: list[dict], *, sort_desc: bool = True) -> pd.DataFrame:
     dataframe = pd.DataFrame(history)
     if dataframe.empty:
@@ -235,9 +342,58 @@ def _prepare_history_frame(history: list[dict], *, sort_desc: bool = True) -> pd
         dataframe = dataframe.copy()
     dataframe["metric_label"] = dataframe["metric_name"].map(lambda name: _friendly_metric_name(name))
     dataframe["checked_at_wib"] = dataframe["checked_at"].map(format_wib_timestamp)
-    unit_series = dataframe["unit"].fillna("")
-    dataframe["display_value"] = dataframe["metric_value"] + unit_series.map(lambda unit: f" {unit}" if unit else "")
+    dataframe["display_value"] = dataframe.apply(_format_metric_value, axis=1)
     return dataframe
+
+
+def _fetch_device_history_rows(
+    *,
+    device_id: int,
+    checked_from_date,
+    checked_to_date,
+    metric_names: list[str] | None = None,
+    status: str | None = None,
+) -> list[dict]:
+    if metric_names:
+        items: list[dict] = []
+        for metric_name in metric_names:
+            items.extend(
+                _fetch_metric_series(
+                    device_id=device_id,
+                    metric_name=metric_name,
+                    status=status,
+                    checked_from_date=checked_from_date,
+                    checked_to_date=checked_to_date,
+                )
+            )
+        return items
+
+    page_size = 500
+    offset = 0
+    items: list[dict] = []
+    while True:
+        query_params = {
+            "limit": page_size,
+            "offset": offset,
+            "device_id": device_id,
+        }
+        if status and status != "All":
+            query_params["status"] = status
+        if checked_from_date:
+            query_params["checked_from"] = datetime.combine(checked_from_date, time.min).isoformat()
+        if checked_to_date:
+            query_params["checked_to"] = datetime.combine(checked_to_date, time.max).isoformat()
+        payload = get_json(f"/metrics/history/paged?{urlencode(query_params)}", {"items": [], "meta": {}})
+        page_items = paged_items(payload)
+        if not page_items:
+            break
+        items.extend(page_items)
+        meta = paged_meta(payload)
+        offset += len(page_items)
+        total = int(meta.get("total", 0) or 0)
+        if offset >= total:
+            break
+    return items
 
 
 def _fetch_metric_series(
@@ -267,48 +423,6 @@ def _fetch_metric_series(
             query_params["checked_to"] = datetime.combine(checked_to_date, time.max).isoformat()
 
         payload = get_json(f"/metrics/history/paged?{urlencode(query_params)}", {"items": [], "meta": {}})
-        page_items = paged_items(payload)
-        if not page_items:
-            break
-
-        items.extend(page_items)
-        meta = paged_meta(payload)
-        offset += len(page_items)
-        total = int(meta.get("total", 0) or 0)
-        if offset >= total:
-            break
-
-    return items
-
-
-def _fetch_latest_snapshot_rows() -> list[dict]:
-    page_size = 500
-    offset = 0
-    items: list[dict] = []
-
-    while True:
-        payload = get_json(f"/metrics/latest-snapshot/paged?limit={page_size}&offset={offset}", {"items": [], "meta": {}})
-        page_items = paged_items(payload)
-        if not page_items:
-            break
-
-        items.extend(page_items)
-        meta = paged_meta(payload)
-        offset += len(page_items)
-        total = int(meta.get("total", 0) or 0)
-        if offset >= total:
-            break
-
-    return items
-
-
-def _fetch_all_history_rows() -> list[dict]:
-    page_size = 500
-    offset = 0
-    items: list[dict] = []
-
-    while True:
-        payload = get_json(f"/metrics/history/paged?limit={page_size}&offset={offset}", {"items": [], "meta": {}})
         page_items = paged_items(payload)
         if not page_items:
             break
@@ -369,7 +483,6 @@ def _render_metric_trend_section(
     metric_name = latest_metric_row["metric_name"]
     metric_device_name = latest_metric_row["device_name"]
     metric_label = _friendly_metric_name(metric_name)
-    metric_description = _metric_description(metric_name)
     chart_min = float(chart_metric_frame["metric_value_numeric"].min())
     chart_max = float(chart_metric_frame["metric_value_numeric"].max())
     chart_avg = float(chart_metric_frame["metric_value_numeric"].mean())
@@ -435,34 +548,114 @@ def _render_metric_trend_section(
     container.altair_chart(chart, width="stretch")
 
 
-def _build_uptime_map(dataframe: pd.DataFrame) -> dict[tuple[str, str], str]:
-    uptime_map: dict[tuple[str, str], str] = {}
-    for (device_name, metric_name), series_frame in dataframe.groupby(["device_name", "metric_name"], sort=False):
-        uptime_map[(device_name, metric_name)] = _continuous_up_duration(
-            series_frame.sort_values("checked_at", ascending=True)
-        )
-    return uptime_map
-
-
 def _render_stat_card(column, label: str, value: str | int, *, compact: bool = False) -> None:
     value_class = "history-card-value compact" if compact else "history-card-value"
-    column.markdown(
-        f"""
-        <div class="history-card">
-            <div class="history-card-label">{label}</div>
-            <div class="{value_class}">{value}</div>
+    with column.container(border=True):
+        st.markdown(
+            f"""
+            <div class="history-card-content">
+                <div class="history-card-label">{label}</div>
+                <div class="{value_class}">{value}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def _latest_metric_snapshot_map(dataframe: pd.DataFrame) -> dict[str, pd.Series]:
+    if dataframe.empty:
+        return {}
+    latest_rows = dataframe.sort_values("checked_at").drop_duplicates(subset=["metric_name"], keep="last")
+    return {str(row["metric_name"]): row for _, row in latest_rows.iterrows()}
+
+
+def _printer_chip(label: str, value: str, meta: str = "") -> str:
+    meta_markup = f'<div class="printer-status-chip-meta">{meta}</div>' if meta else ""
+    return f"""
+    <div class="printer-status-chip-content">
+        <div class="printer-status-chip-label">{label}</div>
+        <div class="printer-status-chip-value">{value}</div>
+        {meta_markup}
+    </div>
+    """
+
+
+def _render_printer_history_section(
+    printer_history_frame: pd.DataFrame,
+) -> None:
+    if printer_history_frame.empty:
+        st.info("Belum ada metric printer SNMP yang tersimpan untuk device ini.")
+        return
+
+    latest_map = _latest_metric_snapshot_map(printer_history_frame)
+    status_row = latest_map.get("printer_status")
+    error_row = latest_map.get("printer_error_state")
+    ink_status_row = latest_map.get("printer_ink_status")
+    paper_row = latest_map.get("printer_paper_status")
+    uptime_row = latest_map.get("printer_uptime_seconds")
+    pages_row = latest_map.get("printer_total_pages")
+    st.markdown(
+        """
+        <div class="printer-panel">
+            <div class="printer-panel-title">Printer Health</div>
+            <div class="printer-panel-subtitle">
+                Ringkasan cepat untuk status printer, deteksi gangguan, uptime sejak reboot, dan counter halaman.
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    status_columns = st.columns(6)
+    status_cards = [
+        (
+            "Overall Status",
+            str(status_row["display_value"]) if status_row is not None else "-",
+            f"Status metric: {str(status_row['status']).upper()}" if status_row is not None else "",
+        ),
+        (
+            "Error State",
+            str(error_row["display_value"]) if error_row is not None else "-",
+            f"Severity: {str(error_row['status']).upper()}" if error_row is not None else "",
+        ),
+        (
+            "Paper Status",
+            str(paper_row["display_value"]) if paper_row is not None else "-",
+            f"Status metric: {str(paper_row['status']).upper()}" if paper_row is not None else "",
+        ),
+        (
+            "Ink Status",
+            str(ink_status_row["display_value"]) if ink_status_row is not None else "-",
+            "Overall consumable state dari printer",
+        ),
+        (
+            "Uptime",
+            str(uptime_row["display_value"]) if uptime_row is not None else "-",
+            "Dipakai untuk deteksi reboot",
+        ),
+        (
+            "Total Pages",
+            str(pages_row["display_value"]) if pages_row is not None else "-",
+            "Counter akumulatif printer",
+        ),
+    ]
+    for column, (label, value, meta) in zip(status_columns, status_cards, strict=False):
+        with column.container(border=True):
+            st.markdown(_printer_chip(label, value, meta), unsafe_allow_html=True)
 
-
-st.markdown(HISTORY_CSS, unsafe_allow_html=True)
+st.markdown(_history_css(), unsafe_allow_html=True)
 st.title("History")
 st.caption("Halaman ini menampilkan histori pengecekan metric. Pilih device dan metric supaya grafik lebih jelas dibaca.")
 
 devices_payload = get_json("/devices/paged?active_only=false&limit=1000&offset=0", {"items": [], "meta": {}})
 devices = paged_items(devices_payload)
+device_type_by_id = {
+    int(device["id"]): str(device.get("device_type") or "")
+    for device in devices
+}
+device_name_by_id = {
+    int(device["id"]): str(device.get("name") or "")
+    for device in devices
+}
 device_options = {"All Devices": None}
 for device in devices:
     device_options[_format_device_label(device)] = device["id"]
@@ -490,11 +683,26 @@ def _render_history_body() -> None:
         key="history_selected_device",
     )
     selected_device_id = device_options[selected_device]
+    selected_device_record = next((device for device in devices if device["id"] == selected_device_id), None)
+    selected_device_type = str(selected_device_record.get("device_type")) if selected_device_record else None
     metric_option_params = {}
     if selected_device_id is not None:
         metric_option_params["device_id"] = selected_device_id
     metric_option_query = f"?{urlencode(metric_option_params)}" if metric_option_params else ""
     metric_name_options = get_json(f"/metrics/names{metric_option_query}", [])
+    metric_name_options = _filter_metric_names(
+        metric_name_options,
+        selected_device_type,
+        selected_device_record.get("name") if selected_device_record else None,
+    )
+    if (
+        _is_mikrotik_device(
+            selected_device_type,
+            selected_device_record.get("name") if selected_device_record else None,
+        )
+        and st.session_state.get("history_selected_metric") in INTERNET_ONLY_METRICS
+    ):
+        st.session_state["history_selected_metric"] = "All Metrics"
     metric_select_options = ["All Metrics"] + metric_name_options
     selected_metric = filter_col2.selectbox(
         "Metric Name",
@@ -519,7 +727,11 @@ def _render_history_body() -> None:
     query_params = {"limit": limit_value}
     if selected_device_id is not None:
         query_params["device_id"] = selected_device_id
-    if selected_metric != "All Metrics":
+    if selected_metric != "All Metrics" and not _should_hide_metric_for_device(
+        selected_metric,
+        selected_device_type,
+        selected_device_record.get("name") if selected_device_record else None,
+    ):
         query_params["metric_name"] = selected_metric
     if status_value != "All":
         query_params["status"] = status_value
@@ -529,7 +741,7 @@ def _render_history_body() -> None:
         query_params["checked_to"] = datetime.combine(checked_to_date, time.max).isoformat()
 
     history_payload = get_json(f"/metrics/history/paged?{urlencode(query_params)}", {"items": [], "meta": {}})
-    history = paged_items(history_payload)
+    history = _filter_history_rows(paged_items(history_payload), device_type_by_id, device_name_by_id)
     history_meta = paged_meta(history_payload)
     snapshot_page_size = int(st.session_state.get("history_snapshot_page_size", 10))
     snapshot_page = int(st.session_state.get("history_snapshot_page", 1))
@@ -538,11 +750,14 @@ def _render_history_body() -> None:
         f"/metrics/latest-snapshot/paged?limit={snapshot_page_size}&offset={snapshot_offset}",
         {"items": [], "meta": {}},
     )
-    snapshot_history = paged_items(snapshot_payload)
+    snapshot_history = _filter_history_rows(paged_items(snapshot_payload), device_type_by_id, device_name_by_id)
     snapshot_meta = paged_meta(snapshot_payload)
     st.session_state["history_snapshot_total"] = int(snapshot_meta.get("total", 0) or 0)
-    snapshot_all_history = _fetch_latest_snapshot_rows()
-    all_history = _fetch_all_history_rows()
+    snapshot_uptime_map = get_json(
+        f"/metrics/latest-snapshot/uptime-map?limit={snapshot_page_size}&offset={snapshot_offset}",
+        {},
+    )
+    latest_snapshot_status_summary = get_json("/metrics/latest-snapshot/status-summary", {})
     with meta_container:
         st.markdown(
             f"""
@@ -570,38 +785,25 @@ def _render_history_body() -> None:
     latest_timestamp = dataframe["checked_at"].max()
     snapshot_frame = _prepare_history_frame(snapshot_history, sort_desc=False)
     latest_per_series = snapshot_frame if not snapshot_frame.empty else _latest_snapshot_frame(dataframe)
-    latest_per_series_full = _prepare_history_frame(snapshot_all_history, sort_desc=False)
-    if latest_per_series_full.empty:
-        latest_per_series_full = latest_per_series.copy()
-    uptime_source_frame = _prepare_history_frame(all_history)
-    if uptime_source_frame.empty:
-        uptime_source_frame = dataframe.copy()
-    uptime_map = _build_uptime_map(uptime_source_frame)
     latest_per_series["uptime"] = latest_per_series.apply(
-        lambda row: uptime_map.get((row["device_name"], row["metric_name"]), "-"),
+        lambda row: _format_duration(
+            pd.Timedelta(seconds=float(snapshot_uptime_map.get(f'{int(row["device_id"])}:{row["metric_name"]}', 0)))
+        )
+        if str(snapshot_uptime_map.get(f'{int(row["device_id"])}:{row["metric_name"]}', "-")) not in {"", "-"}
+        else "-",
         axis=1,
-    )
-    latest_per_series_full["uptime"] = latest_per_series_full.apply(
-        lambda row: uptime_map.get((row["device_name"], row["metric_name"]), "-"),
-        axis=1,
-    )
-    latest_per_device = (
-        latest_per_series_full.groupby("device_name", as_index=False)["status"]
-        .agg(lambda series: _status_rollup(series.tolist()))
-        .copy()
     )
 
     with summary_container:
-        summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
+        summary_col1, summary_col2, summary_col3 = st.columns(3)
         _render_stat_card(summary_col1, "Rows Loaded", int(len(dataframe)))
-        _render_stat_card(summary_col2, "Total Match", int(history_meta.get("total", len(dataframe))))
-        _render_stat_card(summary_col3, "Latest Check", format_wib_timestamp(latest_timestamp), compact=True)
-        _render_stat_card(summary_col4, "Distinct Metrics", int(dataframe["metric_name"].nunique()))
+        _render_stat_card(summary_col2, "Latest Check", format_wib_timestamp(latest_timestamp), compact=True)
+        _render_stat_card(summary_col3, "Total Devices", int(len(devices)))
 
     with snapshot_container:
         st.markdown("### Latest Snapshot")
         st.caption(
-            f"Menampilkan {len(latest_per_series)} dari total {snapshot_meta.get('total', len(latest_per_series_full))} snapshot terbaru."
+            f"Menampilkan {len(latest_per_series)} dari total {snapshot_meta.get('total', len(latest_per_series))} snapshot terbaru."
         )
         snapshot_view = latest_per_series[
             ["device_name", "metric_label", "display_value", "uptime", "status", "checked_at_wib"]
@@ -616,14 +818,35 @@ def _render_history_body() -> None:
             }
         )
         st.dataframe(snapshot_view, width="stretch")
-        _snapshot_pagination_controls(int(snapshot_meta.get("total", len(latest_per_series_full))))
+        _snapshot_pagination_controls(int(snapshot_meta.get("total", len(latest_per_series))))
 
     with status_container:
         st.markdown("### Status Summary")
-        status_counts = latest_per_device["status"].fillna("unknown").value_counts().rename_axis("status").reset_index(name="count")
+        status_counts = (
+            pd.DataFrame(
+                [{"status": status, "count": count} for status, count in latest_snapshot_status_summary.items()]
+            ).sort_values(["count", "status"], ascending=[False, True])
+            if latest_snapshot_status_summary
+            else pd.DataFrame(columns=["status", "count"])
+        )
         status_left, status_right = st.columns([1, 2])
         status_left.dataframe(status_counts, width="stretch", hide_index=True)
-        status_right.bar_chart(status_counts.set_index("status"))
+        if status_counts.empty:
+            status_right.info("Belum ada status device untuk diringkas.")
+        else:
+            status_right.bar_chart(status_counts.set_index("status"))
+
+    if selected_device_id is not None and selected_device_type == "printer":
+        printer_history = _fetch_device_history_rows(
+            device_id=int(selected_device_id),
+            checked_from_date=checked_from_date,
+            checked_to_date=checked_to_date,
+            metric_names=PRINTER_METRIC_NAMES,
+            status=status_value,
+        )
+        printer_history = _filter_history_rows(printer_history, device_type_by_id, device_name_by_id)
+        printer_history_frame = _prepare_history_frame(printer_history, sort_desc=False)
+        _render_printer_history_section(printer_history_frame)
 
     st.markdown("### Metric Trend")
     if selected_device_id is None:
@@ -635,19 +858,31 @@ def _render_history_body() -> None:
         st.info("Tidak ada metric numerik pada filter ini, jadi grafik trend belum bisa ditampilkan.")
         return
 
-    metric_names_to_render = [selected_metric] if selected_metric != "All Metrics" else sorted(
-        numeric_frame["metric_name"].dropna().unique().tolist()
+    device_history = _fetch_device_history_rows(
+        device_id=int(selected_device_id),
+        checked_from_date=checked_from_date,
+        checked_to_date=checked_to_date,
+        status=status_value,
+    )
+    device_history = _filter_history_rows(device_history, device_type_by_id, device_name_by_id)
+    device_history_frame = _prepare_history_frame(device_history, sort_desc=False)
+    if device_history_frame.empty:
+        st.info("Belum ada history lengkap untuk device ini pada rentang waktu yang dipilih.")
+        return
+
+    metric_names_to_render = (
+        [selected_metric]
+        if selected_metric != "All Metrics"
+        else sorted(device_history_frame["metric_name"].dropna().unique().tolist())
+    )
+    metric_names_to_render = _filter_metric_names(
+        metric_names_to_render,
+        selected_device_type,
+        selected_device_record.get("name") if selected_device_record else None,
     )
     rendered_metric_frames: list[pd.DataFrame] = []
     for metric_name in metric_names_to_render:
-        metric_series_history = _fetch_metric_series(
-            device_id=int(selected_device_id),
-            metric_name=str(metric_name),
-            status=status_value,
-            checked_from_date=checked_from_date,
-            checked_to_date=checked_to_date,
-        )
-        metric_series_frame = _prepare_history_frame(metric_series_history)
+        metric_series_frame = device_history_frame[device_history_frame["metric_name"] == str(metric_name)].copy()
         metric_series_frame = metric_series_frame.dropna(subset=["metric_value_numeric"]).sort_values("checked_at")
         if metric_series_frame.empty:
             continue
@@ -668,7 +903,12 @@ def _render_history_body() -> None:
             )
 
     st.markdown("### Raw History")
-    raw_history_frame = pd.concat(rendered_metric_frames, ignore_index=True).sort_values("checked_at", ascending=False)
+    if selected_device_id is not None and selected_device_type == "printer":
+        raw_history_frame = (
+            device_history_frame if not device_history_frame.empty else dataframe.copy()
+        ).sort_values("checked_at", ascending=False)
+    else:
+        raw_history_frame = pd.concat(rendered_metric_frames, ignore_index=True).sort_values("checked_at", ascending=False)
     raw_view = raw_history_frame[
         ["checked_at_wib", "device_name", "metric_label", "display_value", "status"]
     ].rename(

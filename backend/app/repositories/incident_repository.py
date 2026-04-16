@@ -9,13 +9,6 @@ class IncidentRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def list_incidents(self, status: str | None = None, limit: int = 100) -> list[Incident]:
-        query: Select[tuple[Incident]] = select(Incident)
-        if status:
-            query = query.where(Incident.status == status)
-        query = query.order_by(desc(Incident.started_at), desc(Incident.id)).limit(limit)
-        return list((await self.db.scalars(query)).all())
-
     async def list_active_incidents(self) -> list[Incident]:
         query: Select[tuple[Incident]] = (
             select(Incident).where(Incident.status == "active").order_by(desc(Incident.started_at), desc(Incident.id))
@@ -44,13 +37,6 @@ class IncidentRepository:
             }
             for incident, device_name in rows
         ]
-
-    async def get_active_incident_by_device(self, device_id: int | None) -> Incident | None:
-        query: Select[tuple[Incident]] = select(Incident).where(
-            Incident.device_id == device_id,
-            Incident.status == "active",
-        )
-        return (await self.db.scalars(query)).first()
 
     async def create_incident(self, payload: dict, *, commit: bool = True) -> Incident:
         incident = Incident(**payload)

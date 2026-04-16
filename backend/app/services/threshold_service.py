@@ -17,6 +17,8 @@ DEFAULT_THRESHOLDS = {
     "jitter_critical": (75.0, "Critical jitter threshold in milliseconds"),
     "dns_resolution_warning": (500.0, "DNS resolution warning threshold in milliseconds"),
     "http_response_warning": (1000.0, "HTTP response warning threshold in milliseconds"),
+    "printer_ink_warning": (20.0, "Printer ink warning threshold in percent"),
+    "printer_ink_critical": (10.0, "Printer ink critical threshold in percent"),
 }
 
 

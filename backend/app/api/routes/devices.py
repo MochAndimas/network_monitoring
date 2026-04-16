@@ -5,6 +5,7 @@ from ...api.deps import require_internal_api_key
 from ...api.schemas import DeviceCreate, DeviceListItem, DeviceListPage, DeviceTypeOption, PageMeta, DeviceUpdate
 from ...core.constants import DEVICE_TYPE_CHOICES
 from ...db.session import get_db
+from ...repositories.device_repository import DeviceRepository
 from ...services.device_service import (
     count_device_rows_filtered,
     create_device,
@@ -22,6 +23,14 @@ async def list_device_types() -> list[DeviceTypeOption]:
         DeviceTypeOption(value=device_type, label=device_type.replace("_", " ").title())
         for device_type in DEVICE_TYPE_CHOICES
     ]
+
+
+@router.get("/status-summary", response_model=dict[str, int])
+async def get_device_status_summary(
+    active_only: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, int]:
+    return await DeviceRepository(db).summarize_device_status_counts(active_only=active_only)
 
 
 @router.get("", response_model=list[DeviceListItem])

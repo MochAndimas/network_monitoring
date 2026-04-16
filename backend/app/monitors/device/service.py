@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...repositories.device_repository import DeviceRepository
 from ..helpers import build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping, safe_ping
+from .printer_snmp import collect_printer_snmp_metrics
 
 
 DEVICE_TYPES = ["nvr", "switch", "access_point", "printer"]
@@ -20,6 +21,15 @@ async def run_device_checks(db: AsyncSession) -> list[dict]:
 
 
 async def _build_device_metrics(device) -> list[dict]:
+    if device.device_type == "printer":
+        samples = await collect_ping_samples(device.ip_address)
+        printer_snmp_metrics = await collect_printer_snmp_metrics(device.id, device.ip_address)
+        return [
+            build_ping_metric(device.id, latest_successful_ping(samples)),
+            *build_ping_quality_metrics(device.id, samples),
+            *printer_snmp_metrics,
+        ]
+
     if device.device_type in QUALITY_CHECK_TYPES:
         samples = await collect_ping_samples(device.ip_address)
         return [

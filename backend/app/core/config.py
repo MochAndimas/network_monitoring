@@ -1,4 +1,6 @@
 import logging
+import json
+from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -6,8 +8,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Network Monitoring"
     app_env: str = "development"
-    api_host: str = "0.0.0.0"
-    api_port: int = 8000
     database_url: str = "mysql+pymysql://network_monitoring:change-me@localhost:3306/network_monitoring"
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
@@ -36,12 +36,53 @@ class Settings(BaseSettings):
     ram_warning_threshold: float = 90.0
     disk_warning_threshold: float = 85.0
     internal_api_key: str = ""
+    printer_snmp_communities: str = ""
     log_level: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()
+
+
+def printer_snmp_community_map() -> dict[str, str]:
+    return _parse_printer_snmp_community_map(settings.printer_snmp_communities or "")
+
+
+@lru_cache(maxsize=8)
+def _parse_printer_snmp_community_map(raw_value: str) -> dict[str, str]:
+    raw_value = raw_value.strip()
+    if not raw_value:
+        return {}
+
+    if raw_value.startswith("{"):
+        try:
+            parsed = json.loads(raw_value)
+        except json.JSONDecodeError:
+            parsed = {}
+        if isinstance(parsed, dict):
+            return {
+                str(ip_address).strip(): str(community).strip()
+                for ip_address, community in parsed.items()
+                if str(ip_address).strip() and str(community).strip()
+            }
+
+    community_map: dict[str, str] = {}
+    normalized_value = raw_value.replace("\r", "\n").replace(",", "\n")
+    for line in normalized_value.splitlines():
+        item = line.strip()
+        if not item or "=" not in item:
+            continue
+        ip_address, community = item.split("=", 1)
+        ip_address = ip_address.strip()
+        community = community.strip()
+        if ip_address and community:
+            community_map[ip_address] = community
+    return community_map
+
+
+def printer_snmp_community_for_ip(ip_address: str) -> str | None:
+    return printer_snmp_community_map().get(str(ip_address).strip())
 
 
 def configure_logging() -> None:

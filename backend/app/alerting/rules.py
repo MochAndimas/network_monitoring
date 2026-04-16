@@ -15,4 +15,11 @@ ALERT_RULES = {
     "high_cpu": {"severity": "warning"},
     "high_ram": {"severity": "warning"},
     "high_disk": {"severity": "warning"},
+    "printer_reboot_detected": {"severity": "warning"},
+    "printer_status_warning": {"severity": "warning"},
+    "printer_status_error": {"severity": "critical"},
+    "printer_error_state": {"severity": "critical"},
+    "printer_paper_issue": {"severity": "warning"},
+    "printer_ink_low": {"severity": "warning"},
+    "printer_ink_empty": {"severity": "critical"},
 }

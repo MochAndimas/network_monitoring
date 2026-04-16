@@ -115,7 +115,7 @@ async def run_cleanup_job() -> None:
 async def _persist_runner(runner) -> None:
     # Metric jobs share one pipeline lock so they don't trample each other,
     # but they should queue instead of being dropped when schedules overlap.
-    async with monitoring_pipeline_guard(wait=True) as acquired:
+    async with monitoring_pipeline_guard(wait=True):
         async with SessionLocal() as db:
             await persist_metrics(db, await runner(db))
             # Re-evaluate alerts immediately after fresh metrics land so alerting

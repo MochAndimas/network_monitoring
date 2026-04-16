@@ -26,6 +26,7 @@ Project monitoring internal untuk:
 - `dashboard/*`: Streamlit UI
 - `scripts/bootstrap_demo.py`: seed device + jalankan satu monitoring cycle
 - `scripts/run_monitor_cycle.py`: trigger satu monitoring cycle manual
+- `scripts/test_snmp.py`: test SNMP v2c ke printer dari host lokal
 
 ## Persiapan
 
@@ -46,6 +47,12 @@ python -m pip install -r requirements.txt
 
 ```bash
 copy .env.example .env
+```
+
+Untuk printer SNMP, isi `PRINTER_SNMP_COMMUNITIES` dengan JSON map IP ke community, misalnya:
+
+```bash
+PRINTER_SNMP_COMMUNITIES={"192.168.88.38":"community-printer-1","192.168.88.145":"community-printer-2"}
 ```
 
 4. Jalankan MySQL
@@ -188,6 +195,7 @@ alembic upgrade head
 ## Catatan Implementasi
 - Scheduler berjalan otomatis saat backend start, kecuali `SCHEDULER_ENABLED=false`
 - Monitor internet/device memakai `ping3`
+- Monitor printer sekarang memakai kombinasi ping + SNMP v2c untuk uptime, status printer, error state, paper status, counter halaman, dan ink level jika printer mengeksposnya
 - Monitor server memakai `psutil` untuk CPU, memory, disk, dan boot time
 - Monitor Mikrotik mencoba akses RouterOS API jika kredensial di `.env` tersedia
 - Alert aktif akan menghasilkan incident aktif per device

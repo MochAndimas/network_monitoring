@@ -13,14 +13,21 @@ from .rules import ALERT_RULES
 async def evaluate_alerts(db) -> list[dict]:
     alert_repository = AlertRepository(db)
     incident_repository = IncidentRepository(db)
-    latest_metrics = await MetricRepository(db).latest_metric_map()
-    devices = await DeviceRepository(db).list_devices(active_only=True)
+    metric_repository = MetricRepository(db)
+    device_repository = DeviceRepository(db)
+    latest_metrics = await metric_repository.latest_metric_map()
+    devices = await device_repository.list_devices(active_only=True)
     notifications: list[dict] = []
     thresholds = await get_threshold_map(db)
     active_alerts = {(alert.device_id, alert.alert_type): alert for alert in await alert_repository.list_active_alerts()}
     active_incidents_by_device = {
         incident.device_id: incident for incident in await incident_repository.list_active_incidents()
     }
+    printer_uptime_history_by_device = await metric_repository.list_recent_metrics_by_device(
+        device_ids=[device.id for device in devices if device.device_type == "printer"],
+        metric_name="printer_uptime_seconds",
+        per_device_limit=2,
+    )
     active_alert_count_by_device: dict[int | None, int] = {}
     for alert in active_alerts.values():
         active_alert_count_by_device[alert.device_id] = active_alert_count_by_device.get(alert.device_id, 0) + 1
@@ -150,6 +157,58 @@ async def evaluate_alerts(db) -> list[dict]:
                     device_id=device.id,
                     alert_type=alert_type,
                     message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
+                )
+
+        if device.device_type == "printer":
+            uptime_metric = latest_metrics.get((device.id, "printer_uptime_seconds"))
+            current_uptime = _safe_float(uptime_metric.metric_value) if uptime_metric is not None else None
+            if current_uptime is not None:
+                uptime_history = printer_uptime_history_by_device.get(device.id, [])
+                if len(uptime_history) >= 2:
+                    previous_uptime = _safe_float(uptime_history[1].metric_value)
+                    if previous_uptime is not None and current_uptime < previous_uptime:
+                        expected_alerts[(device.id, "printer_reboot_detected")] = _build_alert_payload(
+                            device_id=device.id,
+                            alert_type="printer_reboot_detected",
+                            message=f"{device.name} appears to have rebooted; uptime reset to {int(current_uptime)}s",
+                        )
+
+            printer_status_metric = latest_metrics.get((device.id, "printer_status"))
+            if printer_status_metric is not None and printer_status_metric.status == "warning":
+                expected_alerts[(device.id, "printer_status_warning")] = _build_alert_payload(
+                    device_id=device.id,
+                    alert_type="printer_status_warning",
+                    message=f"{device.name} reported printer status {printer_status_metric.metric_value}",
+                )
+
+            printer_error_metric = latest_metrics.get((device.id, "printer_error_state"))
+            if printer_error_metric is not None and printer_error_metric.metric_value not in {"", "none"}:
+                expected_alerts[(device.id, "printer_error_state")] = _build_alert_payload(
+                    device_id=device.id,
+                    alert_type="printer_error_state",
+                    message=f"{device.name} printer error state: {printer_error_metric.metric_value.replace(',', ', ')}",
+                )
+
+            printer_paper_metric = latest_metrics.get((device.id, "printer_paper_status"))
+            if printer_paper_metric is not None and printer_paper_metric.metric_value not in {"", "ok"}:
+                expected_alerts[(device.id, "printer_paper_issue")] = _build_alert_payload(
+                    device_id=device.id,
+                    alert_type="printer_paper_issue",
+                    message=f"{device.name} paper status is {printer_paper_metric.metric_value}",
+                )
+
+            printer_ink_status_metric = latest_metrics.get((device.id, "printer_ink_status"))
+            if printer_ink_status_metric is not None and printer_ink_status_metric.metric_value == "empty":
+                expected_alerts[(device.id, "printer_ink_empty")] = _build_alert_payload(
+                    device_id=device.id,
+                    alert_type="printer_ink_empty",
+                    message=f"{device.name} ink status is empty",
+                )
+            elif printer_ink_status_metric is not None and printer_ink_status_metric.metric_value == "low":
+                expected_alerts[(device.id, "printer_ink_low")] = _build_alert_payload(
+                    device_id=device.id,
+                    alert_type="printer_ink_low",
+                    message=f"{device.name} ink status is low",
                 )
 
     for key, payload in expected_alerts.items():

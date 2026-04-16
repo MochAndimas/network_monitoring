@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import socket
 from time import perf_counter
 
 import httpx
@@ -25,7 +24,7 @@ async def run_internet_checks(db: AsyncSession) -> list[dict]:
         )
 
     if devices:
-        anchor_device = devices[0]
+        anchor_device = _select_internet_anchor_device(devices)
         async with httpx.AsyncClient(timeout=settings.ping_timeout_seconds) as client:
             dns_metric, http_metric, public_ip_metric = await asyncio.gather(
                 _build_dns_metric(anchor_device.id),
@@ -35,6 +34,20 @@ async def run_internet_checks(db: AsyncSession) -> list[dict]:
             metrics.extend([dns_metric, http_metric, public_ip_metric])
 
     return metrics
+
+
+def _select_internet_anchor_device(devices):
+    def priority(device) -> tuple[int, str]:
+        name = str(getattr(device, "name", "") or "").lower()
+        if "myrepublic" in name:
+            return (0, name)
+        if "isp" in name:
+            return (1, name)
+        if "mikrotik" in name:
+            return (3, name)
+        return (2, name)
+
+    return min(devices, key=priority)
 
 
 async def _build_device_ping_metrics(device_id: int, ip_address: str) -> list[dict]:

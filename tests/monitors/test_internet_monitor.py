@@ -79,7 +79,55 @@ def test_internet_checks_collect_quality_dns_http_and_public_ip(monkeypatch, ses
     assert metrics_by_name["public_ip"]["status"] == "warning"
 
 
-def test_access_point_and_printer_checks_collect_packet_loss_and_jitter(monkeypatch, session_factory):
+def test_internet_checks_anchor_dns_http_and_public_ip_to_preferred_isp(monkeypatch, session_factory):
+    ping_samples = iter([0.010, 0.010, 0.010, 0.010, 0.010, 0.010])
+    monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
+
+    async def fake_safe_ping(_ip_address):
+        return next(ping_samples)
+
+    monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+
+    class FakeLoop:
+        async def getaddrinfo(self, *_args, **_kwargs):
+            return [object()]
+
+    monkeypatch.setattr(internet_service.asyncio, "get_running_loop", lambda: FakeLoop())
+
+    async def fake_client_get(self, url, **_kwargs):
+        request = httpx.Request("GET", url)
+        if url == internet_service.settings.public_ip_check_url:
+            return httpx.Response(200, request=request, text="203.0.113.20")
+        return httpx.Response(204, request=request)
+
+    monkeypatch.setattr(internet_service.httpx.AsyncClient, "get", fake_client_get)
+
+    async def scenario():
+        async with session_factory() as db:
+            devices = await DeviceRepository(db).upsert_devices(
+                [
+                    {"name": "Mikrotik Utama", "ip_address": "192.168.1.254", "device_type": "internet_target"},
+                    {"name": "MyRepublic - ISP", "ip_address": "8.8.8.8", "device_type": "internet_target"},
+                ]
+            )
+            metrics = await internet_service.run_internet_checks(db)
+            isp_device = next(device for device in devices if device.name == "MyRepublic - ISP")
+            mikrotik_device = next(device for device in devices if device.name == "Mikrotik Utama")
+            return metrics, isp_device.id, mikrotik_device.id
+
+    metrics, isp_device_id, mikrotik_device_id = run(scenario())
+
+    dns_owner_ids = {metric["device_id"] for metric in metrics if metric["metric_name"] == "dns_resolution_time"}
+    http_owner_ids = {metric["device_id"] for metric in metrics if metric["metric_name"] == "http_response_time"}
+    public_ip_owner_ids = {metric["device_id"] for metric in metrics if metric["metric_name"] == "public_ip"}
+
+    assert dns_owner_ids == {isp_device_id}
+    assert http_owner_ids == {isp_device_id}
+    assert public_ip_owner_ids == {isp_device_id}
+    assert mikrotik_device_id not in dns_owner_ids | http_owner_ids | public_ip_owner_ids
+
+
+def test_access_point_and_printer_checks_collect_packet_loss_jitter_and_snmp(monkeypatch, session_factory):
     ping_samples = iter([0.010, None, 0.020, 0.030, 0.030, 0.030])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
 
@@ -87,6 +135,61 @@ def test_access_point_and_printer_checks_collect_packet_loss_and_jitter(monkeypa
         return next(ping_samples)
 
     monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+
+    async def fake_collect_printer_snmp_metrics(device_id, _ip_address):
+        checked_at = utcnow()
+        return [
+            {
+                "device_id": device_id,
+                "metric_name": "printer_uptime_seconds",
+                "metric_value": "7200",
+                "status": "ok",
+                "unit": "s",
+                "checked_at": checked_at,
+            },
+            {
+                "device_id": device_id,
+                "metric_name": "printer_status",
+                "metric_value": "idle",
+                "status": "up",
+                "unit": None,
+                "checked_at": checked_at,
+            },
+            {
+                "device_id": device_id,
+                "metric_name": "printer_ink_status",
+                "metric_value": "ok",
+                "status": "ok",
+                "unit": None,
+                "checked_at": checked_at,
+            },
+            {
+                "device_id": device_id,
+                "metric_name": "printer_error_state",
+                "metric_value": "none",
+                "status": "ok",
+                "unit": None,
+                "checked_at": checked_at,
+            },
+            {
+                "device_id": device_id,
+                "metric_name": "printer_paper_status",
+                "metric_value": "ok",
+                "status": "ok",
+                "unit": None,
+                "checked_at": checked_at,
+            },
+            {
+                "device_id": device_id,
+                "metric_name": "printer_total_pages",
+                "metric_value": "1234",
+                "status": "ok",
+                "unit": "pages",
+                "checked_at": checked_at,
+            },
+        ]
+
+    monkeypatch.setattr(device_service, "collect_printer_snmp_metrics", fake_collect_printer_snmp_metrics)
 
     async def scenario():
         async with session_factory() as db:
@@ -112,6 +215,9 @@ def test_access_point_and_printer_checks_collect_packet_loss_and_jitter(monkeypa
     assert metrics_by_device_and_name[(access_point_id, "jitter")]["metric_value"] == "10.00"
     assert metrics_by_device_and_name[(printer_id, "packet_loss")]["metric_value"] == "0.00"
     assert metrics_by_device_and_name[(printer_id, "jitter")]["metric_value"] == "0.00"
+    assert metrics_by_device_and_name[(printer_id, "printer_status")]["metric_value"] == "idle"
+    assert metrics_by_device_and_name[(printer_id, "printer_ink_status")]["metric_value"] == "ok"
+    assert metrics_by_device_and_name[(printer_id, "printer_total_pages")]["metric_value"] == "1234"
 
 
 def test_mikrotik_checks_collect_packet_loss_and_jitter(monkeypatch, session_factory):

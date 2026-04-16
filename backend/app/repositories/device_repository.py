@@ -140,6 +140,28 @@ class DeviceRepository:
             summary.setdefault(device_type, {})[str(status or "unknown")] = int(device_count)
         return summary
 
+    async def summarize_device_status_counts(self, *, active_only: bool = False) -> dict[str, int]:
+        latest_ping_metrics = self._latest_ping_metrics_subquery()
+        latest_ping = aliased(Metric)
+        latest_status = func.coalesce(latest_ping.status, "unknown").label("latest_status")
+        query = (
+            select(
+                latest_status,
+                func.count().label("device_count"),
+            )
+            .select_from(Device)
+            .outerjoin(latest_ping_metrics, Device.id == latest_ping_metrics.c.device_id)
+            .outerjoin(
+                latest_ping,
+                latest_ping.id == latest_ping_metrics.c.metric_id,
+            )
+        )
+        if active_only:
+            query = query.where(Device.is_active.is_(True))
+        query = query.group_by(latest_status)
+        rows = (await self.db.execute(query)).all()
+        return {str(status or "unknown"): int(device_count) for status, device_count in rows}
+
     async def count_device_status_rows(
         self,
         *,

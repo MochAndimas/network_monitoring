@@ -17,7 +17,32 @@ STATUS_EMOJI = {
 }
 
 
-OVERVIEW_CSS = """
+def _hex_to_rgba(color: str | None, alpha: float, fallback_rgb: tuple[int, int, int]) -> str:
+    normalized = str(color or "").strip().lstrip("#")
+    if len(normalized) == 3:
+        normalized = "".join(ch * 2 for ch in normalized)
+    if len(normalized) == 6:
+        try:
+            red = int(normalized[0:2], 16)
+            green = int(normalized[2:4], 16)
+            blue = int(normalized[4:6], 16)
+            return f"rgba({red}, {green}, {blue}, {alpha})"
+        except ValueError:
+            pass
+    red, green, blue = fallback_rgb
+    return f"rgba({red}, {green}, {blue}, {alpha})"
+
+
+def _overview_css() -> str:
+    base_theme = str(st.get_option("theme.base") or "dark").lower()
+    is_dark = base_theme == "dark"
+    background = st.get_option("theme.backgroundColor") or ("#0e1117" if is_dark else "#ffffff")
+    secondary = st.get_option("theme.secondaryBackgroundColor") or ("#1b1f2a" if is_dark else "#f4f6f8")
+    text = st.get_option("theme.textColor") or ("#f8fafc" if is_dark else "#111827")
+    border = _hex_to_rgba(text, 0.14, (248, 250, 252) if is_dark else (17, 24, 39))
+    muted = _hex_to_rgba(text, 0.72, (248, 250, 252) if is_dark else (17, 24, 39))
+    soft = _hex_to_rgba(text, 0.58, (248, 250, 252) if is_dark else (17, 24, 39))
+    css = """
 <style>
 .stMainBlockContainer,
 [data-testid="stAppViewContainer"] .main .block-container {
@@ -32,16 +57,16 @@ OVERVIEW_CSS = """
     margin: 0.25rem 0 1.25rem 0;
 }
 .overview-pill {
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.03);
+    border: 1px solid __BORDER__;
+    background: __SECONDARY__;
     border-radius: 999px;
     padding: 0.45rem 0.8rem;
     font-size: 0.9rem;
-    color: rgba(250,250,250,0.8);
+    color: __SOFT__;
 }
 .stat-card {
-    border: 1px solid rgba(255,255,255,0.08);
-    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+    border: 1px solid __BORDER__;
+    background: linear-gradient(180deg, __SECONDARY__, __BACKGROUND__);
     border-radius: 18px;
     padding: 1rem 1rem 0.95rem 1rem;
     min-height: 126px;
@@ -50,14 +75,14 @@ OVERVIEW_CSS = """
 .stat-card-label {
     font-size: 0.92rem;
     line-height: 1.35;
-    color: rgba(250,250,250,0.72);
+    color: __MUTED__;
     margin-bottom: 0.65rem;
 }
 .stat-card-value {
     font-size: clamp(1.6rem, 2.2vw, 2.8rem);
     line-height: 1.08;
     font-weight: 700;
-    color: #f8fafc;
+    color: __TEXT__;
     white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -68,6 +93,15 @@ OVERVIEW_CSS = """
 }
 </style>
 """
+    return (
+        css.replace("__BORDER__", border)
+        .replace("__SECONDARY__", secondary)
+        .replace("__SOFT__", soft)
+        .replace("__BACKGROUND__", background)
+        .replace("__MUTED__", muted)
+        .replace("__TEXT__", text)
+    )
+
 
 
 def _status_label(value: str | None) -> str:
@@ -136,19 +170,19 @@ def _render_overview_body() -> None:
             "devices": ("/devices", []),
             "alerts": ("/alerts/active", []),
             "incidents": ("/incidents?status=active", []),
-            "recent_history": ("/metrics/history?limit=100", []),
+            "latest_snapshot": ("/metrics/latest-snapshot/paged?limit=100&offset=0", {"items": [], "meta": {}}),
         }
     )
     summary = payload["summary"]
     devices = payload["devices"]
     alerts = payload["alerts"]
     incidents = payload["incidents"]
-    recent_history = payload["recent_history"]
+    latest_snapshot = payload["latest_snapshot"]
 
     devices_frame = _prepare_devices_frame(devices)
     alerts_frame = _prepare_alerts_frame(alerts)
     incidents_frame = _prepare_incidents_frame(incidents)
-    history_frame = pd.DataFrame(recent_history)
+    history_frame = pd.DataFrame(latest_snapshot.get("items", []))
     if not history_frame.empty and "checked_at" in history_frame.columns:
         history_frame["checked_at"] = to_wib_timestamp(history_frame["checked_at"])
         history_frame["checked_at_wib"] = history_frame["checked_at"].apply(format_wib_timestamp)
@@ -288,7 +322,7 @@ def _render_overview_body() -> None:
 
 st.set_page_config(page_title="Overview", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
-st.markdown(OVERVIEW_CSS, unsafe_allow_html=True)
+st.markdown(_overview_css(), unsafe_allow_html=True)
 st.title("Overview")
 st.caption("Overview ini dipakai buat lihat kondisi umum sistem, gangguan aktif, dan snapshot device terbaru tanpa pindah-pindah halaman.")
 

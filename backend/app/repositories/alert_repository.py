@@ -42,14 +42,6 @@ class AlertRepository:
         query = select(func.count()).select_from(Alert).where(Alert.status == "active")
         return int(await self.db.scalar(query) or 0)
 
-    async def get_active_alert(self, device_id: int | None, alert_type: str) -> Alert | None:
-        query: Select[tuple[Alert]] = select(Alert).where(
-            Alert.status == "active",
-            Alert.device_id == device_id,
-            Alert.alert_type == alert_type,
-        )
-        return (await self.db.scalars(query)).first()
-
     async def create_alert(self, payload: dict, *, commit: bool = True) -> Alert:
         alert = Alert(**payload)
         self.db.add(alert)

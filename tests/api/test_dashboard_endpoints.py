@@ -27,7 +27,7 @@ class DummyScheduler:
     def start(self) -> None:
         return None
 
-    def shutdown(self, wait: bool = False) -> None:
+    def shutdown(self, _wait: bool = False) -> None:
         return None
 
 
@@ -128,11 +128,14 @@ def test_devices_endpoint_returns_latest_status():
         )
 
         response = client.get("/devices")
+        status_summary_response = client.get("/devices/status-summary")
 
         assert response.status_code == 200
         payload = response.json()
         assert len(payload) == 2
         assert {item["latest_status"] for item in payload} == {"up", "down"}
+        assert status_summary_response.status_code == 200
+        assert status_summary_response.json() == {"down": 1, "up": 1}
 
 
 def test_dashboard_summary_and_alerts_endpoint():
@@ -449,6 +452,14 @@ def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
                             "checked_at": now,
                         },
                         {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "80.00",
+                            "status": "warning",
+                            "unit": "%",
+                            "checked_at": now,
+                        },
+                        {
                             "device_id": devices[1].id,
                             "metric_name": "ping",
                             "metric_value": "timeout",
@@ -462,14 +473,23 @@ def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
         run(scenario())
 
         response = client.get("/metrics/latest-snapshot/paged?limit=1&offset=0")
+        status_summary_response = client.get("/metrics/latest-snapshot/status-summary")
+        uptime_map_response = client.get("/metrics/latest-snapshot/uptime-map?limit=2&offset=0")
 
         assert response.status_code == 200
         payload = response.json()
-        assert payload["meta"]["total"] == 2
+        assert payload["meta"]["total"] == 3
         assert payload["meta"]["limit"] == 1
         assert len(payload["items"]) == 1
         assert payload["items"][0]["device_name"] == "AP Alpha"
-        assert payload["items"][0]["metric_value"] == "10.00"
+        assert payload["items"][0]["metric_name"] == "cpu_percent"
+        assert payload["items"][0]["metric_value"] == "80.00"
+        assert status_summary_response.status_code == 200
+        assert status_summary_response.json() == {"down": 1, "warning": 1}
+        assert uptime_map_response.status_code == 200
+        uptime_map = uptime_map_response.json()
+        assert uptime_map
+        assert any(value == "300" for value in uptime_map.values())
 
 
 def test_run_cycle_creates_alerts_and_incidents():
@@ -552,6 +572,8 @@ def test_threshold_endpoints_and_update():
         assert any(item["key"] == "jitter_critical" for item in payload)
         assert any(item["key"] == "dns_resolution_warning" for item in payload)
         assert any(item["key"] == "http_response_warning" for item in payload)
+        assert any(item["key"] == "printer_ink_warning" for item in payload)
+        assert any(item["key"] == "printer_ink_critical" for item in payload)
 
         update_response = client.put("/thresholds/cpu_warning", headers=API_HEADERS, json={"value": 92})
         assert update_response.status_code == 200
@@ -712,6 +734,129 @@ def test_run_cycle_creates_internet_quality_alerts():
             "slow_http_response",
             "public_ip_changed",
         }
+
+
+def test_run_cycle_creates_printer_alerts_and_incident():
+    with client_context() as (client, session_factory):
+        printer_device_id = run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "EPSON L3250 - 1", "ip_address": "192.168.88.38", "device_type": "printer"}],
+                lambda devices: [
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "printer_uptime_seconds",
+                        "metric_value": "7200",
+                        "status": "ok",
+                        "unit": "s",
+                        "checked_at": utcnow() - timedelta(minutes=5),
+                    }
+                ],
+            )
+        )[0].id
+
+        import backend.app.services.run_cycle_service as run_cycle_module
+
+        original_internet = run_cycle_module.run_internet_checks
+        original_device = run_cycle_module.run_device_checks
+        original_server = run_cycle_module.run_server_checks
+        original_mikrotik = run_cycle_module.run_mikrotik_checks
+
+        async def fake_device_checks(_db):
+            now = utcnow()
+            return [
+                {
+                    "device_id": printer_device_id,
+                    "metric_name": "ping",
+                    "metric_value": "4.00",
+                    "status": "up",
+                    "unit": "ms",
+                    "checked_at": now,
+                },
+                {
+                    "device_id": printer_device_id,
+                    "metric_name": "printer_uptime_seconds",
+                    "metric_value": "90",
+                    "status": "ok",
+                    "unit": "s",
+                    "checked_at": now,
+                },
+                {
+                    "device_id": printer_device_id,
+                    "metric_name": "printer_status",
+                    "metric_value": "idle",
+                    "status": "up",
+                    "unit": None,
+                    "checked_at": now,
+                },
+                {
+                    "device_id": printer_device_id,
+                    "metric_name": "printer_ink_status",
+                    "metric_value": "empty",
+                    "status": "error",
+                    "unit": None,
+                    "checked_at": now,
+                },
+                {
+                    "device_id": printer_device_id,
+                    "metric_name": "printer_error_state",
+                    "metric_value": "jammed",
+                    "status": "error",
+                    "unit": None,
+                    "checked_at": now,
+                },
+                {
+                    "device_id": printer_device_id,
+                    "metric_name": "printer_paper_status",
+                    "metric_value": "empty",
+                    "status": "error",
+                    "unit": None,
+                    "checked_at": now,
+                },
+                {
+                    "device_id": printer_device_id,
+                    "metric_name": "printer_total_pages",
+                    "metric_value": "2000",
+                    "status": "ok",
+                    "unit": "pages",
+                    "checked_at": now,
+                },
+            ]
+
+        try:
+            async def empty_checks(_db):
+                return []
+
+            run_cycle_module.run_internet_checks = empty_checks
+            run_cycle_module.run_device_checks = fake_device_checks
+            run_cycle_module.run_server_checks = empty_checks
+            run_cycle_module.run_mikrotik_checks = empty_checks
+
+            cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
+            alerts_response = client.get("/alerts/active")
+            incidents_response = client.get("/incidents?status=active")
+        finally:
+            run_cycle_module.run_internet_checks = original_internet
+            run_cycle_module.run_device_checks = original_device
+            run_cycle_module.run_server_checks = original_server
+            run_cycle_module.run_mikrotik_checks = original_mikrotik
+
+        assert cycle_response.status_code == 200
+        cycle_payload = cycle_response.json()
+        assert cycle_payload["alerts_created"] == 4
+        assert cycle_payload["incidents_created"] == 1
+
+        assert alerts_response.status_code == 200
+        alert_types = {alert["alert_type"] for alert in alerts_response.json()}
+        assert alert_types == {
+            "printer_reboot_detected",
+            "printer_error_state",
+            "printer_paper_issue",
+            "printer_ink_empty",
+        }
+
+        assert incidents_response.status_code == 200
+        assert len(incidents_response.json()) == 1
 
 
 def test_internal_api_key_protects_mutation_endpoints():
