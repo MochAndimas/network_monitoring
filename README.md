@@ -99,8 +99,12 @@ python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --runs 5
 uvicorn backend.app.main:app --reload
 ```
 
-Endpoint mutasi membutuhkan header `x-api-key` saat `INTERNAL_API_KEY` terisi. Di `APP_ENV=production`,
-`INTERNAL_API_KEY` wajib diisi dan request mutasi akan ditolak kalau key belum tersedia.
+Semua endpoint API operasional selain `GET /health` sekarang membutuhkan salah satu:
+- header `Authorization: Bearer <token>` dari login user backend
+- atau header `x-api-key` untuk automation/internal integration
+
+Endpoint write seperti `POST /devices`, `PUT /devices/{id}`, `PUT /thresholds/{key}`, dan
+`POST /system/run-cycle` membutuhkan role `admin` bila memakai bearer token.
 
 API utama:
 - `GET /dashboard/summary`
@@ -122,6 +126,14 @@ API utama:
 ```bash
 streamlit run dashboard/Overview.py
 ```
+
+Dashboard sekarang login ke backend memakai akun user monitoring.
+Admin awal bisa dibootstrap lewat environment:
+- `BOOTSTRAP_ADMIN_USERNAME`
+- `BOOTSTRAP_ADMIN_FULL_NAME`
+- `BOOTSTRAP_ADMIN_PASSWORD`
+
+Setelah backend hidup, login dashboard menggunakan akun tersebut.
 
 ## Menjalankan Dengan Docker Compose
 
@@ -154,8 +166,12 @@ Dashboard utama sekarang bisa:
 ## Security
 
 - Jangan pakai password database default di production. `.env` lokal sudah memakai kredensial random yang digenerate untuk mesin ini.
-- Set `APP_ENV=production` dan isi `INTERNAL_API_KEY` dengan nilai random panjang di setiap deployment.
-- Dashboard mengirim header `x-api-key` otomatis kalau `INTERNAL_API_KEY` tersedia di environment.
+- Set `APP_ENV=production`, isi `BOOTSTRAP_ADMIN_PASSWORD`, dan gunakan password admin yang kuat.
+- `INTERNAL_API_KEY` tetap didukung untuk script/internal integration, tapi dashboard normal sekarang memakai login user + bearer token.
+- Password user disimpan sebagai hash PBKDF2, session disimpan sebagai opaque token hash di database, dan endpoint write memerlukan role `admin`.
+- Session bootstrap admin dijalankan saat startup jika `BOOTSTRAP_ADMIN_PASSWORD` disediakan dan username tersebut belum ada.
+- Backend membatasi `Host` header, menambahkan security headers dasar, dan mematikan `/docs`, `/redoc`, `/openapi.json` di production.
+- Docker Compose default sekarang publish MySQL, backend, dan dashboard ke `127.0.0.1` saja agar tidak terbuka ke LAN secara tidak sengaja.
 - `.env` masuk `.gitignore`; simpan secret production di secret manager atau environment deployment.
 
 ## Testing

@@ -2,11 +2,13 @@ import streamlit as st
 import pandas as pd
 from urllib.parse import urlencode
 
+from components.auth import is_admin, require_dashboard_login
 from components.api import get_json, get_json_map, paged_items, paged_meta, post_json, put_json
 from components.sidebar import collapse_sidebar_on_page_load
 
 st.set_page_config(page_title="Devices", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
+require_dashboard_login()
 
 st.title("Devices")
 payload = get_json_map(
@@ -76,7 +78,9 @@ with inventory_tab:
         st.info("Tidak ada device yang cocok dengan filter inventory saat ini.")
 
 with manage_tab:
-    if not device_types:
+    if not is_admin():
+        st.info("Halaman manage device hanya tersedia untuk role admin.")
+    elif not device_types:
         st.warning("Daftar device type belum tersedia dari backend.")
     else:
         create_column, edit_column = st.columns(2)

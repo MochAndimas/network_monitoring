@@ -1,6 +1,6 @@
 from .base import Base
 from .session import engine
-from ..models import alert, device, incident, metric, metric_daily_rollup, threshold  # noqa: F401
+from ..models import alert, device, incident, metric, metric_daily_rollup, threshold, user  # noqa: F401
 
 
 async def init_db() -> None:

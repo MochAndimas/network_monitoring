@@ -1,13 +1,12 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...api.deps import require_internal_api_key
+from ...api.deps import require_admin_access
 from ...api.schemas import DeviceCreate, DeviceListItem, DeviceListPage, DeviceTypeOption, PageMeta, DeviceUpdate
 from ...core.constants import DEVICE_TYPE_CHOICES
 from ...db.session import get_db
 from ...repositories.device_repository import DeviceRepository
 from ...services.device_service import (
-    count_device_rows_filtered,
     create_device,
     get_device_row,
     list_device_rows_filtered,
@@ -65,21 +64,13 @@ async def list_devices_paged(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> DeviceListPage:
-    rows = await list_device_rows_filtered(
-        db,
+    rows, total = await DeviceRepository(db).list_device_status_rows_paged(
         active_only=active_only,
         device_type=device_type,
         latest_status=latest_status,
         search=search,
         limit=limit,
         offset=offset,
-    )
-    total = await count_device_rows_filtered(
-        db,
-        active_only=active_only,
-        device_type=device_type,
-        latest_status=latest_status,
-        search=search,
     )
     return DeviceListPage(
         items=[DeviceListItem(**row) for row in rows],
@@ -92,13 +83,13 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     return DeviceListItem(**await get_device_row(db, device_id))
 
 
-@router.post("", response_model=DeviceListItem, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_internal_api_key)])
+@router.post("", response_model=DeviceListItem, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin_access)])
 async def create_device_endpoint(payload: DeviceCreate, db: AsyncSession = Depends(get_db)) -> DeviceListItem:
     created_device = await create_device(db, payload.model_dump())
     return DeviceListItem(**await get_device_row(db, created_device.id))
 
 
-@router.put("/{device_id}", response_model=DeviceListItem, dependencies=[Depends(require_internal_api_key)])
+@router.put("/{device_id}", response_model=DeviceListItem, dependencies=[Depends(require_admin_access)])
 async def update_device_endpoint(device_id: int, payload: DeviceUpdate, db: AsyncSession = Depends(get_db)) -> DeviceListItem:
     updated_device = await update_device(db, device_id, payload.model_dump(exclude_unset=True))
     return DeviceListItem(**await get_device_row(db, updated_device.id))

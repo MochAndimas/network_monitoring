@@ -35,6 +35,64 @@ class DeviceRepository:
             .subquery()
         )
 
+    @staticmethod
+    def _search_filter(search: str | None):
+        if not search:
+            return None
+        search_term = f"%{search.strip()}%"
+        return or_(
+            Device.name.ilike(search_term),
+            Device.ip_address.ilike(search_term),
+            Device.site.ilike(search_term),
+        )
+
+    def _device_status_query(
+        self,
+        *,
+        include_total_count: bool = False,
+        active_only: bool = False,
+        device_id: int | None = None,
+        device_type: str | None = None,
+        latest_status: str | None = None,
+        search: str | None = None,
+    ):
+        latest_ping_metrics = self._latest_ping_metrics_subquery()
+        latest_ping = aliased(Metric)
+        columns = [
+            Device.id,
+            Device.name,
+            Device.ip_address,
+            Device.device_type,
+            Device.site,
+            Device.description,
+            Device.is_active,
+            latest_ping.status.label("latest_status"),
+            latest_ping.checked_at.label("latest_checked_at"),
+        ]
+        if include_total_count:
+            columns.append(func.count().over().label("total_count"))
+
+        query = (
+            select(*columns)
+            .outerjoin(latest_ping_metrics, Device.id == latest_ping_metrics.c.device_id)
+            .outerjoin(
+                latest_ping,
+                latest_ping.id == latest_ping_metrics.c.metric_id,
+            )
+        )
+        if active_only:
+            query = query.where(Device.is_active.is_(True))
+        if device_id is not None:
+            query = query.where(Device.id == device_id)
+        if device_type:
+            query = query.where(Device.device_type == device_type)
+        if latest_status:
+            query = query.where(func.coalesce(latest_ping.status, "unknown") == latest_status)
+        search_filter = self._search_filter(search)
+        if search_filter is not None:
+            query = query.where(search_filter)
+        return query, latest_ping
+
     async def list_devices(self, active_only: bool = False) -> list[Device]:
         query: Select[tuple[Device]] = select(Device).order_by(Device.name.asc())
         if active_only:
@@ -57,44 +115,14 @@ class DeviceRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[dict]:
-        latest_ping_metrics = self._latest_ping_metrics_subquery()
-        latest_ping = aliased(Metric)
-        query = (
-            select(
-                Device.id,
-                Device.name,
-                Device.ip_address,
-                Device.device_type,
-                Device.site,
-                Device.description,
-                Device.is_active,
-                latest_ping.status.label("latest_status"),
-                latest_ping.checked_at.label("latest_checked_at"),
-            )
-            .outerjoin(latest_ping_metrics, Device.id == latest_ping_metrics.c.device_id)
-            .outerjoin(
-                latest_ping,
-                latest_ping.id == latest_ping_metrics.c.metric_id,
-            )
-            .order_by(Device.name.asc())
+        query, _latest_ping = self._device_status_query(
+            active_only=active_only,
+            device_id=device_id,
+            device_type=device_type,
+            latest_status=latest_status,
+            search=search,
         )
-        if active_only:
-            query = query.where(Device.is_active.is_(True))
-        if device_id is not None:
-            query = query.where(Device.id == device_id)
-        if device_type:
-            query = query.where(Device.device_type == device_type)
-        if latest_status:
-            query = query.where(func.coalesce(latest_ping.status, "unknown") == latest_status)
-        if search:
-            search_term = f"%{search.strip()}%"
-            query = query.where(
-                or_(
-                    Device.name.ilike(search_term),
-                    Device.ip_address.ilike(search_term),
-                    Device.site.ilike(search_term),
-                )
-            )
+        query = query.order_by(Device.name.asc())
         if offset:
             query = query.offset(offset)
         if limit is not None:
@@ -115,6 +143,44 @@ class DeviceRepository:
             }
             for row in rows
         ]
+
+    async def list_device_status_rows_paged(
+        self,
+        *,
+        active_only: bool = False,
+        device_type: str | None = None,
+        latest_status: str | None = None,
+        search: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        query, _latest_ping = self._device_status_query(
+            include_total_count=True,
+            active_only=active_only,
+            device_type=device_type,
+            latest_status=latest_status,
+            search=search,
+        )
+        rows = (
+            await self.db.execute(
+                query.order_by(Device.name.asc()).offset(offset).limit(limit)
+            )
+        ).all()
+        total = int(rows[0].total_count) if rows else 0
+        return [
+            {
+                "id": row.id,
+                "name": row.name,
+                "ip_address": row.ip_address,
+                "device_type": row.device_type,
+                "site": row.site,
+                "description": row.description,
+                "is_active": row.is_active,
+                "latest_status": row.latest_status or "unknown",
+                "latest_checked_at": row.latest_checked_at,
+            }
+            for row in rows
+        ], total
 
     async def summarize_active_device_statuses(self) -> dict[str, dict[str, int]]:
         latest_ping_metrics = self._latest_ping_metrics_subquery()
@@ -170,32 +236,13 @@ class DeviceRepository:
         latest_status: str | None = None,
         search: str | None = None,
     ) -> int:
-        latest_ping_metrics = self._latest_ping_metrics_subquery()
-        latest_ping = aliased(Metric)
-        query = (
-            select(func.count())
-            .select_from(Device)
-            .outerjoin(latest_ping_metrics, Device.id == latest_ping_metrics.c.device_id)
-            .outerjoin(
-                latest_ping,
-                latest_ping.id == latest_ping_metrics.c.metric_id,
-            )
+        query, _latest_ping = self._device_status_query(
+            active_only=active_only,
+            device_type=device_type,
+            latest_status=latest_status,
+            search=search,
         )
-        if active_only:
-            query = query.where(Device.is_active.is_(True))
-        if device_type:
-            query = query.where(Device.device_type == device_type)
-        if latest_status:
-            query = query.where(func.coalesce(latest_ping.status, "unknown") == latest_status)
-        if search:
-            search_term = f"%{search.strip()}%"
-            query = query.where(
-                or_(
-                    Device.name.ilike(search_term),
-                    Device.ip_address.ilike(search_term),
-                    Device.site.ilike(search_term),
-                )
-            )
+        query = query.with_only_columns(func.count()).order_by(None)
         return int(await self.db.scalar(query) or 0)
 
     async def list_by_type(self, device_type: str, active_only: bool = True) -> list[Device]:

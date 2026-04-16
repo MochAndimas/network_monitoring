@@ -1,7 +1,8 @@
 import pandas as pd
 import streamlit as st
 
-from components.api import get_json_map, post_json
+from components.auth import is_admin, require_dashboard_login, session_expiry_label
+from components.api import get_json, post_json
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
@@ -34,15 +35,7 @@ def _hex_to_rgba(color: str | None, alpha: float, fallback_rgb: tuple[int, int, 
 
 
 def _overview_css() -> str:
-    base_theme = str(st.get_option("theme.base") or "dark").lower()
-    is_dark = base_theme == "dark"
-    background = st.get_option("theme.backgroundColor") or ("#0e1117" if is_dark else "#ffffff")
-    secondary = st.get_option("theme.secondaryBackgroundColor") or ("#1b1f2a" if is_dark else "#f4f6f8")
-    text = st.get_option("theme.textColor") or ("#f8fafc" if is_dark else "#111827")
-    border = _hex_to_rgba(text, 0.14, (248, 250, 252) if is_dark else (17, 24, 39))
-    muted = _hex_to_rgba(text, 0.72, (248, 250, 252) if is_dark else (17, 24, 39))
-    soft = _hex_to_rgba(text, 0.58, (248, 250, 252) if is_dark else (17, 24, 39))
-    css = """
+    return """
 <style>
 .stMainBlockContainer,
 [data-testid="stAppViewContainer"] .main .block-container {
@@ -50,57 +43,54 @@ def _overview_css() -> str:
     padding-left: 2rem;
     padding-right: 2rem;
 }
+.overview-meta,
+.history-card-content {
+    color: var(--text-color);
+}
 .overview-meta {
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
-    margin: 0.25rem 0 1.25rem 0;
+    margin: 0.3rem 0 1.1rem 0;
 }
 .overview-pill {
-    border: 1px solid __BORDER__;
-    background: __SECONDARY__;
+    border: 1px solid color-mix(in srgb, var(--text-color) 18%, transparent);
+    background: transparent;
     border-radius: 999px;
     padding: 0.45rem 0.8rem;
     font-size: 0.9rem;
-    color: __SOFT__;
+    color: color-mix(in srgb, var(--text-color) 58%, transparent);
 }
-.stat-card {
-    border: 1px solid __BORDER__;
-    background: linear-gradient(180deg, __SECONDARY__, __BACKGROUND__);
-    border-radius: 18px;
-    padding: 1rem 1rem 0.95rem 1rem;
-    min-height: 126px;
-    margin-bottom: 0.4rem;
-}
-.stat-card-label {
-    font-size: 0.92rem;
+.history-card-label {
+    font-size: 0.9rem;
     line-height: 1.35;
-    color: __MUTED__;
-    margin-bottom: 0.65rem;
+    color: color-mix(in srgb, var(--text-color) 72%, transparent);
+    margin-bottom: 0.6rem;
 }
-.stat-card-value {
-    font-size: clamp(1.6rem, 2.2vw, 2.8rem);
+.history-card-content {
+    display: flex;
+    min-height: 92px;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+.history-card-content p {
+    margin: 0;
+}
+.history-card-value {
+    font-size: clamp(1.35rem, 2vw, 2.5rem);
     line-height: 1.08;
     font-weight: 700;
-    color: __TEXT__;
+    color: var(--text-color);
     white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-word;
 }
-.stat-card-value.compact {
-    font-size: clamp(1.05rem, 1.5vw, 1.55rem);
+.history-card-value.compact {
+    font-size: clamp(1rem, 1.35vw, 1.4rem);
     line-height: 1.25;
 }
 </style>
 """
-    return (
-        css.replace("__BORDER__", border)
-        .replace("__SECONDARY__", secondary)
-        .replace("__SOFT__", soft)
-        .replace("__BACKGROUND__", background)
-        .replace("__MUTED__", muted)
-        .replace("__TEXT__", text)
-    )
 
 
 
@@ -111,16 +101,17 @@ def _status_label(value: str | None) -> str:
 
 
 def _render_stat_card(column, label: str, value: str | int, *, compact: bool = False) -> None:
-    value_class = "stat-card-value compact" if compact else "stat-card-value"
-    column.markdown(
-        f"""
-        <div class="stat-card">
-            <div class="stat-card-label">{label}</div>
-            <div class="{value_class}">{value}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    value_class = "history-card-value compact" if compact else "history-card-value"
+    with column.container(border=True):
+        st.markdown(
+            f"""
+            <div class="history-card-content">
+                <div class="history-card-label">{label}</div>
+                <div class="{value_class}">{value}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
@@ -155,23 +146,32 @@ def _prepare_incidents_frame(incidents: list[dict]) -> pd.DataFrame:
     return dataframe
 
 
+def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
+    dataframe = pd.DataFrame(snapshot_payload.get("items", []))
+    if dataframe.empty:
+        return dataframe
+    dataframe["checked_at"] = to_wib_timestamp(dataframe["checked_at"])
+    dataframe["checked_at_wib"] = dataframe["checked_at"].apply(format_wib_timestamp)
+    unit_series = dataframe["unit"].fillna("").astype(str)
+    dataframe["value"] = dataframe["metric_value"].astype(str) + unit_series.map(lambda unit: f" {unit}" if unit else "")
+    return dataframe
+
+
 def _render_overview_body() -> None:
-    payload = get_json_map(
+    payload = get_json(
+        "/dashboard/overview-data",
         {
-            "summary": (
-                "/dashboard/summary",
-                {
-                    "internet_status": "unknown",
-                    "mikrotik_status": "unknown",
-                    "server_status": "unknown",
-                    "active_alerts": 0,
-                },
-            ),
-            "devices": ("/devices", []),
-            "alerts": ("/alerts/active", []),
-            "incidents": ("/incidents?status=active", []),
-            "latest_snapshot": ("/metrics/latest-snapshot/paged?limit=100&offset=0", {"items": [], "meta": {}}),
-        }
+            "summary": {
+                "internet_status": "unknown",
+                "mikrotik_status": "unknown",
+                "server_status": "unknown",
+                "active_alerts": 0,
+            },
+            "devices": [],
+            "alerts": [],
+            "incidents": [],
+            "latest_snapshot": {"items": [], "meta": {}},
+        },
     )
     summary = payload["summary"]
     devices = payload["devices"]
@@ -182,10 +182,7 @@ def _render_overview_body() -> None:
     devices_frame = _prepare_devices_frame(devices)
     alerts_frame = _prepare_alerts_frame(alerts)
     incidents_frame = _prepare_incidents_frame(incidents)
-    history_frame = pd.DataFrame(latest_snapshot.get("items", []))
-    if not history_frame.empty and "checked_at" in history_frame.columns:
-        history_frame["checked_at"] = to_wib_timestamp(history_frame["checked_at"])
-        history_frame["checked_at_wib"] = history_frame["checked_at"].apply(format_wib_timestamp)
+    history_frame = _prepare_snapshot_frame(latest_snapshot)
 
     total_devices = int(len(devices_frame)) if not devices_frame.empty else 0
     active_devices = int(devices_frame["is_active"].sum()) if not devices_frame.empty else 0
@@ -297,16 +294,7 @@ def _render_overview_body() -> None:
     if history_frame.empty:
         st.info("Belum ada metric history yang bisa ditampilkan.")
     else:
-        metric_snapshot = (
-            history_frame.sort_values("checked_at", ascending=False)
-            .drop_duplicates(subset=["device_name", "metric_name"])
-            .copy()
-        )
-        metric_snapshot["value"] = metric_snapshot.apply(
-            lambda row: f'{row["metric_value"]}{f" {row["unit"]}" if row.get("unit") else ""}',
-            axis=1,
-        )
-        metric_view = metric_snapshot[
+        metric_view = history_frame[
             ["checked_at_wib", "device_name", "metric_name", "value", "status"]
         ].rename(
             columns={
@@ -322,13 +310,17 @@ def _render_overview_body() -> None:
 
 st.set_page_config(page_title="Overview", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
+require_dashboard_login()
 st.markdown(_overview_css(), unsafe_allow_html=True)
 st.title("Overview")
 st.caption("Overview ini dipakai buat lihat kondisi umum sistem, gangguan aktif, dan snapshot device terbaru tanpa pindah-pindah halaman.")
 
 action_col, info_col = st.columns([1, 3])
 with action_col:
-    if st.button("Run Monitoring Cycle Now", type="primary", width="stretch"):
+    if not is_admin():
+        st.caption(f"Session expiry: {session_expiry_label()}")
+        st.info("Role viewer tidak bisa menjalankan monitoring cycle manual.")
+    elif st.button("Run Monitoring Cycle Now", type="primary", width="stretch"):
         cycle_result = post_json(
             "/system/run-cycle",
             None,

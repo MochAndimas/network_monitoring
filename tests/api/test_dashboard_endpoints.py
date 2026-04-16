@@ -10,6 +10,8 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.models.alert import Alert
+from backend.app.models.user import User
+from backend.app.core.security import hash_password
 from backend.app.repositories.device_repository import DeviceRepository
 from backend.app.repositories.metric_repository import MetricRepository
 from backend.app.services.monitoring_service import utcnow
@@ -97,6 +99,20 @@ async def _seed_devices_and_metrics(session_factory, devices_payload: list[dict]
         return devices
 
 
+async def _create_user(session_factory, *, username: str, password: str, role: str = "viewer", full_name: str = "Test User"):
+    async with session_factory() as db:
+        user = User(
+            username=username,
+            full_name=full_name,
+            password_hash=hash_password(password),
+            role=role,
+            is_active=True,
+        )
+        db.add(user)
+        await db.commit()
+        return user
+
+
 def test_devices_endpoint_returns_latest_status():
     with client_context() as (client, session_factory):
         run(
@@ -127,8 +143,8 @@ def test_devices_endpoint_returns_latest_status():
             )
         )
 
-        response = client.get("/devices")
-        status_summary_response = client.get("/devices/status-summary")
+        response = client.get("/devices", headers=API_HEADERS)
+        status_summary_response = client.get("/devices/status-summary", headers=API_HEADERS)
 
         assert response.status_code == 200
         payload = response.json()
@@ -191,9 +207,9 @@ def test_dashboard_summary_and_alerts_endpoint():
 
         run(scenario())
 
-        summary_response = client.get("/dashboard/summary")
-        alerts_response = client.get("/alerts/active")
-        history_response = client.get("/metrics/history?limit=10")
+        summary_response = client.get("/dashboard/summary", headers=API_HEADERS)
+        alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+        history_response = client.get("/metrics/history?limit=10", headers=API_HEADERS)
 
         assert summary_response.status_code == 200
         assert summary_response.json() == {
@@ -208,6 +224,119 @@ def test_dashboard_summary_and_alerts_endpoint():
 
         assert history_response.status_code == 200
         assert len(history_response.json()) == 3
+
+
+def test_auth_login_me_and_logout_flow():
+    with client_context() as (client, session_factory):
+        run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
+
+        login_response = client.post("/auth/login", json={"username": "viewer", "password": "StrongPass123!"})
+
+        assert login_response.status_code == 200
+        payload = login_response.json()
+        token = payload["access_token"]
+        assert payload["user"]["role"] == "viewer"
+
+        me_response = client.get("/auth/me", headers={"authorization": f"Bearer {token}"})
+        assert me_response.status_code == 200
+        assert me_response.json()["username"] == "viewer"
+
+        logout_response = client.post("/auth/logout", headers={"authorization": f"Bearer {token}"})
+        assert logout_response.status_code == 200
+
+        me_after_logout = client.get("/auth/me", headers={"authorization": f"Bearer {token}"})
+        assert me_after_logout.status_code == 401
+
+
+def test_viewer_cannot_access_admin_mutation_routes():
+    with client_context() as (client, session_factory):
+        run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
+
+        login_response = client.post("/auth/login", json={"username": "viewer", "password": "StrongPass123!"})
+        token = login_response.json()["access_token"]
+
+        create_response = client.post(
+            "/devices",
+            headers={"authorization": f"Bearer {token}"},
+            json={"name": "Viewer Device", "ip_address": "192.168.1.202", "device_type": "switch"},
+        )
+        assert create_response.status_code == 403
+
+
+def test_admin_bearer_token_can_access_read_and_write_routes():
+    with client_context() as (client, session_factory):
+        run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
+
+        login_response = client.post("/auth/login", json={"username": "adminuser", "password": "StrongPass123!"})
+        token = login_response.json()["access_token"]
+        headers = {"authorization": f"Bearer {token}"}
+
+        list_response = client.get("/devices", headers=headers)
+        create_response = client.post(
+            "/devices",
+            headers=headers,
+            json={"name": "Admin Device", "ip_address": "192.168.1.203", "device_type": "switch"},
+        )
+
+        assert list_response.status_code == 200
+        assert create_response.status_code == 201
+
+
+def test_dashboard_overview_data_endpoint():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [
+                        {"name": "Gateway Lokal", "ip_address": "192.168.1.1", "device_type": "internet_target"},
+                        {"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"},
+                    ]
+                )
+                now = utcnow()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "ping",
+                            "metric_value": "timeout",
+                            "status": "down",
+                            "unit": None,
+                            "checked_at": now,
+                        },
+                        {
+                            "device_id": devices[1].id,
+                            "metric_name": "ping",
+                            "metric_value": "2.50",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": now,
+                        },
+                    ]
+                )
+                db.add(
+                    Alert(
+                        device_id=devices[0].id,
+                        alert_type="internet_loss",
+                        severity="critical",
+                        message="Gateway Lokal is unreachable",
+                        status="active",
+                        created_at=now,
+                    )
+                )
+                await db.commit()
+
+        run(scenario())
+
+        response = client.get("/dashboard/overview-data", headers=API_HEADERS)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["summary"]["internet_status"] == "down"
+        assert payload["summary"]["server_status"] == "up"
+        assert payload["summary"]["active_alerts"] == 1
+        assert len(payload["devices"]) == 2
+        assert len(payload["alerts"]) == 1
+        assert payload["latest_snapshot"]["meta"]["total"] >= 2
 
 
 def test_create_and_update_device_endpoint():
@@ -248,7 +377,7 @@ def test_create_and_update_device_endpoint():
 
 def test_device_type_metadata_and_validation():
     with client_context() as (client, _session_factory):
-        types_response = client.get("/devices/meta/types")
+        types_response = client.get("/devices/meta/types", headers=API_HEADERS)
         invalid_ip_response = client.post(
             "/devices",
             headers=API_HEADERS,
@@ -310,8 +439,11 @@ def test_metrics_history_filters():
 
         server_device_id = run(scenario())
 
-        response = client.get(f"/metrics/history?device_id={server_device_id}&metric_name=cpu_percent&status=warning")
-        names_response = client.get(f"/metrics/names?device_id={server_device_id}")
+        response = client.get(
+            f"/metrics/history?device_id={server_device_id}&metric_name=cpu_percent&status=warning",
+            headers=API_HEADERS,
+        )
+        names_response = client.get(f"/metrics/names?device_id={server_device_id}", headers=API_HEADERS)
 
         assert response.status_code == 200
         payload = response.json()
@@ -353,8 +485,11 @@ def test_devices_endpoint_supports_filters_and_pagination():
             )
         )
 
-        filtered_response = client.get("/devices?active_only=true&device_type=access_point&latest_status=down&search=Lobby")
-        paged_response = client.get("/devices?limit=1&offset=1")
+        filtered_response = client.get(
+            "/devices?active_only=true&device_type=access_point&latest_status=down&search=Lobby",
+            headers=API_HEADERS,
+        )
+        paged_response = client.get("/devices?limit=1&offset=1", headers=API_HEADERS)
 
         assert filtered_response.status_code == 200
         filtered_payload = filtered_response.json()
@@ -364,7 +499,7 @@ def test_devices_endpoint_supports_filters_and_pagination():
         assert paged_response.status_code == 200
         assert len(paged_response.json()) == 1
 
-        paged_meta_response = client.get("/devices/paged?active_only=true&limit=1&offset=0")
+        paged_meta_response = client.get("/devices/paged?active_only=true&limit=1&offset=0", headers=API_HEADERS)
         assert paged_meta_response.status_code == 200
         paged_payload = paged_meta_response.json()
         assert paged_payload["meta"]["total"] == 2
@@ -406,7 +541,10 @@ def test_metrics_history_supports_time_window_filters():
         checked_from = (now - timedelta(hours=1)).isoformat()
         checked_to = now.isoformat()
 
-        response = client.get(f"/metrics/history?metric_name=cpu_percent&checked_from={checked_from}&checked_to={checked_to}")
+        response = client.get(
+            f"/metrics/history?metric_name=cpu_percent&checked_from={checked_from}&checked_to={checked_to}",
+            headers=API_HEADERS,
+        )
 
         assert response.status_code == 200
         payload = response.json()
@@ -414,7 +552,8 @@ def test_metrics_history_supports_time_window_filters():
         assert payload[0]["metric_value"] == "35.00"
 
         paged_response = client.get(
-            f"/metrics/history/paged?metric_name=cpu_percent&checked_from={checked_from}&checked_to={checked_to}&limit=10&offset=0"
+            f"/metrics/history/paged?metric_name=cpu_percent&checked_from={checked_from}&checked_to={checked_to}&limit=10&offset=0",
+            headers=API_HEADERS,
         )
         assert paged_response.status_code == 200
         paged_payload = paged_response.json()
@@ -472,9 +611,9 @@ def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
 
         run(scenario())
 
-        response = client.get("/metrics/latest-snapshot/paged?limit=1&offset=0")
-        status_summary_response = client.get("/metrics/latest-snapshot/status-summary")
-        uptime_map_response = client.get("/metrics/latest-snapshot/uptime-map?limit=2&offset=0")
+        response = client.get("/metrics/latest-snapshot/paged?limit=1&offset=0", headers=API_HEADERS)
+        status_summary_response = client.get("/metrics/latest-snapshot/status-summary", headers=API_HEADERS)
+        uptime_map_response = client.get("/metrics/latest-snapshot/uptime-map?limit=2&offset=0", headers=API_HEADERS)
 
         assert response.status_code == 200
         payload = response.json()
@@ -490,6 +629,53 @@ def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
         uptime_map = uptime_map_response.json()
         assert uptime_map
         assert any(value == "300" for value in uptime_map.values())
+
+
+def test_metrics_history_context_endpoint():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [{"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"}]
+                )
+                now = utcnow()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "35.00",
+                            "status": "warning",
+                            "unit": "%",
+                            "checked_at": now,
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "memory_percent",
+                            "metric_value": "70.00",
+                            "status": "ok",
+                            "unit": "%",
+                            "checked_at": now,
+                        },
+                    ]
+                )
+                return devices[0].id
+
+        device_id = run(scenario())
+        response = client.get(
+            f"/metrics/history/context?device_id={device_id}&metric_name=cpu_percent&status=warning&limit=50&snapshot_limit=10&snapshot_offset=0",
+            headers=API_HEADERS,
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["metric_names"] == ["cpu_percent", "memory_percent"]
+        assert payload["history"]["meta"]["total"] == 1
+        assert len(payload["history"]["items"]) == 1
+        assert len(payload["selected_device_history"]) == 1
+        assert "latest_snapshot" in payload
+        assert "latest_snapshot_status_summary" in payload
+        assert "snapshot_uptime_map" in payload
 
 
 def test_run_cycle_creates_alerts_and_incidents():
@@ -534,8 +720,8 @@ def test_run_cycle_creates_alerts_and_incidents():
             run_cycle_module.run_mikrotik_checks = empty_checks
 
             cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
-            incidents_response = client.get("/incidents?status=active")
-            alerts_response = client.get("/alerts/active")
+            incidents_response = client.get("/incidents?status=active", headers=API_HEADERS)
+            alerts_response = client.get("/alerts/active", headers=API_HEADERS)
         finally:
             run_cycle_module.run_internet_checks = original_internet
             run_cycle_module.run_device_checks = original_device
@@ -559,7 +745,7 @@ def test_run_cycle_creates_alerts_and_incidents():
 
 def test_threshold_endpoints_and_update():
     with client_context() as (client, _session_factory):
-        list_response = client.get("/thresholds")
+        list_response = client.get("/thresholds", headers=API_HEADERS)
 
         assert list_response.status_code == 200
         payload = list_response.json()
@@ -579,7 +765,7 @@ def test_threshold_endpoints_and_update():
         assert update_response.status_code == 200
         assert update_response.json()["value"] == 92
 
-        list_response_after = client.get("/thresholds")
+        list_response_after = client.get("/thresholds", headers=API_HEADERS)
         cpu_threshold = next(item for item in list_response_after.json() if item["key"] == "cpu_warning")
         assert cpu_threshold["value"] == 92
 
@@ -623,7 +809,7 @@ def test_run_cycle_creates_ping_latency_alert():
             run_cycle_module.run_mikrotik_checks = empty_checks
 
             cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
-            alerts_response = client.get("/alerts/active")
+            alerts_response = client.get("/alerts/active", headers=API_HEADERS)
         finally:
             run_cycle_module.run_internet_checks = original_internet
             run_cycle_module.run_device_checks = original_device
@@ -713,7 +899,7 @@ def test_run_cycle_creates_internet_quality_alerts():
             run_cycle_module.run_mikrotik_checks = empty_checks
 
             cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
-            alerts_response = client.get("/alerts/active")
+            alerts_response = client.get("/alerts/active", headers=API_HEADERS)
         finally:
             run_cycle_module.run_internet_checks = original_internet
             run_cycle_module.run_device_checks = original_device
@@ -833,8 +1019,8 @@ def test_run_cycle_creates_printer_alerts_and_incident():
             run_cycle_module.run_mikrotik_checks = empty_checks
 
             cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
-            alerts_response = client.get("/alerts/active")
-            incidents_response = client.get("/incidents?status=active")
+            alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+            incidents_response = client.get("/incidents?status=active", headers=API_HEADERS)
         finally:
             run_cycle_module.run_internet_checks = original_internet
             run_cycle_module.run_device_checks = original_device
@@ -877,14 +1063,21 @@ def test_internal_api_key_protects_mutation_endpoints():
         assert authorized_device.status_code == 201
 
 
-def test_production_requires_internal_api_key():
+def test_internal_api_key_protects_read_endpoints():
+    with client_context() as (client, _session_factory):
+        unauthorized_devices = client.get("/devices")
+        authorized_devices = client.get("/devices", headers=API_HEADERS)
+
+        assert unauthorized_devices.status_code == 401
+        assert authorized_devices.status_code == 200
+
+
+def test_missing_credentials_are_rejected_without_api_key_or_bearer_token():
     import backend.app.api.deps as deps_module
 
     with client_context() as (client, _session_factory):
         original_api_key = deps_module.settings.internal_api_key
-        original_app_env = deps_module.settings.app_env
         deps_module.settings.internal_api_key = ""
-        deps_module.settings.app_env = "production"
 
         try:
             response = client.post(
@@ -893,10 +1086,10 @@ def test_production_requires_internal_api_key():
             )
         finally:
             deps_module.settings.internal_api_key = original_api_key
-            deps_module.settings.app_env = original_app_env
 
-        assert response.status_code == 503
-        assert response.json()["detail"] == "INTERNAL_API_KEY is required in production"
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Authentication required"
+
 
 
 def test_health_endpoint_and_request_id_header():
@@ -963,7 +1156,7 @@ def test_observability_summary_endpoint():
 
             run(scenario())
 
-            response = client.get("/observability/summary")
+            response = client.get("/observability/summary", headers=API_HEADERS)
 
         assert response.status_code == 200
         payload = response.json()

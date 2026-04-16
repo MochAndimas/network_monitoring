@@ -24,22 +24,6 @@ async def list_device_rows_filtered(
     )
 
 
-async def count_device_rows_filtered(
-    db: AsyncSession,
-    *,
-    active_only: bool = False,
-    device_type: str | None = None,
-    latest_status: str | None = None,
-    search: str | None = None,
-) -> int:
-    return await DeviceRepository(db).count_device_status_rows(
-        active_only=active_only,
-        device_type=device_type,
-        latest_status=latest_status,
-        search=search,
-    )
-
-
 async def get_device_row(db: AsyncSession, device_id: int) -> dict:
     rows = await DeviceRepository(db).list_device_status_rows(device_id=device_id)
     if not rows:

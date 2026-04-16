@@ -5,6 +5,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from components.auth import require_dashboard_login
 from components.api import get_json, paged_items, paged_meta
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
@@ -12,6 +13,7 @@ from components.time_utils import format_wib_timestamp, to_wib_timestamp
 
 st.set_page_config(page_title="History", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
+require_dashboard_login()
 
 
 STATUS_OPTIONS = ["All", "up", "down", "ok", "error", "warning", "unknown"]
@@ -355,73 +357,74 @@ def _fetch_device_history_rows(
     status: str | None = None,
 ) -> list[dict]:
     if metric_names:
-        items: list[dict] = []
-        for metric_name in metric_names:
-            items.extend(
-                _fetch_metric_series(
-                    device_id=device_id,
-                    metric_name=metric_name,
-                    status=status,
-                    checked_from_date=checked_from_date,
-                    checked_to_date=checked_to_date,
-                )
+        metric_name_set = {str(metric_name) for metric_name in metric_names}
+        return [
+            item
+            for item in _fetch_history_pages(
+                device_id=device_id,
+                status=status,
+                checked_from_date=checked_from_date,
+                checked_to_date=checked_to_date,
             )
-        return items
+            if str(item.get("metric_name") or "") in metric_name_set
+        ]
 
-    page_size = 500
-    offset = 0
-    items: list[dict] = []
-    while True:
-        query_params = {
-            "limit": page_size,
-            "offset": offset,
-            "device_id": device_id,
-        }
-        if status and status != "All":
-            query_params["status"] = status
-        if checked_from_date:
-            query_params["checked_from"] = datetime.combine(checked_from_date, time.min).isoformat()
-        if checked_to_date:
-            query_params["checked_to"] = datetime.combine(checked_to_date, time.max).isoformat()
-        payload = get_json(f"/metrics/history/paged?{urlencode(query_params)}", {"items": [], "meta": {}})
-        page_items = paged_items(payload)
-        if not page_items:
-            break
-        items.extend(page_items)
-        meta = paged_meta(payload)
-        offset += len(page_items)
-        total = int(meta.get("total", 0) or 0)
-        if offset >= total:
-            break
-    return items
+    return _fetch_history_pages(
+        device_id=device_id,
+        status=status,
+        checked_from_date=checked_from_date,
+        checked_to_date=checked_to_date,
+    )
 
 
-def _fetch_metric_series(
+def _history_query_params(
     *,
     device_id: int,
-    metric_name: str,
-    status: str | None,
-    checked_from_date,
-    checked_to_date,
+    metric_name: str | None = None,
+    status: str | None = None,
+    checked_from_date=None,
+    checked_to_date=None,
+    limit: int = 500,
+    offset: int = 0,
+) -> dict[str, object]:
+    query_params: dict[str, object] = {
+        "limit": limit,
+        "offset": offset,
+        "device_id": device_id,
+    }
+    if metric_name:
+        query_params["metric_name"] = metric_name
+    if status and status != "All":
+        query_params["status"] = status
+    if checked_from_date:
+        query_params["checked_from"] = datetime.combine(checked_from_date, time.min).isoformat()
+    if checked_to_date:
+        query_params["checked_to"] = datetime.combine(checked_to_date, time.max).isoformat()
+    return query_params
+
+
+def _fetch_history_pages(
+    *,
+    device_id: int,
+    metric_name: str | None = None,
+    status: str | None = None,
+    checked_from_date=None,
+    checked_to_date=None,
 ) -> list[dict]:
     page_size = 500
     offset = 0
     items: list[dict] = []
 
     while True:
-        query_params = {
-            "limit": page_size,
-            "offset": offset,
-            "device_id": device_id,
-            "metric_name": metric_name,
-        }
-        if status and status != "All":
-            query_params["status"] = status
-        if checked_from_date:
-            query_params["checked_from"] = datetime.combine(checked_from_date, time.min).isoformat()
-        if checked_to_date:
-            query_params["checked_to"] = datetime.combine(checked_to_date, time.max).isoformat()
-
+        query_params = _history_query_params(
+            device_id=device_id,
+            metric_name=metric_name,
+            status=status,
+            checked_from_date=checked_from_date,
+            checked_to_date=checked_to_date,
+            limit=page_size,
+            offset=offset,
+        )
         payload = get_json(f"/metrics/history/paged?{urlencode(query_params)}", {"items": [], "meta": {}})
         page_items = paged_items(payload)
         if not page_items:
@@ -685,13 +688,54 @@ def _render_history_body() -> None:
     selected_device_id = device_options[selected_device]
     selected_device_record = next((device for device in devices if device["id"] == selected_device_id), None)
     selected_device_type = str(selected_device_record.get("device_type")) if selected_device_record else None
-    metric_option_params = {}
+    current_selected_metric = str(st.session_state.get("history_selected_metric", "All Metrics"))
+    status_value = filter_col3.selectbox("Status", options=STATUS_OPTIONS, index=0)
+    limit_value = filter_col4.selectbox("Rows", options=[50, 100, 200, 300, 500], index=2)
+    chart_window_label = st.selectbox(
+        "Chart Window",
+        options=list(CHART_WINDOW_OPTIONS.keys()),
+        index=2,
+        help="Pilih rentang waktu yang dipakai untuk chart trend.",
+    )
+    date_filter_col1, date_filter_col2 = st.columns(2)
+    checked_from_date = date_filter_col1.date_input("Checked From", value=default_start_date)
+    checked_to_date = date_filter_col2.date_input("Checked To", value=today)
+
+    snapshot_page_size = int(st.session_state.get("history_snapshot_page_size", 10))
+    snapshot_page = int(st.session_state.get("history_snapshot_page", 1))
+    snapshot_offset = (snapshot_page - 1) * snapshot_page_size
+    context_query_params = {
+        "limit": limit_value,
+        "snapshot_limit": snapshot_page_size,
+        "snapshot_offset": snapshot_offset,
+    }
     if selected_device_id is not None:
-        metric_option_params["device_id"] = selected_device_id
-    metric_option_query = f"?{urlencode(metric_option_params)}" if metric_option_params else ""
-    metric_name_options = get_json(f"/metrics/names{metric_option_query}", [])
+        context_query_params["device_id"] = selected_device_id
+    if current_selected_metric != "All Metrics" and not _should_hide_metric_for_device(
+        current_selected_metric,
+        selected_device_type,
+        selected_device_record.get("name") if selected_device_record else None,
+    ):
+        context_query_params["metric_name"] = current_selected_metric
+    if checked_from_date:
+        context_query_params["checked_from"] = datetime.combine(checked_from_date, time.min).isoformat()
+    if checked_to_date:
+        context_query_params["checked_to"] = datetime.combine(checked_to_date, time.max).isoformat()
+    if status_value != "All":
+        context_query_params["status"] = status_value
+    history_context = get_json(
+        f"/metrics/history/context?{urlencode(context_query_params)}",
+        {
+            "metric_names": [],
+            "history": {"items": [], "meta": {}},
+            "selected_device_history": [],
+            "latest_snapshot": {"items": [], "meta": {}},
+            "latest_snapshot_status_summary": {},
+            "snapshot_uptime_map": {},
+        },
+    )
     metric_name_options = _filter_metric_names(
-        metric_name_options,
+        history_context.get("metric_names", []),
         selected_device_type,
         selected_device_record.get("name") if selected_device_record else None,
     )
@@ -712,52 +756,24 @@ def _render_history_body() -> None:
         help="Daftar metric yang sudah tersimpan di history.",
         key="history_selected_metric",
     )
-    status_value = filter_col3.selectbox("Status", options=STATUS_OPTIONS, index=0)
-    limit_value = filter_col4.selectbox("Rows", options=[50, 100, 200, 300, 500], index=2)
-    chart_window_label = st.selectbox(
-        "Chart Window",
-        options=list(CHART_WINDOW_OPTIONS.keys()),
-        index=2,
-        help="Pilih rentang waktu yang dipakai untuk chart trend.",
-    )
-    date_filter_col1, date_filter_col2 = st.columns(2)
-    checked_from_date = date_filter_col1.date_input("Checked From", value=default_start_date)
-    checked_to_date = date_filter_col2.date_input("Checked To", value=today)
-
-    query_params = {"limit": limit_value}
-    if selected_device_id is not None:
-        query_params["device_id"] = selected_device_id
-    if selected_metric != "All Metrics" and not _should_hide_metric_for_device(
-        selected_metric,
-        selected_device_type,
-        selected_device_record.get("name") if selected_device_record else None,
-    ):
-        query_params["metric_name"] = selected_metric
-    if status_value != "All":
-        query_params["status"] = status_value
-    if checked_from_date:
-        query_params["checked_from"] = datetime.combine(checked_from_date, time.min).isoformat()
-    if checked_to_date:
-        query_params["checked_to"] = datetime.combine(checked_to_date, time.max).isoformat()
-
-    history_payload = get_json(f"/metrics/history/paged?{urlencode(query_params)}", {"items": [], "meta": {}})
-    history = _filter_history_rows(paged_items(history_payload), device_type_by_id, device_name_by_id)
+    history_payload = history_context.get("history", {"items": [], "meta": {}})
+    selected_device_history_raw = history_context.get("selected_device_history", [])
+    history = paged_items(history_payload)
     history_meta = paged_meta(history_payload)
-    snapshot_page_size = int(st.session_state.get("history_snapshot_page_size", 10))
-    snapshot_page = int(st.session_state.get("history_snapshot_page", 1))
-    snapshot_offset = (snapshot_page - 1) * snapshot_page_size
-    snapshot_payload = get_json(
-        f"/metrics/latest-snapshot/paged?limit={snapshot_page_size}&offset={snapshot_offset}",
-        {"items": [], "meta": {}},
-    )
+    history = _filter_history_rows(history, device_type_by_id, device_name_by_id)
+    selected_device_history = _filter_history_rows(selected_device_history_raw, device_type_by_id, device_name_by_id)
+    full_device_history = selected_device_history
+    if selected_metric != "All Metrics":
+        full_device_history = [
+            row for row in full_device_history if str(row.get("metric_name") or "") == selected_metric
+        ]
+
+    snapshot_payload = history_context.get("latest_snapshot", {"items": [], "meta": {}})
     snapshot_history = _filter_history_rows(paged_items(snapshot_payload), device_type_by_id, device_name_by_id)
     snapshot_meta = paged_meta(snapshot_payload)
     st.session_state["history_snapshot_total"] = int(snapshot_meta.get("total", 0) or 0)
-    snapshot_uptime_map = get_json(
-        f"/metrics/latest-snapshot/uptime-map?limit={snapshot_page_size}&offset={snapshot_offset}",
-        {},
-    )
-    latest_snapshot_status_summary = get_json("/metrics/latest-snapshot/status-summary", {})
+    snapshot_uptime_map = history_context.get("snapshot_uptime_map", {})
+    latest_snapshot_status_summary = history_context.get("latest_snapshot_status_summary", {})
     with meta_container:
         st.markdown(
             f"""
@@ -837,14 +853,9 @@ def _render_history_body() -> None:
             status_right.bar_chart(status_counts.set_index("status"))
 
     if selected_device_id is not None and selected_device_type == "printer":
-        printer_history = _fetch_device_history_rows(
-            device_id=int(selected_device_id),
-            checked_from_date=checked_from_date,
-            checked_to_date=checked_to_date,
-            metric_names=PRINTER_METRIC_NAMES,
-            status=status_value,
-        )
-        printer_history = _filter_history_rows(printer_history, device_type_by_id, device_name_by_id)
+        printer_history = [
+            row for row in selected_device_history if str(row.get("metric_name") or "") in PRINTER_METRIC_NAMES
+        ]
         printer_history_frame = _prepare_history_frame(printer_history, sort_desc=False)
         _render_printer_history_section(printer_history_frame)
 
@@ -858,14 +869,7 @@ def _render_history_body() -> None:
         st.info("Tidak ada metric numerik pada filter ini, jadi grafik trend belum bisa ditampilkan.")
         return
 
-    device_history = _fetch_device_history_rows(
-        device_id=int(selected_device_id),
-        checked_from_date=checked_from_date,
-        checked_to_date=checked_to_date,
-        status=status_value,
-    )
-    device_history = _filter_history_rows(device_history, device_type_by_id, device_name_by_id)
-    device_history_frame = _prepare_history_frame(device_history, sort_desc=False)
+    device_history_frame = _prepare_history_frame(full_device_history, sort_desc=False)
     if device_history_frame.empty:
         st.info("Belum ada history lengkap untuk device ini pada rentang waktu yang dipilih.")
         return

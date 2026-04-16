@@ -1,3 +1,4 @@
+from .auth import CurrentUserResponse, LoginRequest, LoginResponse, UserSessionInfo
 from .dashboard import (
     AlertItem,
     DashboardSummary,
@@ -17,6 +18,7 @@ from .dashboard import (
 
 __all__ = [
     "AlertItem",
+    "CurrentUserResponse",
     "DashboardSummary",
     "DeviceCreate",
     "DeviceListItem",
@@ -24,10 +26,13 @@ __all__ = [
     "DeviceTypeOption",
     "DeviceUpdate",
     "IncidentItem",
+    "LoginRequest",
+    "LoginResponse",
     "MetricHistoryItem",
     "MetricHistoryPage",
     "PageMeta",
     "RunCycleResult",
     "ThresholdItem",
     "ThresholdUpdate",
+    "UserSessionInfo",
 ]

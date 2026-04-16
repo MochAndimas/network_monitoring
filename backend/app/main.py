@@ -3,9 +3,13 @@ import logging
 import time
 import uuid
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .api.deps import require_api_access
+from .api.routes.auth import router as auth_router
 from .api.routes.dashboard import router as dashboard_router
 from .api.routes.devices import router as devices_router
 from .api.routes.metrics import router as metrics_router
@@ -18,6 +22,8 @@ from .api.routes.observability import router as observability_router
 from .core.config import configure_logging, settings
 from .db.init_db import init_db
 from .scheduler.scheduler import create_scheduler
+from .db.session import SessionLocal
+from .services.auth_service import ensure_bootstrap_admin
 
 
 logger = logging.getLogger("network_monitoring.http")
@@ -41,11 +47,37 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        docs_paths = {"/docs", "/redoc", "/openapi.json"}
+        if request.url.path in docs_paths:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self' https://cdn.jsdelivr.net; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' https://cdn.jsdelivr.net data:; "
+                "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+            )
+        else:
+            response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+        return response
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
     if settings.app_env.lower() != "production":
         await init_db()
+    async with SessionLocal() as db:
+        await ensure_bootstrap_admin(db)
     scheduler = None
     if settings.scheduler_enabled:
         scheduler = create_scheduler()
@@ -57,18 +89,36 @@ async def lifespan(_: FastAPI):
             scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app = FastAPI(
+    title=settings.app_name,
+    lifespan=lifespan,
+    docs_url=None if settings.app_env.lower() == "production" else "/docs",
+    redoc_url=None if settings.app_env.lower() == "production" else "/redoc",
+    openapi_url=None if settings.app_env.lower() == "production" else "/openapi.json",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.normalized_cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["authorization", "x-api-key", "content-type"],
+)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.normalized_trusted_hosts)
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
-app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
-app.include_router(devices_router, prefix="/devices", tags=["devices"])
-app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
-app.include_router(alerts_router, prefix="/alerts", tags=["alerts"])
-app.include_router(incidents_router, prefix="/incidents", tags=["incidents"])
-app.include_router(system_router, prefix="/system", tags=["system"])
-app.include_router(thresholds_router, prefix="/thresholds", tags=["thresholds"])
+secured = [Depends(require_api_access)]
+
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"], dependencies=secured)
+app.include_router(devices_router, prefix="/devices", tags=["devices"], dependencies=secured)
+app.include_router(metrics_router, prefix="/metrics", tags=["metrics"], dependencies=secured)
+app.include_router(alerts_router, prefix="/alerts", tags=["alerts"], dependencies=secured)
+app.include_router(incidents_router, prefix="/incidents", tags=["incidents"], dependencies=secured)
+app.include_router(system_router, prefix="/system", tags=["system"], dependencies=secured)
+app.include_router(thresholds_router, prefix="/thresholds", tags=["thresholds"], dependencies=secured)
 app.include_router(health_router, prefix="/health", tags=["health"])
-app.include_router(observability_router, prefix="/observability", tags=["observability"])
+app.include_router(observability_router, prefix="/observability", tags=["observability"], dependencies=secured)
 
 
 @app.get("/")

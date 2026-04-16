@@ -29,6 +29,58 @@ class MetricRepository:
             .subquery()
         )
 
+    @staticmethod
+    def _metric_row_payload(row) -> dict:
+        return {
+            "id": row.id,
+            "device_id": row.device_id,
+            "device_name": row.device_name or "Unknown Device",
+            "metric_name": row.metric_name,
+            "metric_value": row.metric_value,
+            "metric_value_numeric": _safe_float(row.metric_value),
+            "status": row.status,
+            "unit": row.unit,
+            "checked_at": row.checked_at,
+        }
+
+    def _recent_metric_rows_query(
+        self,
+        *,
+        include_total_count: bool = False,
+        device_id: int | None = None,
+        metric_name: str | None = None,
+        status: str | None = None,
+        checked_from=None,
+        checked_to=None,
+    ):
+        columns = [
+            Metric.id,
+            Metric.device_id,
+            Device.name.label("device_name"),
+            Metric.metric_name,
+            Metric.metric_value,
+            Metric.status,
+            Metric.unit,
+            Metric.checked_at,
+        ]
+        if include_total_count:
+            columns.append(func.count().over().label("total_count"))
+        query = (
+            select(*columns)
+            .outerjoin(Device, Device.id == Metric.device_id)
+        )
+        if device_id is not None:
+            query = query.where(Metric.device_id == device_id)
+        if metric_name:
+            query = query.where(Metric.metric_name == metric_name)
+        if status:
+            query = query.where(Metric.status == status)
+        if checked_from is not None:
+            query = query.where(Metric.checked_at >= checked_from)
+        if checked_to is not None:
+            query = query.where(Metric.checked_at <= checked_to)
+        return query
+
     async def create_metrics(self, payloads: Iterable[dict]) -> list[Metric]:
         metrics = [Metric(**payload) for payload in payloads]
         if not metrics:
@@ -105,45 +157,43 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ) -> list[dict]:
-        query = (
-            select(
-                Metric.id,
-                Metric.device_id,
-                Device.name.label("device_name"),
-                Metric.metric_name,
-                Metric.metric_value,
-                Metric.status,
-                Metric.unit,
-                Metric.checked_at,
-            )
-            .outerjoin(Device, Device.id == Metric.device_id)
+        query = self._recent_metric_rows_query(
+            device_id=device_id,
+            metric_name=metric_name,
+            status=status,
+            checked_from=checked_from,
+            checked_to=checked_to,
         )
-        if device_id is not None:
-            query = query.where(Metric.device_id == device_id)
-        if metric_name:
-            query = query.where(Metric.metric_name == metric_name)
-        if status:
-            query = query.where(Metric.status == status)
-        if checked_from is not None:
-            query = query.where(Metric.checked_at >= checked_from)
-        if checked_to is not None:
-            query = query.where(Metric.checked_at <= checked_to)
         query = query.order_by(desc(Metric.checked_at), desc(Metric.id)).offset(offset).limit(limit)
         rows = (await self.db.execute(query)).all()
-        return [
-            {
-                "id": row.id,
-                "device_id": row.device_id,
-                "device_name": row.device_name or "Unknown Device",
-                "metric_name": row.metric_name,
-                "metric_value": row.metric_value,
-                "metric_value_numeric": _safe_float(row.metric_value),
-                "status": row.status,
-                "unit": row.unit,
-                "checked_at": row.checked_at,
-            }
-            for row in rows
-        ]
+        return [self._metric_row_payload(row) for row in rows]
+
+    async def list_recent_metric_rows_paged(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        device_id: int | None = None,
+        metric_name: str | None = None,
+        status: str | None = None,
+        checked_from=None,
+        checked_to=None,
+    ) -> tuple[list[dict], int]:
+        query = self._recent_metric_rows_query(
+            include_total_count=True,
+            device_id=device_id,
+            metric_name=metric_name,
+            status=status,
+            checked_from=checked_from,
+            checked_to=checked_to,
+        )
+        rows = (
+            await self.db.execute(
+                query.order_by(desc(Metric.checked_at), desc(Metric.id)).offset(offset).limit(limit)
+            )
+        ).all()
+        total = int(rows[0].total_count) if rows else 0
+        return [self._metric_row_payload(row) for row in rows], total
 
     async def count_recent_metric_rows(
         self,
@@ -208,17 +258,18 @@ class MetricRepository:
             else_=3,
         )
         ranked_metrics = self._latest_metrics_ranked_subquery()
+        columns = [
+            Metric.id,
+            Metric.device_id,
+            Device.name.label("device_name"),
+            Metric.metric_name,
+            Metric.metric_value,
+            Metric.status,
+            Metric.unit,
+            Metric.checked_at,
+        ]
         query = (
-            select(
-                Metric.id,
-                Metric.device_id,
-                Device.name.label("device_name"),
-                Metric.metric_name,
-                Metric.metric_value,
-                Metric.status,
-                Metric.unit,
-                Metric.checked_at,
-            )
+            select(*columns)
             .join(ranked_metrics, Metric.id == ranked_metrics.c.metric_id)
             .outerjoin(Device, Device.id == Metric.device_id)
             .where(ranked_metrics.c.row_number == 1)
@@ -232,20 +283,77 @@ class MetricRepository:
             .limit(limit)
         )
         rows = (await self.db.execute(query)).all()
-        return [
-            {
-                "id": row.id,
-                "device_id": row.device_id,
-                "device_name": row.device_name or "Unknown Device",
-                "metric_name": row.metric_name,
-                "metric_value": row.metric_value,
-                "metric_value_numeric": _safe_float(row.metric_value),
-                "status": row.status,
-                "unit": row.unit,
-                "checked_at": row.checked_at,
-            }
-            for row in rows
-        ]
+        return [self._metric_row_payload(row) for row in rows]
+
+    async def list_latest_metric_rows_paged(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        internet_target_name_priority = case(
+            (
+                and_(
+                    Device.device_type == "internet_target",
+                    func.lower(Device.name).like("%myrepublic%"),
+                ),
+                0,
+            ),
+            (
+                and_(
+                    Device.device_type == "internet_target",
+                    func.lower(Device.name).like("%isp%"),
+                ),
+                1,
+            ),
+            (
+                and_(
+                    Device.device_type == "internet_target",
+                    func.lower(Device.name).like("%mikrotik%"),
+                ),
+                3,
+            ),
+            (
+                Device.device_type == "internet_target",
+                2,
+            ),
+            else_=4,
+        )
+        device_type_priority = case(
+            (Device.device_type == "internet_target", 0),
+            (Device.device_type == "mikrotik", 1),
+            (Device.device_type == "access_point", 2),
+            else_=3,
+        )
+        ranked_metrics = self._latest_metrics_ranked_subquery()
+        rows = (
+            await self.db.execute(
+                select(
+                    Metric.id,
+                    Metric.device_id,
+                    Device.name.label("device_name"),
+                    Metric.metric_name,
+                    Metric.metric_value,
+                    Metric.status,
+                    Metric.unit,
+                    Metric.checked_at,
+                    func.count().over().label("total_count"),
+                )
+                .join(ranked_metrics, Metric.id == ranked_metrics.c.metric_id)
+                .outerjoin(Device, Device.id == Metric.device_id)
+                .where(ranked_metrics.c.row_number == 1)
+                .order_by(
+                    device_type_priority.asc(),
+                    internet_target_name_priority.asc(),
+                    Device.name.asc(),
+                    Metric.metric_name.asc(),
+                )
+                .offset(offset)
+                .limit(limit)
+            )
+        ).all()
+        total = int(rows[0].total_count) if rows else 0
+        return [self._metric_row_payload(row) for row in rows], total
 
     async def list_latest_metrics(self) -> list[Metric]:
         ranked_metrics = self._latest_metrics_ranked_subquery()
@@ -305,6 +413,12 @@ class MetricRepository:
         offset: int = 0,
     ) -> dict[str, str]:
         latest_rows = await self.list_latest_metric_rows(limit=limit, offset=offset)
+        return await self.latest_snapshot_uptime_map_for_rows(latest_rows)
+
+    async def latest_snapshot_uptime_map_for_rows(
+        self,
+        latest_rows: list[dict],
+    ) -> dict[str, str]:
         latest_pairs = [
             (int(row["device_id"]), str(row["metric_name"]), row["checked_at"], str(row.get("status") or "unknown"))
             for row in latest_rows

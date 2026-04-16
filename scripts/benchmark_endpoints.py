@@ -11,10 +11,12 @@ import httpx
 DEFAULT_PATHS = [
     "/health",
     "/dashboard/summary",
+    "/dashboard/overview-data",
     "/devices/paged?limit=100&offset=0",
     "/alerts/active",
     "/incidents?status=active",
     "/metrics/history/paged?limit=100&offset=0",
+    "/metrics/history/context?limit=100&snapshot_limit=10&snapshot_offset=0",
     "/observability/summary",
 ]
 

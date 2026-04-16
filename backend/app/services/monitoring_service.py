@@ -1,22 +1,17 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from time import perf_counter
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.time import utcnow
 from ..repositories.alert_repository import AlertRepository
 from ..repositories.device_repository import DeviceRepository
 from ..repositories.metric_repository import MetricRepository
 
 
 logger = logging.getLogger("network_monitoring.service")
-
-
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
 
 async def persist_metrics(db: AsyncSession, metrics: list[dict]) -> list:
     return await MetricRepository(db).create_metrics(metrics)
