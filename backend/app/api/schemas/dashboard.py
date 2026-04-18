@@ -147,3 +147,10 @@ class ThresholdUpdate(BaseModel):
 class DeviceTypeOption(BaseModel):
     value: str
     label: str
+
+
+class AuthObservabilitySummary(BaseModel):
+    active_sessions: int
+    login_failures_window: int
+    login_rate_limited_window: int
+    revoked_sessions_window: int

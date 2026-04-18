@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...api.deps import require_admin_access
+from ...api.deps import require_write_access
 from ...api.schemas import DeviceCreate, DeviceListItem, DeviceListPage, DeviceTypeOption, PageMeta, DeviceUpdate
 from ...core.constants import DEVICE_TYPE_CHOICES
 from ...db.session import get_db
 from ...repositories.device_repository import DeviceRepository
+from ...services.audit_service import record_admin_audit_log
 from ...services.device_service import (
     create_device,
     get_device_row,
@@ -83,13 +84,44 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     return DeviceListItem(**await get_device_row(db, device_id))
 
 
-@router.post("", response_model=DeviceListItem, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin_access)])
-async def create_device_endpoint(payload: DeviceCreate, db: AsyncSession = Depends(get_db)) -> DeviceListItem:
+@router.post("", response_model=DeviceListItem, status_code=status.HTTP_201_CREATED)
+async def create_device_endpoint(
+    payload: DeviceCreate,
+    request: Request,
+    actor=Depends(require_write_access),
+    db: AsyncSession = Depends(get_db),
+) -> DeviceListItem:
     created_device = await create_device(db, payload.model_dump())
+    await record_admin_audit_log(
+        db,
+        actor=actor,
+        action="device.create",
+        target_type="device",
+        target_id=str(created_device.id),
+        ip_address=request.client.host if request.client else "",
+        user_agent=request.headers.get("user-agent", ""),
+        details=payload.model_dump(),
+    )
     return DeviceListItem(**await get_device_row(db, created_device.id))
 
 
-@router.put("/{device_id}", response_model=DeviceListItem, dependencies=[Depends(require_admin_access)])
-async def update_device_endpoint(device_id: int, payload: DeviceUpdate, db: AsyncSession = Depends(get_db)) -> DeviceListItem:
+@router.put("/{device_id}", response_model=DeviceListItem)
+async def update_device_endpoint(
+    device_id: int,
+    payload: DeviceUpdate,
+    request: Request,
+    actor=Depends(require_write_access),
+    db: AsyncSession = Depends(get_db),
+) -> DeviceListItem:
     updated_device = await update_device(db, device_id, payload.model_dump(exclude_unset=True))
+    await record_admin_audit_log(
+        db,
+        actor=actor,
+        action="device.update",
+        target_type="device",
+        target_id=str(device_id),
+        ip_address=request.client.host if request.client else "",
+        user_agent=request.headers.get("user-agent", ""),
+        details=payload.model_dump(exclude_unset=True),
+    )
     return DeviceListItem(**await get_device_row(db, updated_device.id))

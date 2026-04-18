@@ -88,6 +88,8 @@ async def get_metrics_history_context(
     status: str | None = Query(default=None),
     checked_from: datetime | None = Query(default=None),
     checked_to: datetime | None = Query(default=None),
+    selected_device_limit: int = Query(default=200, ge=1, le=500),
+    selected_device_offset: int = Query(default=0, ge=0),
     snapshot_limit: int = Query(default=10, ge=1, le=500),
     snapshot_offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -103,10 +105,13 @@ async def get_metrics_history_context(
         checked_to=checked_to,
     )
     selected_device_history_rows = []
+    selected_device_history_total = 0
     if device_id is not None:
-        selected_device_history_rows = await _list_all_recent_metric_rows(
-            repository,
+        selected_device_history_rows, selected_device_history_total = await repository.list_recent_metric_rows_paged(
+            limit=selected_device_limit,
+            offset=selected_device_offset,
             device_id=device_id,
+            metric_name=metric_name,
             status=status,
             checked_from=checked_from,
             checked_to=checked_to,
@@ -121,7 +126,14 @@ async def get_metrics_history_context(
             "items": _metric_history_dicts(history_rows),
             "meta": {"total": history_total, "limit": limit, "offset": 0},
         },
-        "selected_device_history": _metric_history_dicts(selected_device_history_rows),
+        "selected_device_history": {
+            "items": _metric_history_dicts(selected_device_history_rows),
+            "meta": {
+                "total": selected_device_history_total,
+                "limit": selected_device_limit,
+                "offset": selected_device_offset,
+            },
+        },
         "latest_snapshot": {
             "items": _metric_history_dicts(latest_snapshot_rows),
             "meta": {"total": latest_snapshot_total, "limit": snapshot_limit, "offset": snapshot_offset},
@@ -180,32 +192,3 @@ def _metric_history_dicts(metrics: list[dict]) -> list[dict]:
         }
         for metric in metrics
     ]
-
-
-async def _list_all_recent_metric_rows(
-    repository: MetricRepository,
-    *,
-    device_id: int,
-    status: str | None,
-    checked_from: datetime | None,
-    checked_to: datetime | None,
-) -> list[dict]:
-    page_size = 500
-    offset = 0
-    payload: list[dict] = []
-    while True:
-        rows = await repository.list_recent_metric_rows(
-            limit=page_size,
-            offset=offset,
-            device_id=device_id,
-            status=status,
-            checked_from=checked_from,
-            checked_to=checked_to,
-        )
-        if not rows:
-            break
-        payload.extend(rows)
-        if len(rows) < page_size:
-            break
-        offset += len(rows)
-    return payload

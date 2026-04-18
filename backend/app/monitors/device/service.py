@@ -3,19 +3,19 @@ import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...repositories.device_repository import DeviceRepository
-from ..helpers import build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping, safe_ping
+from ..helpers import bounded_gather, build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping, safe_ping
 from .printer_snmp import collect_printer_snmp_metrics
 
 
-DEVICE_TYPES = ["nvr", "switch", "access_point", "printer"]
-QUALITY_CHECK_TYPES = {"access_point", "printer"}
+DEVICE_TYPES = ["nvr", "switch", "access_point", "voip", "printer"]
+QUALITY_CHECK_TYPES = {"access_point", "voip", "printer"}
 
 
 async def run_device_checks(db: AsyncSession) -> list[dict]:
     devices = await DeviceRepository(db).list_by_types(DEVICE_TYPES, active_only=True)
     return [
         metric
-        for device_metrics in await asyncio.gather(*[_build_device_metrics(device) for device in devices])
+        for device_metrics in await bounded_gather([_build_device_metrics(device) for device in devices])
         for metric in device_metrics
     ]
 

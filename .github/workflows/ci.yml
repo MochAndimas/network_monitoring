@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "codex/**"
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: development
+      INTERNAL_API_KEY: ci-internal-key
+      AUTH_PASSWORD_SECRET: ci-password-secret
+      AUTH_JWT_SECRET: ci-jwt-secret
+      CORS_ORIGINS: http://localhost:8501,http://127.0.0.1:8501
+      TRUSTED_HOSTS: localhost,127.0.0.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/dev.txt
+
+      - name: Lint
+        run: ruff check backend dashboard scripts tests
+
+      - name: Unit and API tests
+        run: pytest -q
+
+  migration-smoke:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: network_monitoring_ci
+          MYSQL_USER: network_monitoring
+          MYSQL_PASSWORD: network_monitoring
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -unetwork_monitoring -pnetwork_monitoring --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=20s
+    env:
+      DATABASE_URL: mysql+pymysql://network_monitoring:network_monitoring@127.0.0.1:3306/network_monitoring_ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/backend.txt
+
+      - name: Run Alembic upgrade
+        run: alembic upgrade head
+
+  non-functional-smoke:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: development
+      DATABASE_URL: sqlite+aiosqlite:///./ci_nonfunctional.db
+      INTERNAL_API_KEY: ci-internal-key
+      AUTH_PASSWORD_SECRET: ci-password-secret
+      AUTH_JWT_SECRET: ci-jwt-secret
+      CORS_ORIGINS: http://localhost:8501,http://127.0.0.1:8501
+      TRUSTED_HOSTS: localhost,127.0.0.1
+      LOG_LEVEL: INFO
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/dev.txt
+
+      - name: Start backend for smoke checks
+        run: |
+          python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 > uvicorn.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat uvicorn.log
+          exit 1
+
+      - name: Benchmark regression gate
+        run: |
+          python scripts/benchmark_endpoints.py \
+            --base-url http://127.0.0.1:8000 \
+            --api-key ci-internal-key \
+            --runs 3 \
+            --max-p95-ms 1500 \
+            --max-max-ms 2500
+
+      - name: Concurrency smoke test
+        run: |
+          python scripts/concurrency_smoke.py \
+            --base-url http://127.0.0.1:8000 \
+            --path /health/live \
+            --requests 20 \
+            --concurrency 5 \
+            --max-p95-ms 1000
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -f Dockerfile.backend -t network-monitoring-backend-ci .
+
+      - name: Build dashboard image
+        run: docker build -f Dockerfile.dashboard -t network-monitoring-dashboard-ci .
+
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install audit tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Audit backend dependencies
+        run: pip-audit -r requirements/backend.txt
+
+      - name: Audit dashboard dependencies
+        run: pip-audit -r requirements/dashboard.txt

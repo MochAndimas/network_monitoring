@@ -4,6 +4,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db.base import Base
+from ..core.time import now
 
 
 class Alert(Base):
@@ -19,7 +20,7 @@ class Alert(Base):
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
     message: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     device: Mapped["Device | None"] = relationship(back_populates="alerts")

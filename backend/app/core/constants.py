@@ -5,5 +5,6 @@ DEVICE_TYPE_CHOICES = [
     "nvr",
     "switch",
     "access_point",
+    "voip",
     "printer",
 ]

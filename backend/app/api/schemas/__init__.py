@@ -1,6 +1,21 @@
-from .auth import CurrentUserResponse, LoginRequest, LoginResponse, UserSessionInfo
+from .auth import (
+    AdminAuditLogItem,
+    AuthAdminSessionItem,
+    AuthSessionItem,
+    ChangePasswordRequest,
+    CurrentUserResponse,
+    LoginRequest,
+    LoginResponse,
+    LogoutAllResponse,
+    UserAdminCreateRequest,
+    UserAdminItem,
+    UserAdminUpdateRequest,
+    UserPasswordResetRequest,
+    UserSessionInfo,
+)
 from .dashboard import (
     AlertItem,
+    AuthObservabilitySummary,
     DashboardSummary,
     DeviceCreate,
     DeviceListItem,
@@ -18,6 +33,11 @@ from .dashboard import (
 
 __all__ = [
     "AlertItem",
+    "AdminAuditLogItem",
+    "AuthAdminSessionItem",
+    "AuthObservabilitySummary",
+    "AuthSessionItem",
+    "ChangePasswordRequest",
     "CurrentUserResponse",
     "DashboardSummary",
     "DeviceCreate",
@@ -28,11 +48,16 @@ __all__ = [
     "IncidentItem",
     "LoginRequest",
     "LoginResponse",
+    "LogoutAllResponse",
     "MetricHistoryItem",
     "MetricHistoryPage",
     "PageMeta",
     "RunCycleResult",
     "ThresholdItem",
     "ThresholdUpdate",
+    "UserAdminCreateRequest",
+    "UserAdminItem",
+    "UserAdminUpdateRequest",
+    "UserPasswordResetRequest",
     "UserSessionInfo",
 ]

@@ -15,13 +15,15 @@ class AlertRepository:
         )
         return list((await self.db.scalars(query)).all())
 
-    async def list_active_alert_rows(self) -> list[dict]:
+    async def list_active_alert_rows(self, *, limit: int | None = None) -> list[dict]:
         query = (
             select(Alert, Device.name)
             .outerjoin(Device, Device.id == Alert.device_id)
             .where(Alert.status == "active")
             .order_by(desc(Alert.created_at), desc(Alert.id))
         )
+        if limit is not None:
+            query = query.limit(limit)
         rows = (await self.db.execute(query)).all()
         return [
             {
@@ -37,6 +39,16 @@ class AlertRepository:
             }
             for alert, device_name in rows
         ]
+
+    async def summarize_active_alert_severity_counts(self) -> dict[str, int]:
+        rows = (
+            await self.db.execute(
+                select(Alert.severity, func.count())
+                .where(Alert.status == "active")
+                .group_by(Alert.severity)
+            )
+        ).all()
+        return {str(severity or "unknown"): int(total) for severity, total in rows}
 
     async def count_active_alerts(self) -> int:
         query = select(func.count()).select_from(Alert).where(Alert.status == "active")

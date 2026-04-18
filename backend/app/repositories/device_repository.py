@@ -53,7 +53,7 @@ class DeviceRepository:
         active_only: bool = False,
         device_id: int | None = None,
         device_type: str | None = None,
-        latest_status: str | None = None,
+        latest_status: str | list[str] | tuple[str, ...] | None = None,
         search: str | None = None,
     ):
         latest_ping_metrics = self._latest_ping_metrics_subquery()
@@ -87,7 +87,11 @@ class DeviceRepository:
         if device_type:
             query = query.where(Device.device_type == device_type)
         if latest_status:
-            query = query.where(func.coalesce(latest_ping.status, "unknown") == latest_status)
+            normalized_status = func.coalesce(latest_ping.status, "unknown")
+            if isinstance(latest_status, (list, tuple, set)):
+                query = query.where(normalized_status.in_(list(latest_status)))
+            else:
+                query = query.where(normalized_status == latest_status)
         search_filter = self._search_filter(search)
         if search_filter is not None:
             query = query.where(search_filter)
@@ -110,7 +114,7 @@ class DeviceRepository:
         active_only: bool = False,
         device_id: int | None = None,
         device_type: str | None = None,
-        latest_status: str | None = None,
+        latest_status: str | list[str] | tuple[str, ...] | None = None,
         search: str | None = None,
         limit: int | None = None,
         offset: int = 0,
@@ -149,7 +153,7 @@ class DeviceRepository:
         *,
         active_only: bool = False,
         device_type: str | None = None,
-        latest_status: str | None = None,
+        latest_status: str | list[str] | tuple[str, ...] | None = None,
         search: str | None = None,
         limit: int = 100,
         offset: int = 0,
@@ -227,6 +231,19 @@ class DeviceRepository:
         query = query.group_by(latest_status)
         rows = (await self.db.execute(query)).all()
         return {str(status or "unknown"): int(device_count) for status, device_count in rows}
+
+    async def latest_device_check_at(self, *, active_only: bool = False) -> object | None:
+        latest_ping_metrics = self._latest_ping_metrics_subquery()
+        latest_ping = aliased(Metric)
+        query = (
+            select(func.max(latest_ping.checked_at))
+            .select_from(Device)
+            .outerjoin(latest_ping_metrics, Device.id == latest_ping_metrics.c.device_id)
+            .outerjoin(latest_ping, latest_ping.id == latest_ping_metrics.c.metric_id)
+        )
+        if active_only:
+            query = query.where(Device.is_active.is_(True))
+        return await self.db.scalar(query)
 
     async def count_device_status_rows(
         self,

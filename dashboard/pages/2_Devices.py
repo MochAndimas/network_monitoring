@@ -3,7 +3,7 @@ import pandas as pd
 from urllib.parse import urlencode
 
 from components.auth import is_admin, require_dashboard_login
-from components.api import get_json, get_json_map, paged_items, paged_meta, post_json, put_json
+from components.api import get_json, get_json_map, has_pending_action, paged_items, paged_meta, post_json, put_json
 from components.sidebar import collapse_sidebar_on_page_load
 
 st.set_page_config(page_title="Devices", layout="wide", initial_sidebar_state="collapsed")
@@ -105,7 +105,12 @@ with manage_tab:
                     "description": create_description.strip() or None,
                     "is_active": create_active,
                 }
-                result = post_json("/devices", payload, None)
+                result = post_json("/devices", payload, None, action_key="create_device")
+                if result:
+                    st.success(f"Device `{result['name']}` berhasil ditambahkan.")
+                    st.rerun()
+            elif has_pending_action("create_device"):
+                result = post_json("/devices", None, None, action_key="create_device")
                 if result:
                     st.success(f"Device `{result['name']}` berhasil ditambahkan.")
                     st.rerun()
@@ -155,7 +160,12 @@ with manage_tab:
                         "description": edit_description.strip() or None,
                         "is_active": edit_active,
                     }
-                    result = put_json(f"/devices/{selected_device['id']}", payload, None)
+                    result = put_json(f"/devices/{selected_device['id']}", payload, None, action_key="edit_device")
+                    if result:
+                        st.success(f"Device `{result['name']}` berhasil diperbarui.")
+                        st.rerun()
+                elif has_pending_action("edit_device"):
+                    result = put_json(f"/devices/{selected_device['id']}", {}, None, action_key="edit_device")
                     if result:
                         st.success(f"Device `{result['name']}` berhasil diperbarui.")
                         st.rerun()

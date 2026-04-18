@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.config import settings
 from ...repositories.device_repository import DeviceRepository
 from ...services.monitoring_service import utcnow
-from ..helpers import build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping
+from ..helpers import bounded_gather, build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping
 
 try:
     from librouteros import connect
@@ -23,7 +23,7 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
     devices = await DeviceRepository(db).list_by_type("mikrotik", active_only=True)
     metrics: list[dict] = [
         metric
-        for device_metrics in await asyncio.gather(*[_build_ping_metrics(device.id, device.ip_address) for device in devices])
+        for device_metrics in await bounded_gather([_build_ping_metrics(device.id, device.ip_address) for device in devices])
         for metric in device_metrics
     ]
 

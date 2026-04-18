@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: network_monitoring_backend
+    container_name: network_monitoring_backend_api
     restart: unless-stopped
     depends_on:
       mysql:
@@ -49,6 +49,8 @@ services:
       DNS_CHECK_HOST: ${DNS_CHECK_HOST:-google.com}
       HTTP_CHECK_URL: ${HTTP_CHECK_URL:-https://www.google.com/generate_204}
       PUBLIC_IP_CHECK_URL: ${PUBLIC_IP_CHECK_URL:-https://api.ipify.org}
+      MONITORING_LOCK_NAME: ${MONITORING_LOCK_NAME:-network_monitoring.pipeline}
+      MONITORING_LOCK_TIMEOUT_SECONDS: ${MONITORING_LOCK_TIMEOUT_SECONDS:-900}
       RAW_METRIC_RETENTION_DAYS: ${RAW_METRIC_RETENTION_DAYS:-7}
       ALERT_RETENTION_DAYS: ${ALERT_RETENTION_DAYS:-180}
       INCIDENT_RETENTION_DAYS: ${INCIDENT_RETENTION_DAYS:-180}
@@ -57,13 +59,16 @@ services:
       RAM_WARNING_THRESHOLD: ${RAM_WARNING_THRESHOLD:-90}
       DISK_WARNING_THRESHOLD: ${DISK_WARNING_THRESHOLD:-85}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set}
+      AUTH_PASSWORD_SECRET: ${AUTH_PASSWORD_SECRET:-}
       AUTH_TOKEN_TTL_MINUTES: ${AUTH_TOKEN_TTL_MINUTES:-720}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
       BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
       BOOTSTRAP_ADMIN_FULL_NAME: ${BOOTSTRAP_ADMIN_FULL_NAME:-Monitoring Admin}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?BOOTSTRAP_ADMIN_PASSWORD must be set}
       ALLOW_INSECURE_NO_AUTH: ${ALLOW_INSECURE_NO_AUTH:-false}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8501,http://127.0.0.1:8501}
-      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:?TRUSTED_HOSTS must be set}
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
       PRINTER_SNMP_COMMUNITIES: ${PRINTER_SNMP_COMMUNITIES:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
@@ -81,6 +86,75 @@ services:
       retries: 5
       start_period: 30s
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    profiles: ["ops"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      APP_NAME: ${APP_NAME:-Network Monitoring}
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-network_monitoring}:${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}@mysql:3306/${MYSQL_DATABASE:-network_monitoring}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: ["sh", "/app/scripts/run-migrations.sh"]
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: network_monitoring_scheduler
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      APP_NAME: ${APP_NAME:-Network Monitoring}
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-network_monitoring}:${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}@mysql:3306/${MYSQL_DATABASE:-network_monitoring}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      MIKROTIK_HOST: ${MIKROTIK_HOST:-}
+      MIKROTIK_USERNAME: ${MIKROTIK_USERNAME:-}
+      MIKROTIK_PASSWORD: ${MIKROTIK_PASSWORD:-}
+      DASHBOARD_API_URL: http://backend:8000
+      PING_TIMEOUT_SECONDS: ${PING_TIMEOUT_SECONDS:-2}
+      PING_SAMPLE_COUNT: ${PING_SAMPLE_COUNT:-3}
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      SCHEDULER_INTERVAL_INTERNET_SECONDS: ${SCHEDULER_INTERVAL_INTERNET_SECONDS:-30}
+      SCHEDULER_INTERVAL_DEVICE_SECONDS: ${SCHEDULER_INTERVAL_DEVICE_SECONDS:-60}
+      SCHEDULER_INTERVAL_SERVER_SECONDS: ${SCHEDULER_INTERVAL_SERVER_SECONDS:-60}
+      SCHEDULER_INTERVAL_MIKROTIK_SECONDS: ${SCHEDULER_INTERVAL_MIKROTIK_SECONDS:-60}
+      SCHEDULER_INTERVAL_ALERT_SECONDS: ${SCHEDULER_INTERVAL_ALERT_SECONDS:-30}
+      DNS_CHECK_HOST: ${DNS_CHECK_HOST:-google.com}
+      HTTP_CHECK_URL: ${HTTP_CHECK_URL:-https://www.google.com/generate_204}
+      PUBLIC_IP_CHECK_URL: ${PUBLIC_IP_CHECK_URL:-https://api.ipify.org}
+      MONITORING_LOCK_NAME: ${MONITORING_LOCK_NAME:-network_monitoring.pipeline}
+      MONITORING_LOCK_TIMEOUT_SECONDS: ${MONITORING_LOCK_TIMEOUT_SECONDS:-900}
+      RAW_METRIC_RETENTION_DAYS: ${RAW_METRIC_RETENTION_DAYS:-7}
+      ALERT_RETENTION_DAYS: ${ALERT_RETENTION_DAYS:-180}
+      INCIDENT_RETENTION_DAYS: ${INCIDENT_RETENTION_DAYS:-180}
+      SCHEDULER_CLEANUP_INTERVAL_HOURS: ${SCHEDULER_CLEANUP_INTERVAL_HOURS:-24}
+      CPU_WARNING_THRESHOLD: ${CPU_WARNING_THRESHOLD:-90}
+      RAM_WARNING_THRESHOLD: ${RAM_WARNING_THRESHOLD:-90}
+      DISK_WARNING_THRESHOLD: ${DISK_WARNING_THRESHOLD:-85}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set}
+      AUTH_PASSWORD_SECRET: ${AUTH_PASSWORD_SECRET:-}
+      AUTH_TOKEN_TTL_MINUTES: ${AUTH_TOKEN_TTL_MINUTES:-720}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_FULL_NAME: ${BOOTSTRAP_ADMIN_FULL_NAME:-Monitoring Admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?BOOTSTRAP_ADMIN_PASSWORD must be set}
+      ALLOW_INSECURE_NO_AUTH: ${ALLOW_INSECURE_NO_AUTH:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:?TRUSTED_HOSTS must be set}
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
+      PRINTER_SNMP_COMMUNITIES: ${PRINTER_SNMP_COMMUNITIES:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: ["python", "-m", "backend.app.scheduler.worker"]
+
   dashboard:
     build:
       context: .
@@ -92,6 +166,7 @@ services:
         condition: service_healthy
     environment:
       DASHBOARD_API_URL: http://backend:8000
+      DASHBOARD_PUBLIC_API_URL: ${DASHBOARD_PUBLIC_API_URL:?DASHBOARD_PUBLIC_API_URL must be set}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set}
     ports:
       - "127.0.0.1:8501:8501"

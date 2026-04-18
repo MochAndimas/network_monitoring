@@ -1,4 +1,5 @@
 import logging
+from time import perf_counter
 
 from ..core.config import settings
 from ..db.session import SessionLocal
@@ -7,6 +8,13 @@ from ..monitors.device.service import run_device_checks
 from ..monitors.internet.service import run_internet_checks
 from ..monitors.mikrotik.service import run_mikrotik_checks
 from ..monitors.server.service import run_server_checks
+from ..services.auth_service import cleanup_auth_data
+from ..services.observability_service import (
+    job_logging_context,
+    mark_scheduler_job_failed,
+    mark_scheduler_job_started,
+    mark_scheduler_job_succeeded,
+)
 from ..services.pipeline_control import monitoring_pipeline_guard
 from ..services.monitoring_service import persist_metrics
 from ..services.retention_service import cleanup_monitoring_data
@@ -79,48 +87,72 @@ def register_jobs(scheduler) -> None:
 
 
 async def run_internet_job() -> None:
-    await _persist_runner(run_internet_checks)
+    await _run_scheduler_job("internet_checks", lambda db: _persist_runner(run_internet_checks, db))
 
 
 async def run_device_job() -> None:
-    await _persist_runner(run_device_checks)
+    await _run_scheduler_job("device_checks", lambda db: _persist_runner(run_device_checks, db))
 
 
 async def run_server_job() -> None:
-    await _persist_runner(run_server_checks)
+    await _run_scheduler_job("server_checks", lambda db: _persist_runner(run_server_checks, db))
 
 
 async def run_mikrotik_job() -> None:
-    await _persist_runner(run_mikrotik_checks)
+    await _run_scheduler_job("mikrotik_checks", lambda db: _persist_runner(run_mikrotik_checks, db))
 
 
 async def run_alert_job() -> None:
+    await _run_scheduler_job("alert_evaluation", _run_alert_job_inner)
+
+
+async def run_cleanup_job() -> None:
+    await _run_scheduler_job("retention_cleanup", _run_cleanup_job_inner)
+
+
+async def _persist_runner(runner, db) -> None:
+    # Metric jobs share one pipeline lock so they don't trample each other,
+    # but they should queue instead of being dropped when schedules overlap.
+    async with monitoring_pipeline_guard(wait=True):
+        await persist_metrics(db, await runner(db))
+        # Re-evaluate alerts immediately after fresh metrics land so alerting
+        # doesn't get starved by the separate scheduler tick.
+        await evaluate_alerts(db)
+
+
+async def _run_alert_job_inner(db) -> None:
     async with monitoring_pipeline_guard(wait=False) as acquired:
         if not acquired:
             logger.info("Skipping alert evaluation because another monitoring pipeline run is active")
             return
-        async with SessionLocal() as db:
-            await evaluate_alerts(db)
+        await evaluate_alerts(db)
 
 
-async def run_cleanup_job() -> None:
+async def _run_cleanup_job_inner(db) -> None:
     async with monitoring_pipeline_guard(wait=False) as acquired:
         if not acquired:
             logger.info("Skipping retention cleanup because another monitoring pipeline run is active")
             return
-        async with SessionLocal() as db:
-            await cleanup_monitoring_data(db)
+        await cleanup_monitoring_data(db)
+        await cleanup_auth_data(db)
 
 
-async def _persist_runner(runner) -> None:
-    # Metric jobs share one pipeline lock so they don't trample each other,
-    # but they should queue instead of being dropped when schedules overlap.
-    async with monitoring_pipeline_guard(wait=True):
-        async with SessionLocal() as db:
-            await persist_metrics(db, await runner(db))
-            # Re-evaluate alerts immediately after fresh metrics land so alerting
-            # doesn't get starved by the separate scheduler tick.
-            await evaluate_alerts(db)
+async def _run_scheduler_job(job_name: str, operation) -> None:
+    started_at = perf_counter()
+    async with SessionLocal() as db:
+        with job_logging_context(job_name):
+            await mark_scheduler_job_started(db, job_name=job_name)
+            try:
+                await operation(db)
+            except Exception as exc:
+                duration_ms = (perf_counter() - started_at) * 1000
+                await mark_scheduler_job_failed(db, job_name=job_name, duration_ms=duration_ms, error=str(exc))
+                logger.exception("scheduler_job_failed job_name=%s duration_ms=%.2f", job_name, duration_ms)
+                raise
+            else:
+                duration_ms = (perf_counter() - started_at) * 1000
+                await mark_scheduler_job_succeeded(db, job_name=job_name, duration_ms=duration_ms)
+                logger.info("scheduler_job_completed job_name=%s duration_ms=%.2f", job_name, duration_ms)
 
 
 def _misfire_grace_time(period_seconds: int) -> int:

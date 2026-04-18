@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth import is_admin, require_dashboard_login, session_expiry_label
-from components.api import get_json, post_json
+from components.api import get_json_map, has_pending_action, post_json
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
@@ -158,41 +158,59 @@ def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
 
 
 def _render_overview_body() -> None:
-    payload = get_json(
-        "/dashboard/overview-data",
+    payload = get_json_map(
         {
-            "summary": {
-                "internet_status": "unknown",
-                "mikrotik_status": "unknown",
-                "server_status": "unknown",
-                "active_alerts": 0,
-            },
-            "devices": [],
-            "alerts": [],
-            "incidents": [],
-            "latest_snapshot": {"items": [], "meta": {}},
-        },
+            "overview": (
+                "/dashboard/overview-panels?snapshot_limit=12&alerts_limit=5&incidents_limit=5",
+                {
+                    "summary": {
+                        "internet_status": "unknown",
+                        "mikrotik_status": "unknown",
+                        "server_status": "unknown",
+                        "active_alerts": 0,
+                    },
+                    "device_counts": {
+                        "total": 0,
+                        "active": 0,
+                        "inactive": 0,
+                        "statuses": {},
+                        "latest_check_at": None,
+                    },
+                    "alert_severity_summary": {},
+                    "alerts": [],
+                    "incidents": [],
+                    "latest_snapshot": {"items": [], "meta": {}},
+                },
+            ),
+            "problem_devices": ("/dashboard/problem-devices?limit=25", []),
+        }
     )
-    summary = payload["summary"]
-    devices = payload["devices"]
-    alerts = payload["alerts"]
-    incidents = payload["incidents"]
-    latest_snapshot = payload["latest_snapshot"]
+    overview_payload = payload["overview"]
+    summary = overview_payload["summary"]
+    device_counts = overview_payload["device_counts"]
+    problem_devices = payload["problem_devices"]
+    alerts = overview_payload["alerts"]
+    incidents = overview_payload["incidents"]
+    latest_snapshot = overview_payload["latest_snapshot"]
 
-    devices_frame = _prepare_devices_frame(devices)
+    devices_frame = _prepare_devices_frame(problem_devices)
     alerts_frame = _prepare_alerts_frame(alerts)
     incidents_frame = _prepare_incidents_frame(incidents)
     history_frame = _prepare_snapshot_frame(latest_snapshot)
 
-    total_devices = int(len(devices_frame)) if not devices_frame.empty else 0
-    active_devices = int(devices_frame["is_active"].sum()) if not devices_frame.empty else 0
-    devices_down = int((devices_frame["latest_status"] == "down").sum()) if not devices_frame.empty else 0
-    devices_warning = int((devices_frame["latest_status"] == "warning").sum()) if not devices_frame.empty else 0
+    total_devices = int(device_counts.get("total", 0) or 0)
+    active_devices = int(device_counts.get("active", 0) or 0)
+    status_counts = device_counts.get("statuses", {}) if isinstance(device_counts.get("statuses"), dict) else {}
+    devices_down = int(status_counts.get("down", 0) or 0)
+    devices_warning = int(status_counts.get("warning", 0) or 0)
     active_incidents = int(len(incidents_frame)) if not incidents_frame.empty else 0
     latest_check = (
-        format_wib_timestamp(devices_frame["latest_checked_at"].max())
-        if not devices_frame.empty and devices_frame["latest_checked_at"].notna().any()
+        format_wib_timestamp(to_wib_timestamp(device_counts.get("latest_check_at")))
+        if device_counts.get("latest_check_at")
         else "-"
+    )
+    severity_counts = pd.DataFrame(
+        [{"severity": severity, "count": count} for severity, count in overview_payload.get("alert_severity_summary", {}).items()]
     )
 
     st.markdown(
@@ -247,10 +265,9 @@ def _render_overview_body() -> None:
 
     with ops_right:
         st.markdown("### Alert Severity")
-        if alerts_frame.empty:
+        if severity_counts.empty:
             st.success("Tidak ada alert aktif.")
         else:
-            severity_counts = alerts_frame["severity"].fillna("unknown").value_counts().rename_axis("severity").reset_index(name="count")
             st.bar_chart(severity_counts.set_index("severity"))
             st.metric("Active Incidents", active_incidents)
 
@@ -320,7 +337,9 @@ with action_col:
     if not is_admin():
         st.caption(f"Session expiry: {session_expiry_label()}")
         st.info("Role viewer tidak bisa menjalankan monitoring cycle manual.")
-    elif st.button("Run Monitoring Cycle Now", type="primary", width="stretch"):
+    else:
+        run_cycle_clicked = st.button("Run Monitoring Cycle Now", type="primary", width="stretch")
+    if is_admin() and (run_cycle_clicked or has_pending_action("run_monitoring_cycle")):
         cycle_result = post_json(
             "/system/run-cycle",
             None,
@@ -331,6 +350,7 @@ with action_col:
                 "incidents_created": 0,
                 "incidents_resolved": 0,
             },
+            action_key="run_monitoring_cycle",
         )
         st.success(
             "Cycle selesai: "

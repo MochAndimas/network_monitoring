@@ -10,6 +10,7 @@ from ..core.config import settings
 from ..models.alert import Alert
 from ..models.incident import Incident
 from ..models.metric import Metric
+from ..models.metric_cold_archive import MetricColdArchive
 from ..models.metric_daily_rollup import MetricDailyRollup
 from .monitoring_service import utcnow
 
@@ -19,12 +20,14 @@ UP_STATUSES = {"up", "ok"}
 
 async def cleanup_monitoring_data(db: AsyncSession) -> dict[str, int]:
     rolled_up_days = await rollup_completed_raw_metrics(db, commit=False)
+    archived_metric_groups = await archive_expired_raw_metrics(db, commit=False)
     deleted_metrics = await delete_expired_raw_metrics(db, commit=False)
     deleted_alerts = await delete_expired_alerts(db, commit=False)
     deleted_incidents = await delete_expired_incidents(db, commit=False)
     await db.commit()
     return {
         "rolled_up_days": rolled_up_days,
+        "archived_metric_groups": archived_metric_groups,
         "deleted_metrics": deleted_metrics,
         "deleted_alerts": deleted_alerts,
         "deleted_incidents": deleted_incidents,
@@ -67,6 +70,34 @@ async def delete_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -
     else:
         await db.flush()
     return int(result.rowcount or 0)
+
+
+async def archive_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:
+    cutoff = _raw_metric_cutoff()
+    payloads = await _build_archive_payloads(db, cutoff)
+    if not payloads:
+        if commit:
+            await db.commit()
+        else:
+            await db.flush()
+        return 0
+
+    existing_archives = await _load_existing_archives(db, payloads.keys())
+    now = utcnow()
+    for key, payload in payloads.items():
+        payload["updated_at"] = now
+        existing = existing_archives.get(key)
+        if existing is None:
+            db.add(MetricColdArchive(**payload))
+            continue
+        for field_name, value in payload.items():
+            setattr(existing, field_name, value)
+
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
+    return len(payloads)
 
 
 async def delete_expired_alerts(db: AsyncSession, *, commit: bool = True) -> int:
@@ -137,6 +168,47 @@ async def _build_rollup_payloads(db: AsyncSession, cutoff: datetime) -> dict[tup
     return {key: accumulator.to_payload() for key, accumulator in grouped_stats.items()}
 
 
+async def _build_archive_payloads(db: AsyncSession, cutoff: datetime) -> dict[tuple[int, object, str, str, str], dict]:
+    query = (
+        select(
+            Metric.device_id,
+            Metric.checked_at,
+            Metric.metric_name,
+            Metric.metric_value,
+            Metric.status,
+            Metric.unit,
+        )
+        .where(Metric.checked_at < cutoff)
+        .order_by(
+            Metric.device_id.asc(),
+            Metric.checked_at.asc(),
+            Metric.metric_name.asc(),
+            Metric.id.asc(),
+        )
+    )
+    result = await db.stream(query)
+    grouped_stats: dict[tuple[int, object, str, str, str], _ArchiveAccumulator] = {}
+
+    async for device_id, checked_at, metric_name, metric_value, status, unit in result:
+        archive_date = checked_at.date()
+        normalized_status = str(status or "unknown").lower()
+        normalized_unit = str(unit or "")
+        key = (int(device_id), archive_date, str(metric_name), normalized_status, normalized_unit)
+        accumulator = grouped_stats.setdefault(
+            key,
+            _ArchiveAccumulator(
+                device_id=int(device_id),
+                archive_date=archive_date,
+                metric_name=str(metric_name),
+                status=normalized_status,
+                unit=normalized_unit,
+            ),
+        )
+        accumulator.add(metric_value=str(metric_value), checked_at=checked_at)
+
+    return {key: accumulator.to_payload() for key, accumulator in grouped_stats.items()}
+
+
 async def _load_existing_rollups(db: AsyncSession, keys) -> dict[tuple[int, object], MetricDailyRollup]:
     key_list = list(keys)
     if not key_list:
@@ -149,6 +221,35 @@ async def _load_existing_rollups(db: AsyncSession, keys) -> dict[tuple[int, obje
         )
         for rollup in (await db.scalars(query)).all():
             existing[(rollup.device_id, rollup.rollup_date)] = rollup
+    return existing
+
+
+async def _load_existing_archives(db: AsyncSession, keys) -> dict[tuple[int, object, str, str, str], MetricColdArchive]:
+    key_list = list(keys)
+    if not key_list:
+        return {}
+
+    existing: dict[tuple[int, object, str, str, str], MetricColdArchive] = {}
+    for chunk in _chunked(key_list, 250):
+        query = select(MetricColdArchive).where(
+            tuple_(
+                MetricColdArchive.device_id,
+                MetricColdArchive.archive_date,
+                MetricColdArchive.metric_name,
+                MetricColdArchive.status,
+                MetricColdArchive.unit,
+            ).in_(chunk)
+        )
+        for archive in (await db.scalars(query)).all():
+            existing[
+                (
+                    archive.device_id,
+                    archive.archive_date,
+                    archive.metric_name,
+                    archive.status,
+                    archive.unit,
+                )
+            ] = archive
     return existing
 
 
@@ -241,3 +342,61 @@ class _RollupAccumulator:
         self.jitter_sum += value
         self.jitter_count += 1
         self.max_jitter_ms = max(self.max_jitter_ms, value)
+
+
+class _ArchiveAccumulator:
+    def __init__(
+        self,
+        *,
+        device_id: int,
+        archive_date,
+        metric_name: str,
+        status: str,
+        unit: str,
+    ) -> None:
+        self.device_id = device_id
+        self.archive_date = archive_date
+        self.metric_name = metric_name
+        self.status = status
+        self.unit = unit
+        self.sample_count = 0
+        self.numeric_sample_count = 0
+        self.numeric_sum = 0.0
+        self.min_numeric_value = inf
+        self.max_numeric_value = float("-inf")
+        self.first_checked_at: datetime | None = None
+        self.last_checked_at: datetime | None = None
+        self.last_metric_value = ""
+
+    def add(self, *, metric_value: str, checked_at: datetime) -> None:
+        self.sample_count += 1
+        if self.first_checked_at is None:
+            self.first_checked_at = checked_at
+        self.last_checked_at = checked_at
+        self.last_metric_value = metric_value
+        value = _safe_float(metric_value)
+        if value is None:
+            return
+        self.numeric_sample_count += 1
+        self.numeric_sum += value
+        self.min_numeric_value = min(self.min_numeric_value, value)
+        self.max_numeric_value = max(self.max_numeric_value, value)
+
+    def to_payload(self) -> dict:
+        archive_month = self.archive_date.replace(day=1)
+        return {
+            "device_id": self.device_id,
+            "archive_date": self.archive_date,
+            "archive_month": archive_month,
+            "metric_name": self.metric_name,
+            "status": self.status,
+            "unit": self.unit,
+            "sample_count": self.sample_count,
+            "numeric_sample_count": self.numeric_sample_count,
+            "min_numeric_value": self.min_numeric_value if self.numeric_sample_count else None,
+            "max_numeric_value": self.max_numeric_value if self.numeric_sample_count else None,
+            "avg_numeric_value": (self.numeric_sum / self.numeric_sample_count) if self.numeric_sample_count else None,
+            "first_checked_at": self.first_checked_at,
+            "last_checked_at": self.last_checked_at,
+            "last_metric_value": self.last_metric_value,
+        }

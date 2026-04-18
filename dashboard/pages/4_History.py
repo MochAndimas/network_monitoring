@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 import altair as alt
@@ -9,7 +9,7 @@ from components.auth import require_dashboard_login
 from components.api import get_json, paged_items, paged_meta
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
-from components.time_utils import format_wib_timestamp, to_wib_timestamp
+from components.time_utils import format_wib_timestamp, to_wib_timestamp, wib_date_boundary_to_utc_iso
 
 st.set_page_config(page_title="History", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
@@ -397,9 +397,9 @@ def _history_query_params(
     if status and status != "All":
         query_params["status"] = status
     if checked_from_date:
-        query_params["checked_from"] = datetime.combine(checked_from_date, time.min).isoformat()
+        query_params["checked_from"] = wib_date_boundary_to_utc_iso(checked_from_date)
     if checked_to_date:
-        query_params["checked_to"] = datetime.combine(checked_to_date, time.max).isoformat()
+        query_params["checked_to"] = wib_date_boundary_to_utc_iso(checked_to_date, end_of_day=True)
     return query_params
 
 
@@ -706,6 +706,7 @@ def _render_history_body() -> None:
     snapshot_offset = (snapshot_page - 1) * snapshot_page_size
     context_query_params = {
         "limit": limit_value,
+        "selected_device_limit": limit_value,
         "snapshot_limit": snapshot_page_size,
         "snapshot_offset": snapshot_offset,
     }
@@ -718,9 +719,9 @@ def _render_history_body() -> None:
     ):
         context_query_params["metric_name"] = current_selected_metric
     if checked_from_date:
-        context_query_params["checked_from"] = datetime.combine(checked_from_date, time.min).isoformat()
+        context_query_params["checked_from"] = wib_date_boundary_to_utc_iso(checked_from_date)
     if checked_to_date:
-        context_query_params["checked_to"] = datetime.combine(checked_to_date, time.max).isoformat()
+        context_query_params["checked_to"] = wib_date_boundary_to_utc_iso(checked_to_date, end_of_day=True)
     if status_value != "All":
         context_query_params["status"] = status_value
     history_context = get_json(
@@ -728,7 +729,7 @@ def _render_history_body() -> None:
         {
             "metric_names": [],
             "history": {"items": [], "meta": {}},
-            "selected_device_history": [],
+            "selected_device_history": {"items": [], "meta": {}},
             "latest_snapshot": {"items": [], "meta": {}},
             "latest_snapshot_status_summary": {},
             "snapshot_uptime_map": {},
@@ -757,13 +758,27 @@ def _render_history_body() -> None:
         key="history_selected_metric",
     )
     history_payload = history_context.get("history", {"items": [], "meta": {}})
-    selected_device_history_raw = history_context.get("selected_device_history", [])
+    selected_device_history_payload = history_context.get("selected_device_history", {"items": [], "meta": {}})
+    selected_device_history_raw = paged_items(selected_device_history_payload)
     history = paged_items(history_payload)
     history_meta = paged_meta(history_payload)
     history = _filter_history_rows(history, device_type_by_id, device_name_by_id)
     selected_device_history = _filter_history_rows(selected_device_history_raw, device_type_by_id, device_name_by_id)
     full_device_history = selected_device_history
-    if selected_metric != "All Metrics":
+    if selected_device_id is not None:
+        metric_names = None if selected_metric == "All Metrics" else [selected_metric]
+        full_device_history = _filter_history_rows(
+            _fetch_device_history_rows(
+                device_id=selected_device_id,
+                checked_from_date=checked_from_date,
+                checked_to_date=checked_to_date,
+                metric_names=metric_names,
+                status=status_value,
+            ),
+            device_type_by_id,
+            device_name_by_id,
+        )
+    elif selected_metric != "All Metrics":
         full_device_history = [
             row for row in full_device_history if str(row.get("metric_name") or "") == selected_metric
         ]

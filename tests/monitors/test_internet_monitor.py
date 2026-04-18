@@ -220,6 +220,31 @@ def test_access_point_and_printer_checks_collect_packet_loss_jitter_and_snmp(mon
     assert metrics_by_device_and_name[(printer_id, "printer_total_pages")]["metric_value"] == "1234"
 
 
+def test_voip_checks_collect_ping_packet_loss_and_jitter(monkeypatch, session_factory):
+    ping_samples = iter([0.012, 0.018, None])
+    monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
+
+    async def fake_safe_ping(_ip_address):
+        return next(ping_samples)
+
+    monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+
+    async def scenario():
+        async with session_factory() as db:
+            await DeviceRepository(db).upsert_devices(
+                [{"name": "Dinstar Gateway", "ip_address": "192.168.88.10", "device_type": "voip"}]
+            )
+            return await device_service.run_device_checks(db)
+
+    metrics = run(scenario())
+
+    metrics_by_name = {metric["metric_name"]: metric for metric in metrics}
+    assert metrics_by_name["ping"]["metric_value"] == "18.00"
+    assert metrics_by_name["packet_loss"]["metric_value"] == "33.33"
+    assert metrics_by_name["packet_loss"]["status"] == "warning"
+    assert metrics_by_name["jitter"]["metric_value"] == "6.00"
+
+
 def test_mikrotik_checks_collect_packet_loss_and_jitter(monkeypatch, session_factory):
     ping_samples = iter([0.010, 0.015, 0.025])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)

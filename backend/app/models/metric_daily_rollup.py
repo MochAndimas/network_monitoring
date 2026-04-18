@@ -1,13 +1,14 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from ..core.time import now
 from ..db.base import Base
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return now()
 
 
 class MetricDailyRollup(Base):

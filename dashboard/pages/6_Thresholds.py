@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth import is_admin, require_dashboard_login
-from components.api import get_json, put_json
+from components.api import get_json, has_pending_action, put_json
 from components.sidebar import collapse_sidebar_on_page_load
 
 st.set_page_config(page_title="Thresholds", layout="wide", initial_sidebar_state="collapsed")
@@ -23,8 +23,15 @@ if thresholds:
 
     if not is_admin():
         st.info("Role viewer hanya bisa melihat threshold.")
-    elif st.button("Update Threshold", use_container_width=True):
-        result = put_json(f"/thresholds/{selected_key}", {"value": updated_value}, {"key": selected_key, "value": current_value})
+    else:
+        update_threshold_clicked = st.button("Update Threshold", use_container_width=True)
+    if is_admin() and (update_threshold_clicked or has_pending_action("update_threshold")):
+        result = put_json(
+            f"/thresholds/{selected_key}",
+            {"value": updated_value},
+            {"key": selected_key, "value": current_value},
+            action_key="update_threshold",
+        )
         st.success(f"Threshold {result['key']} updated to {result['value']}.")
 else:
     st.info("Belum ada threshold yang tersedia.")

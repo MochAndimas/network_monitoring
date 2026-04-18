@@ -5,6 +5,7 @@ import uuid
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -21,9 +22,10 @@ from .api.routes.health import router as health_router
 from .api.routes.observability import router as observability_router
 from .core.config import configure_logging, settings
 from .db.init_db import init_db
-from .scheduler.scheduler import create_scheduler
 from .db.session import SessionLocal
 from .services.auth_service import ensure_bootstrap_admin
+from .core.security import validate_auth_configuration
+from .services.observability_service import record_exception, record_http_request, request_logging_context
 
 
 logger = logging.getLogger("network_monitoring.http")
@@ -32,19 +34,44 @@ logger = logging.getLogger("network_monitoring.http")
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
         start = time.perf_counter()
-        response = await call_next(request)
-        duration_ms = (time.perf_counter() - start) * 1000
-        response.headers["X-Request-ID"] = request_id
-        logger.info(
-            "request_id=%s method=%s path=%s status=%s duration_ms=%.2f",
-            request_id,
-            request.method,
-            request.url.path,
-            response.status_code,
-            duration_ms,
-        )
-        return response
+        with request_logging_context(request_id):
+            try:
+                response = await call_next(request)
+            except Exception:
+                duration_ms = (time.perf_counter() - start) * 1000
+                record_exception(source="http")
+                record_http_request(
+                    path=request.url.path,
+                    method=request.method,
+                    status_code=500,
+                    duration_ms=duration_ms,
+                )
+                logger.exception(
+                    "Unhandled request exception method=%s path=%s duration_ms=%.2f",
+                    request.method,
+                    request.url.path,
+                    duration_ms,
+                )
+                response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
+            duration_ms = (time.perf_counter() - start) * 1000
+            response.headers["X-Request-ID"] = request_id
+            record_http_request(
+                path=request.url.path,
+                method=request.method,
+                status_code=response.status_code,
+                duration_ms=duration_ms,
+            )
+            log_fn = logger.warning if duration_ms >= settings.request_slow_log_threshold_ms else logger.info
+            log_fn(
+                "request_completed method=%s path=%s status=%s duration_ms=%.2f",
+                request.method,
+                request.url.path,
+                response.status_code,
+                duration_ms,
+            )
+            return response
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -74,19 +101,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
+    validate_auth_configuration()
     if settings.app_env.lower() != "production":
         await init_db()
     async with SessionLocal() as db:
         await ensure_bootstrap_admin(db)
-    scheduler = None
-    if settings.scheduler_enabled:
-        scheduler = create_scheduler()
-        scheduler.start()
-    try:
-        yield
-    finally:
-        if scheduler is not None:
-            scheduler.shutdown(wait=False)
+    yield
 
 
 app = FastAPI(
@@ -99,7 +119,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.normalized_cors_origins,
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "OPTIONS"],
     allow_headers=["authorization", "x-api-key", "content-type"],
 )

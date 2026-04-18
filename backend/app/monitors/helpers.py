@@ -80,6 +80,20 @@ async def safe_ping(ip_address: str) -> float | None:
         return None
 
 
+async def bounded_gather(coroutines, *, limit: int | None = None) -> list:
+    coroutines = list(coroutines)
+    if not coroutines:
+        return []
+    concurrency_limit = max(limit or settings.monitor_task_concurrency_limit, 1)
+    semaphore = asyncio.Semaphore(concurrency_limit)
+
+    async def _run(coroutine):
+        async with semaphore:
+            return await coroutine
+
+    return list(await asyncio.gather(*[_run(coroutine) for coroutine in coroutines]))
+
+
 def _calculate_jitter_ms(samples: list[float]) -> float | None:
     if len(samples) < 2:
         return 0.0 if samples else None

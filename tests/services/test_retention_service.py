@@ -10,6 +10,7 @@ from backend.app.db.base import Base
 from backend.app.models.alert import Alert
 from backend.app.models.incident import Incident
 from backend.app.models.metric import Metric
+from backend.app.models.metric_cold_archive import MetricColdArchive
 from backend.app.models.metric_daily_rollup import MetricDailyRollup
 from backend.app.repositories.device_repository import DeviceRepository
 from backend.app.repositories.metric_repository import MetricRepository
@@ -40,11 +41,20 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
     very_old_timestamp = now - timedelta(days=200)
 
     try:
-        result, rollup_by_date, old_rollup, remaining_metrics, remaining_alerts, remaining_incidents = run(
+        (
+            result,
+            rollup_by_date,
+            old_rollup,
+            cold_archives,
+            remaining_metrics,
+            remaining_alerts,
+            remaining_incidents,
+        ) = run(
             _cleanup_old_metrics(SessionLocal, old_timestamp, recent_timestamp, very_old_timestamp)
         )
 
         assert result["rolled_up_days"] == 2
+        assert result["archived_metric_groups"] == 5
         assert result["deleted_metrics"] == 7
         assert result["deleted_alerts"] == 1
         assert result["deleted_incidents"] == 1
@@ -59,6 +69,15 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
         assert round(old_rollup.average_packet_loss_percent, 2) == 16.66
         assert old_rollup.average_jitter_ms == 6.0
         assert old_rollup.max_jitter_ms == 8.0
+        assert len(cold_archives) == 5
+        ping_archive = next(
+            archive for archive in cold_archives if archive.metric_name == "ping" and archive.status == "up"
+        )
+        assert ping_archive.archive_date == old_timestamp.date()
+        assert ping_archive.sample_count == 2
+        assert ping_archive.numeric_sample_count == 2
+        assert ping_archive.last_metric_value == "20.00"
+        assert ping_archive.avg_numeric_value == 15.0
         assert len(remaining_metrics) == 1
         assert remaining_metrics[0].metric_value == "5.00"
         assert [alert.status for alert in remaining_alerts] == ["active"]
@@ -85,6 +104,7 @@ def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypa
         result, rollups, remaining_metrics = run(_cleanup_yesterday_metrics(SessionLocal, yesterday))
 
         assert result["rolled_up_days"] == 1
+        assert result["archived_metric_groups"] == 0
         assert result["deleted_metrics"] == 0
         assert len(rollups) == 1
         assert rollups[0].rollup_date == yesterday.date()
@@ -196,10 +216,11 @@ async def _cleanup_old_metrics(session_factory, old_timestamp, recent_timestamp,
         rollups = (await db.scalars(select(MetricDailyRollup))).all()
         rollup_by_date = {rollup.rollup_date: rollup for rollup in rollups}
         old_rollup = rollup_by_date[old_timestamp.date()]
+        cold_archives = (await db.scalars(select(MetricColdArchive))).all()
         remaining_metrics = (await db.scalars(select(Metric))).all()
         remaining_alerts = (await db.scalars(select(Alert))).all()
         remaining_incidents = (await db.scalars(select(Incident))).all()
-        return result, rollup_by_date, old_rollup, remaining_metrics, remaining_alerts, remaining_incidents
+        return result, rollup_by_date, old_rollup, cold_archives, remaining_metrics, remaining_alerts, remaining_incidents
 
 
 async def _cleanup_yesterday_metrics(session_factory, yesterday):

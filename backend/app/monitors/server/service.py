@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...repositories.device_repository import DeviceRepository
 from ...services.monitoring_service import utcnow
-from ..helpers import build_ping_metric, safe_ping
+from ..helpers import bounded_gather, build_ping_metric, safe_ping
 
 
 async def run_server_checks(db: AsyncSession) -> list[dict]:
@@ -14,7 +14,7 @@ async def run_server_checks(db: AsyncSession) -> list[dict]:
     if not servers:
         return metrics
 
-    ping_metrics = await asyncio.gather(*[safe_ping(server.ip_address) for server in servers])
+    ping_metrics = await bounded_gather([safe_ping(server.ip_address) for server in servers])
     metrics.extend(build_ping_metric(server.id, latency) for server, latency in zip(servers, ping_metrics, strict=False))
 
     checked_at = utcnow()

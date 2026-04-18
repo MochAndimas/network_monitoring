@@ -10,7 +10,7 @@ from ...core.config import settings
 from ...repositories.device_repository import DeviceRepository
 from ...repositories.metric_repository import MetricRepository
 from ...services.monitoring_service import utcnow
-from ..helpers import build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping
+from ..helpers import bounded_gather, build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping
 
 
 async def run_internet_checks(db: AsyncSession) -> list[dict]:
@@ -19,7 +19,9 @@ async def run_internet_checks(db: AsyncSession) -> list[dict]:
     if devices:
         metrics.extend(
             metric
-            for device_metrics in await asyncio.gather(*[_build_device_ping_metrics(device.id, device.ip_address) for device in devices])
+            for device_metrics in await bounded_gather(
+                [_build_device_ping_metrics(device.id, device.ip_address) for device in devices]
+            )
             for metric in device_metrics
         )
 
