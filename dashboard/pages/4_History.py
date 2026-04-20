@@ -677,6 +677,8 @@ def _render_history_body() -> None:
     default_device_label = _default_device_option_label(devices)
     if "history_selected_device" not in st.session_state:
         st.session_state["history_selected_device"] = default_device_label
+    if "history_chart_window" not in st.session_state:
+        st.session_state["history_chart_window"] = "1 jam"
     device_option_labels = list(device_options.keys())
     filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
     selected_device = filter_col1.selectbox(
@@ -694,8 +696,9 @@ def _render_history_body() -> None:
     chart_window_label = st.selectbox(
         "Chart Window",
         options=list(CHART_WINDOW_OPTIONS.keys()),
-        index=2,
+        index=list(CHART_WINDOW_OPTIONS.keys()).index("1 jam"),
         help="Pilih rentang waktu yang dipakai untuk chart trend.",
+        key="history_chart_window",
     )
     date_filter_col1, date_filter_col2 = st.columns(2)
     checked_from_date = date_filter_col1.date_input("Checked From", value=default_start_date)

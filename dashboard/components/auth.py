@@ -5,6 +5,7 @@ import os
 import uuid
 from zoneinfo import ZoneInfo
 
+import httpx
 import streamlit as st
 
 from .auth_bridge import auth_bridge
@@ -77,6 +78,16 @@ def _apply_auth_payload(payload: dict) -> None:
     st.session_state["auth_login_error"] = None
 
 
+def _login_request(username: str, password: str, remember: bool) -> dict:
+    with httpx.Client(base_url=API_BASE_URL, timeout=httpx.Timeout(10.0)) as client:
+        response = client.post(
+            "/auth/login",
+            json={"username": username, "password": password, "remember": remember},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
 def _resolve_bridge_host() -> str:
     return PUBLIC_API_BASE_URL or API_BASE_URL
 
@@ -89,6 +100,11 @@ def start_auth_bridge_request(action: str, payload: dict | None = None) -> str:
         "payload": payload or {},
     }
     return request_id
+
+
+def _bridge_component_key(action: str) -> str:
+    normalized = str(action or "").strip().lower() or "unknown"
+    return f"auth_bridge_{normalized}"
 
 
 def consume_auth_bridge_response(*, component_key: str) -> dict | None:
@@ -111,6 +127,8 @@ def consume_auth_bridge_response(*, component_key: str) -> dict | None:
 
 
 def _restore_not_needed() -> bool:
+    if st.session_state.get("auth_restore_completed") is True and not st.session_state.get("dashboard_authenticated"):
+        return True
     if not st.session_state.get("dashboard_authenticated"):
         return False
     if not st.session_state.get("auth_token"):
@@ -159,6 +177,44 @@ def _login_error_message(bridge_response: dict) -> str:
     return f"Login gagal: HTTP {status}.{request_suffix}".rstrip()
 
 
+def _login_error_message_from_exception(exc: httpx.HTTPError, *, request_id: str = "") -> str:
+    response = getattr(exc, "response", None)
+    if response is None:
+        return "Backend auth tidak bisa dijangkau. Cek backend/container API dan `DASHBOARD_PUBLIC_API_URL`."
+    error_detail = response.text
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+    if isinstance(payload, dict):
+        error_detail = str(payload.get("detail") or payload.get("message") or error_detail)
+    return _login_error_message(
+        {
+            "request_id": request_id,
+            "status": response.status_code,
+            "error": error_detail,
+        }
+    )
+
+
+def _try_direct_login(payload: dict, *, request_id: str) -> bool:
+    try:
+        login_payload = _login_request(
+            str(payload.get("username") or "").strip(),
+            str(payload.get("password") or ""),
+            bool(payload.get("remember")),
+        )
+    except httpx.HTTPError as exc:
+        st.session_state["auth_login_error"] = _login_error_message_from_exception(exc, request_id=request_id)
+        st.session_state["auth_bridge_request"] = None
+        return True
+
+    _apply_auth_payload(login_payload)
+    st.session_state["auth_bridge_request"] = None
+    st.rerun()
+    return True
+
+
 def _restore_login_state() -> bool:
     if _restore_not_needed():
         return True
@@ -169,7 +225,7 @@ def _restore_login_state() -> bool:
         pending_request = st.session_state.get("auth_bridge_request")
 
     request_id = str((pending_request or {}).get("id") or "restore")
-    bridge_response = consume_auth_bridge_response(component_key=f"auth_restore_bridge_{request_id}")
+    bridge_response = consume_auth_bridge_response(component_key=_bridge_component_key("restore"))
     if bridge_response is None:
         st.caption("Restoring your session...")
         return False
@@ -189,7 +245,7 @@ def _consume_logout_request() -> bool:
         return False
 
     request_id = str(pending_request.get("id") or "logout")
-    bridge_response = consume_auth_bridge_response(component_key=f"auth_logout_bridge_{request_id}")
+    bridge_response = consume_auth_bridge_response(component_key=_bridge_component_key("logout"))
     if bridge_response is None:
         st.caption("Logging out...")
         st.stop()
@@ -229,8 +285,10 @@ def require_dashboard_login() -> None:
     pending_request = st.session_state.get("auth_bridge_request")
     if isinstance(pending_request, dict) and pending_request.get("action") == "login":
         request_id = str(pending_request.get("id") or "login")
-        bridge_response = consume_auth_bridge_response(component_key=f"auth_login_bridge_{request_id}")
+        bridge_response = consume_auth_bridge_response(component_key=_bridge_component_key("login"))
         if bridge_response is None:
+            if _try_direct_login(pending_request.get("payload") or {}, request_id=request_id):
+                st.stop()
             st.caption("Signing in...")
             st.stop()
 

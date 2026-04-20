@@ -149,6 +149,20 @@ def test_restore_login_state_marks_failed_restore_completed(monkeypatch):
     assert fake_st.session_state["auth_login_error"] is None
 
 
+def test_restore_not_needed_after_failed_restore_for_logged_out_user(monkeypatch):
+    fake_st = FakeStreamlit(
+        {
+            "dashboard_authenticated": False,
+            "auth_token": None,
+            "auth_expires_at": None,
+            "auth_restore_completed": True,
+        }
+    )
+    monkeypatch.setattr(auth_module, "st", fake_st)
+
+    assert auth_module._restore_not_needed() is True
+
+
 def test_login_error_message_surfaces_unauthorized_message():
     error = auth_module._login_error_message(
         {
@@ -207,6 +221,51 @@ def test_require_dashboard_login_does_not_overwrite_pending_login_with_restore(m
 
     assert fake_st.session_state["dashboard_authenticated"] is True
     assert fake_st.session_state["auth_token"] == "token-123"
+
+
+def test_require_dashboard_login_falls_back_to_direct_login_when_bridge_returns_none(monkeypatch):
+    fake_st = FakeStreamlit(
+        {
+            "auth_token": None,
+            "auth_role": None,
+            "auth_username": None,
+            "auth_full_name": None,
+            "auth_expires_at": None,
+            "dashboard_authenticated": False,
+            "auth_restore_completed": True,
+            "auth_login_error": None,
+            "auth_bridge_request": {
+                "id": "login-2",
+                "action": "login",
+                "payload": {"username": "admin", "password": "secret", "remember": True},
+            },
+        }
+    )
+    monkeypatch.setattr(auth_module, "st", fake_st)
+    monkeypatch.setattr(auth_module, "auth_bridge", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        auth_module,
+        "_login_request",
+        lambda username, password, remember: {
+            "access_token": "token-direct",
+            "user": {
+                "id": 1,
+                "username": username,
+                "full_name": "Admin",
+                "role": "admin",
+                "expires_at": (datetime.now() + timedelta(minutes=30)).isoformat(),
+            },
+        },
+    )
+
+    try:
+        auth_module.require_dashboard_login()
+    except RerunTriggered:
+        pass
+
+    assert fake_st.session_state["dashboard_authenticated"] is True
+    assert fake_st.session_state["auth_token"] == "token-direct"
+    assert fake_st.session_state["auth_bridge_request"] is None
 
 
 def test_post_json_queues_pending_request_on_401_and_replays_after_restore(monkeypatch):
