@@ -58,7 +58,8 @@ services:
       CPU_WARNING_THRESHOLD: ${CPU_WARNING_THRESHOLD:-90}
       RAM_WARNING_THRESHOLD: ${RAM_WARNING_THRESHOLD:-90}
       DISK_WARNING_THRESHOLD: ${DISK_WARNING_THRESHOLD:-85}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+      INTERNAL_API_KEYS: ${INTERNAL_API_KEYS:-}
       AUTH_PASSWORD_SECRET: ${AUTH_PASSWORD_SECRET:-}
       AUTH_TOKEN_TTL_MINUTES: ${AUTH_TOKEN_TTL_MINUTES:-720}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
@@ -79,7 +80,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).read()",
         ]
       interval: 30s
       timeout: 10s
@@ -140,7 +141,8 @@ services:
       CPU_WARNING_THRESHOLD: ${CPU_WARNING_THRESHOLD:-90}
       RAM_WARNING_THRESHOLD: ${RAM_WARNING_THRESHOLD:-90}
       DISK_WARNING_THRESHOLD: ${DISK_WARNING_THRESHOLD:-85}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+      INTERNAL_API_KEYS: ${INTERNAL_API_KEYS:-}
       AUTH_PASSWORD_SECRET: ${AUTH_PASSWORD_SECRET:-}
       AUTH_TOKEN_TTL_MINUTES: ${AUTH_TOKEN_TTL_MINUTES:-720}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
@@ -167,7 +169,8 @@ services:
     environment:
       DASHBOARD_API_URL: http://backend:8000
       DASHBOARD_PUBLIC_API_URL: ${DASHBOARD_PUBLIC_API_URL:?DASHBOARD_PUBLIC_API_URL must be set}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+      INTERNAL_API_KEYS: ${INTERNAL_API_KEYS:-}
     ports:
       - "127.0.0.1:8501:8501"
     healthcheck:

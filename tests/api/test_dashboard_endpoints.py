@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from backend.app.db.base import Base
 from backend.app.db.session import get_db
 from backend.app.main import app
+from backend.app.models.scheduler_job_status import SchedulerJobStatus
 from backend.app.models.alert import Alert
 from backend.app.models.user import AuthSession
 from backend.app.models.user import User
@@ -411,6 +412,7 @@ def test_production_auth_validation_accepts_hardened_defaults():
     original_password_secret = security_module.settings.auth_password_secret
     original_jwt_secret = security_module.settings.auth_jwt_secret
     original_internal_api_key = security_module.settings.internal_api_key
+    original_internal_api_keys = security_module.settings.internal_api_keys
     original_cookie_secure = security_module.settings.auth_cookie_secure
     original_trusted_hosts = security_module.settings.trusted_hosts
     original_cors_origins = security_module.settings.cors_origins
@@ -419,7 +421,8 @@ def test_production_auth_validation_accepts_hardened_defaults():
     security_module.settings.app_env = "production"
     security_module.settings.auth_password_secret = "test-password-secret"
     security_module.settings.auth_jwt_secret = "test-jwt-secret"
-    security_module.settings.internal_api_key = "test-internal-key"
+    security_module.settings.internal_api_key = ""
+    security_module.settings.internal_api_keys = "reader:test-internal-key:read"
     security_module.settings.auth_cookie_secure = True
     security_module.settings.trusted_hosts = "api.example.com,dashboard.example.com"
     security_module.settings.cors_origins = "https://dashboard.example.com"
@@ -432,6 +435,7 @@ def test_production_auth_validation_accepts_hardened_defaults():
         security_module.settings.auth_password_secret = original_password_secret
         security_module.settings.auth_jwt_secret = original_jwt_secret
         security_module.settings.internal_api_key = original_internal_api_key
+        security_module.settings.internal_api_keys = original_internal_api_keys
         security_module.settings.auth_cookie_secure = original_cookie_secure
         security_module.settings.trusted_hosts = original_trusted_hosts
         security_module.settings.cors_origins = original_cors_origins
@@ -1683,6 +1687,82 @@ def test_health_endpoint_and_request_id_header():
         assert "X-Request-ID" in response.headers
     finally:
         health_module.check_database_connection = original_check
+
+
+def test_health_ready_stays_up_when_scheduler_is_degraded():
+    import backend.app.api.routes.health as health_module
+
+    original_check = health_module.check_database_connection
+    original_list_statuses = health_module.list_scheduler_job_statuses
+
+    async def fake_check_database_connection():
+        return True
+
+    async def fake_list_scheduler_job_statuses(_db):
+        return [
+            SchedulerJobStatus(
+                job_name="device_checks",
+                consecutive_failures=2,
+                is_running=False,
+                last_error="router timeout",
+            )
+        ]
+
+    health_module.check_database_connection = fake_check_database_connection
+    health_module.list_scheduler_job_statuses = fake_list_scheduler_job_statuses
+
+    try:
+        with client_context() as (client, _session_factory):
+            response = client.get("/health")
+            ready_response = client.get("/health/ready")
+            dependencies_response = client.get("/health/dependencies")
+
+        assert response.status_code == 503
+        assert response.json()["scheduler"] == "degraded"
+        assert ready_response.status_code == 200
+        assert ready_response.json()["status"] == "ready"
+        assert ready_response.json()["dependencies"]["scheduler"] == "degraded"
+        assert dependencies_response.status_code == 503
+        assert dependencies_response.json()["scheduler_alerts"]
+    finally:
+        health_module.check_database_connection = original_check
+        health_module.list_scheduler_job_statuses = original_list_statuses
+
+
+def test_observability_metrics_use_route_templates_for_http_paths():
+    import backend.app.services.observability_service as observability_module
+
+    original_request_count = observability_module._http_request_count.copy()
+    original_request_duration = observability_module._http_request_duration_ms.copy()
+    original_request_errors = observability_module._http_request_errors.copy()
+
+    observability_module._http_request_count.clear()
+    observability_module._http_request_duration_ms.clear()
+    observability_module._http_request_errors.clear()
+
+    try:
+        observability_module.record_http_request(
+            path="/devices/123",
+            route_path="/devices/{device_id}",
+            method="GET",
+            status_code=200,
+            duration_ms=12.5,
+        )
+        metrics = observability_module.render_prometheus_metrics(
+            database_up=True,
+            scheduler_alert_count=0,
+            scheduler_statuses=[],
+        )
+
+        assert 'path="/devices/{device_id}"' in metrics
+        assert 'path="/devices/123"' not in metrics
+    finally:
+        observability_module._http_request_count.clear()
+        observability_module._http_request_count.update(original_request_count)
+        observability_module._http_request_duration_ms.clear()
+        observability_module._http_request_duration_ms.update(original_request_duration)
+        observability_module._http_request_errors.clear()
+        observability_module._http_request_errors.update(original_request_errors)
 
 
 def test_observability_summary_endpoint():

@@ -72,12 +72,21 @@ def job_logging_context(job_name: str):
         job_name_context.reset(token)
 
 
-def record_http_request(*, path: str, method: str, status_code: int, duration_ms: float) -> None:
-    key = (method.upper(), path, str(status_code))
+def normalized_http_metric_path(*, path: str, route_path: str | None = None) -> str:
+    normalized_route = str(route_path or "").strip()
+    if normalized_route:
+        return normalized_route
+    normalized_path = str(path or "").strip()
+    return normalized_path or "/unknown"
+
+
+def record_http_request(*, path: str, method: str, status_code: int, duration_ms: float, route_path: str | None = None) -> None:
+    metric_path = normalized_http_metric_path(path=path, route_path=route_path)
+    key = (method.upper(), metric_path, str(status_code))
     _http_request_count[key] += 1
-    _http_request_duration_ms[(method.upper(), path)] += int(duration_ms)
+    _http_request_duration_ms[(method.upper(), metric_path)] += int(duration_ms)
     if status_code >= 500:
-        _http_request_errors[(method.upper(), path)] += 1
+        _http_request_errors[(method.upper(), metric_path)] += 1
 
 
 def record_exception(*, source: str) -> None:

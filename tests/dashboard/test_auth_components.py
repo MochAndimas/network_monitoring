@@ -324,3 +324,17 @@ def test_post_json_queues_pending_request_on_401_and_replays_after_restore(monke
         ("expired-token", {"name": "Router"}),
         ("restored-token", {"name": "Router"}),
     ]
+
+
+def test_dashboard_api_uses_read_scoped_key_when_legacy_key_missing():
+    scoped_key = api_module._read_scoped_api_key(
+        "\n".join(
+            [
+                "writer:writer-key:write",
+                "reader:reader-key:read",
+                "operator:ops-key:read,ops",
+            ]
+        )
+    )
+
+    assert scoped_key == "reader-key"

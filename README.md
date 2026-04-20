@@ -201,7 +201,7 @@ Catatan auth dashboard:
 Container backend dan scheduler sekarang tidak menjalankan migration otomatis saat startup.
 Migration dipindahkan ke explicit release/init step lewat `docker compose run --rm migrate`.
 Compose juga memakai healthcheck: backend menunggu MySQL sehat, dashboard menunggu backend sehat,
-dan `/health` akan mengembalikan HTTP 503 kalau database belum siap.
+dan probe backend sekarang memakai `/health/ready` agar readiness API tidak ikut jatuh hanya karena scheduler worker sedang degraded.
 Di `APP_ENV=production`, backend tidak menjalankan `create_all()` saat startup; schema database
 dikelola lewat Alembic migration.
 
@@ -225,7 +225,7 @@ Dashboard utama sekarang bisa:
 - Password policy sekarang enforce minimum length (`AUTH_PASSWORD_MIN_LENGTH`) plus uppercase, lowercase, digit, dan simbol.
 - Login sekarang memakai rate limit berbasis database per kombinasi username dan client IP untuk menahan brute-force dasar di deployment multi-instance.
 - Jika backend berada di balik reverse proxy, isi `TRUSTED_PROXY_IPS` agar `X-Forwarded-For` hanya dipercaya dari proxy yang memang kamu kontrol.
-- Production sekarang fail-fast saat boot jika security default masih longgar, termasuk `AUTH_COOKIE_SECURE=false`, `ALLOW_INSECURE_NO_AUTH=true`, `INTERNAL_API_KEY` kosong, `TRUSTED_HOSTS` masih localhost-only, atau `CORS_ORIGINS` non-HTTPS untuk origin non-local.
+- Production sekarang fail-fast saat boot jika security default masih longgar, termasuk `AUTH_COOKIE_SECURE=false`, `ALLOW_INSECURE_NO_AUTH=true`, tidak ada `INTERNAL_API_KEY` maupun `INTERNAL_API_KEYS`, `TRUSTED_HOSTS` masih localhost-only, atau `CORS_ORIGINS` non-HTTPS untuk origin non-local.
 - Cleanup scheduler juga merapikan `auth_sessions` kadaluarsa/revoked dan riwayat `auth_login_attempts` lama agar tabel auth tidak tumbuh tanpa batas.
 - Backend juga menyediakan inventory session aktif lewat `GET /auth/sessions` dan revoke semua session lain lewat `POST /auth/logout-all` untuk kebutuhan operasional/account recovery.
 - Touch `last_seen_at` session sekarang ditahan per interval (`AUTH_SESSION_TOUCH_INTERVAL_SECONDS`) agar request API yang sering tidak memicu write database di setiap hit.

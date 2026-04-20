@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from ..core.config import settings
+from ..core.config import internal_api_key_map, settings
 from ..core.time import as_wib_aware, from_unix_timestamp, utcnow
 
 
@@ -87,8 +87,8 @@ def _validate_production_security_defaults() -> None:
         raise AuthConfigurationError("`AUTH_COOKIE_SECURE` must be true in production.")
     if settings.normalized_auth_cookie_samesite == "none" and not settings.auth_cookie_secure:
         raise AuthConfigurationError("`AUTH_COOKIE_SAMESITE=none` requires `AUTH_COOKIE_SECURE=true`.")
-    if not settings.internal_api_key.strip():
-        raise AuthConfigurationError("`INTERNAL_API_KEY` must be configured in production.")
+    if not internal_api_key_map():
+        raise AuthConfigurationError("`INTERNAL_API_KEY` or `INTERNAL_API_KEYS` must be configured in production.")
     trusted_hosts = {host.strip().lower() for host in settings.normalized_trusted_hosts}
     local_only_hosts = {"localhost", "127.0.0.1", "testserver"}
     if not trusted_hosts or trusted_hosts.issubset(local_only_hosts):

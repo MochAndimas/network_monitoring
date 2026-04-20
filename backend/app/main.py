@@ -31,6 +31,13 @@ from .services.observability_service import record_exception, record_http_reques
 logger = logging.getLogger("network_monitoring.http")
 
 
+def _route_template(request) -> str | None:
+    route = request.scope.get("route")
+    if route is None:
+        return None
+    return getattr(route, "path_format", None) or getattr(route, "path", None)
+
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         request_id = str(uuid.uuid4())
@@ -47,6 +54,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                     method=request.method,
                     status_code=500,
                     duration_ms=duration_ms,
+                    route_path=_route_template(request),
                 )
                 logger.exception(
                     "Unhandled request exception method=%s path=%s duration_ms=%.2f",
@@ -62,6 +70,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 method=request.method,
                 status_code=response.status_code,
                 duration_ms=duration_ms,
+                route_path=_route_template(request),
             )
             log_fn = logger.warning if duration_ms >= settings.request_slow_log_threshold_ms else logger.info
             log_fn(

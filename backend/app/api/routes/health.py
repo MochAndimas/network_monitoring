@@ -55,7 +55,7 @@ async def health_ready(response: Response, db: AsyncSession = Depends(get_db)) -
     database_ok = await check_database_connection()
     scheduler_statuses = await list_scheduler_job_statuses(db)
     scheduler_alerts = build_scheduler_operational_alerts(scheduler_statuses)
-    ready = database_ok and not scheduler_alerts
+    ready = database_ok
     if not ready:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return {
@@ -73,5 +73,6 @@ async def health_ready(response: Response, db: AsyncSession = Depends(get_db)) -
                 for job in scheduler_statuses
             ],
             "scheduler_alerts": scheduler_alerts,
+            "scheduler": "degraded" if scheduler_alerts else "up",
         },
     }
