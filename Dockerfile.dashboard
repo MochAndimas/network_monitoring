@@ -2,13 +2,24 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV HOME=/home/appuser
+ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
+RUN addgroup --system appuser \
+    && adduser --system --ingroup appuser --home /home/appuser --shell /usr/sbin/nologin appuser
 
 WORKDIR /app
 
 COPY requirements ./requirements
 RUN pip install --no-cache-dir -r requirements/dashboard.txt
 
+COPY .streamlit ./.streamlit
 COPY dashboard ./dashboard
+
+RUN mkdir -p /home/appuser/.streamlit \
+    && chown -R appuser:appuser /app /home/appuser
+
+USER appuser
 
 EXPOSE 8501
 

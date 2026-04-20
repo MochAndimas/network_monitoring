@@ -197,6 +197,7 @@ Service default:
 Catatan auth dashboard:
 - `DASHBOARD_API_URL` boleh tetap mengarah ke host internal container seperti `http://backend:8000`.
 - Untuk login dashboard berbasis browser cookie, set `DASHBOARD_PUBLIC_API_URL` ke URL backend yang bisa diakses browser user, default Docker Compose sekarang `http://localhost:8000`.
+- Dashboard tidak lagi menyimpan `INTERNAL_API_KEY` sendiri untuk fallback request user-facing; setelah login semua request dashboard memakai bearer token session user.
 
 Container backend dan scheduler sekarang tidak menjalankan migration otomatis saat startup.
 Migration dipindahkan ke explicit release/init step lewat `docker compose run --rm migrate`.
@@ -221,6 +222,7 @@ Dashboard utama sekarang bisa:
 - Isi `AUTH_JWT_SECRET` dengan secret acak yang panjang agar signing JWT tidak bergantung pada fallback internal.
 - `INTERNAL_API_KEY` tetap didukung untuk script/internal integration, tapi dashboard normal sekarang memakai login user + bearer token.
 - Untuk deployment baru, lebih baik pakai `INTERNAL_API_KEYS` dengan scope spesifik daripada satu `INTERNAL_API_KEY` global.
+- Auth bridge dashboard sekarang membatasi `postMessage` ke origin parent Streamlit yang valid dan menolak event lintas-origin yang tidak cocok.
 - Password user disimpan sebagai hash PBKDF2, access token memakai JWT HS256, session di database menyimpan `jti` untuk revocation, dan endpoint write memerlukan role `admin`.
 - Password policy sekarang enforce minimum length (`AUTH_PASSWORD_MIN_LENGTH`) plus uppercase, lowercase, digit, dan simbol.
 - Login sekarang memakai rate limit berbasis database per kombinasi username dan client IP untuk menahan brute-force dasar di deployment multi-instance.
@@ -233,6 +235,7 @@ Dashboard utama sekarang bisa:
 - Admin sekarang punya audit trail terstruktur di `admin_audit_logs` untuk mutasi penting seperti create/update device, update threshold, run-cycle manual, create/update user, reset password, dan revoke session massal.
 - Backend membatasi `Host` header, menambahkan security headers dasar, dan mematikan `/docs`, `/redoc`, `/openapi.json` di production.
 - Docker Compose default sekarang publish MySQL, backend, dan dashboard ke `127.0.0.1` saja agar tidak terbuka ke LAN secara tidak sengaja.
+- Container backend dan dashboard sekarang jalan sebagai user non-root; backend juga bisa diskalakan lewat `WEB_CONCURRENCY` untuk multi-worker Uvicorn dasar.
 - `.env` masuk `.gitignore`; simpan secret production di secret manager atau environment deployment.
 - Overlap guard monitoring sekarang pakai named database lock (`MONITORING_LOCK_NAME`) di MySQL, jadi aman lintas process/container untuk scheduler worker dan manual run-cycle.
 

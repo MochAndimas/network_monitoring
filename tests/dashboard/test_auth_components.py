@@ -216,6 +216,7 @@ def test_require_dashboard_login_does_not_overwrite_pending_login_with_restore(m
 
     try:
         auth_module.require_dashboard_login()
+        assert False, "Expected rerun after successful login"
     except RerunTriggered:
         pass
 
@@ -223,7 +224,45 @@ def test_require_dashboard_login_does_not_overwrite_pending_login_with_restore(m
     assert fake_st.session_state["auth_token"] == "token-123"
 
 
-def test_require_dashboard_login_falls_back_to_direct_login_when_bridge_returns_none(monkeypatch):
+def test_require_dashboard_login_submits_bridge_login_request(monkeypatch):
+    fake_st = FakeStreamlit(
+        {
+            "auth_token": None,
+            "auth_role": None,
+            "auth_username": None,
+            "auth_full_name": None,
+            "auth_expires_at": None,
+            "dashboard_authenticated": False,
+            "auth_restore_completed": True,
+            "auth_login_error": None,
+            "auth_bridge_request": None,
+        }
+    )
+    fake_st.form_submit_value = True
+    submitted_values = iter(["admin", "secret"])
+
+    def fake_text_input(_label: str, value: str = "", **_kwargs) -> str:
+        return next(submitted_values)
+
+    monkeypatch.setattr(auth_module, "st", fake_st)
+    monkeypatch.setattr(fake_st, "text_input", fake_text_input)
+    monkeypatch.setattr(auth_module, "_restore_login_state", lambda: True)
+
+    try:
+        auth_module.require_dashboard_login()
+        assert False, "Expected rerun after queuing browser login"
+    except RerunTriggered:
+        pass
+
+    assert fake_st.session_state["auth_bridge_request"]["action"] == "login"
+    assert fake_st.session_state["auth_bridge_request"]["payload"] == {
+        "username": "admin",
+        "password": "secret",
+        "remember": False,
+    }
+
+
+def test_require_dashboard_login_applies_bridge_login_response(monkeypatch):
     fake_st = FakeStreamlit(
         {
             "auth_token": None,
@@ -242,30 +281,75 @@ def test_require_dashboard_login_falls_back_to_direct_login_when_bridge_returns_
         }
     )
     monkeypatch.setattr(auth_module, "st", fake_st)
-    monkeypatch.setattr(auth_module, "auth_bridge", lambda **_kwargs: None)
     monkeypatch.setattr(
         auth_module,
-        "_login_request",
-        lambda username, password, remember: {
-            "access_token": "token-direct",
-            "user": {
-                "id": 1,
-                "username": username,
-                "full_name": "Admin",
-                "role": "admin",
-                "expires_at": (datetime.now() + timedelta(minutes=30)).isoformat(),
+        "auth_bridge",
+        lambda **kwargs: {
+            "request_id": kwargs["request_id"],
+            "ok": True,
+            "status": 200,
+            "payload": {
+                "access_token": "token-direct",
+                "user": {
+                    "id": 1,
+                    "username": "admin",
+                    "full_name": "Admin",
+                    "role": "admin",
+                    "expires_at": (datetime.now() + timedelta(minutes=30)).isoformat(),
+                },
             },
         },
     )
 
     try:
         auth_module.require_dashboard_login()
+        assert False, "Expected rerun after successful bridge login"
     except RerunTriggered:
         pass
 
     assert fake_st.session_state["dashboard_authenticated"] is True
     assert fake_st.session_state["auth_token"] == "token-direct"
     assert fake_st.session_state["auth_bridge_request"] is None
+
+
+def test_require_dashboard_login_surfaces_bridge_login_error(monkeypatch):
+    fake_st = FakeStreamlit(
+        {
+            "auth_token": None,
+            "auth_role": None,
+            "auth_username": None,
+            "auth_full_name": None,
+            "auth_expires_at": None,
+            "dashboard_authenticated": False,
+            "auth_restore_completed": True,
+            "auth_login_error": None,
+            "auth_bridge_request": {
+                "id": "login-3",
+                "action": "login",
+                "payload": {"username": "admin", "password": "wrong", "remember": True},
+            },
+        }
+    )
+    monkeypatch.setattr(auth_module, "st", fake_st)
+    monkeypatch.setattr(
+        auth_module,
+        "auth_bridge",
+        lambda **kwargs: {
+            "request_id": kwargs["request_id"],
+            "ok": False,
+            "status": 401,
+            "payload": {"detail": "Invalid username or password"},
+            "error": "Invalid username or password",
+        },
+    )
+
+    try:
+        auth_module.require_dashboard_login()
+    except StopTriggered:
+        pass
+
+    assert fake_st.session_state["dashboard_authenticated"] is False
+    assert fake_st.session_state["auth_login_error"] == "Username atau password tidak valid. Request ID: `login-3`."
 
 
 def test_post_json_queues_pending_request_on_401_and_replays_after_restore(monkeypatch):
@@ -288,7 +372,6 @@ def test_post_json_queues_pending_request_on_401_and_replays_after_restore(monke
         payload: dict | None = None,
         timeout: float = 5.0,
         api_base_url: str = api_module.API_BASE_URL,
-        internal_api_key: str = api_module.INTERNAL_API_KEY,
         auth_token: str = "",
     ):
         calls.append((auth_token, payload))
@@ -326,15 +409,17 @@ def test_post_json_queues_pending_request_on_401_and_replays_after_restore(monke
     ]
 
 
-def test_dashboard_api_uses_read_scoped_key_when_legacy_key_missing():
-    scoped_key = api_module._read_scoped_api_key(
-        "\n".join(
-            [
-                "writer:writer-key:write",
-                "reader:reader-key:read",
-                "operator:ops-key:read,ops",
-            ]
-        )
-    )
+def test_dashboard_api_does_not_fallback_to_service_key_without_auth_token():
+    assert api_module._request_headers("") == {}
 
-    assert scoped_key == "reader-key"
+
+def test_auth_bridge_frontend_restricts_parent_origin():
+    html = (auth_module.__file__)
+    from pathlib import Path
+
+    bridge_html = Path(html).resolve().parent / "auth_bridge_frontend" / "index.html"
+    content = bridge_html.read_text(encoding="utf-8")
+
+    assert 'if (args.action === "login") {' in content
+    assert 'postMessage({ isStreamlitMessage: true, type, ...data }, "*")' not in content
+    assert "event.origin !== trustedParentOrigin" in content

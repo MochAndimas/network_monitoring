@@ -72,6 +72,7 @@ services:
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
       PRINTER_SNMP_COMMUNITIES: ${PRINTER_SNMP_COMMUNITIES:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
@@ -169,8 +170,6 @@ services:
     environment:
       DASHBOARD_API_URL: http://backend:8000
       DASHBOARD_PUBLIC_API_URL: ${DASHBOARD_PUBLIC_API_URL:?DASHBOARD_PUBLIC_API_URL must be set}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
-      INTERNAL_API_KEYS: ${INTERNAL_API_KEYS:-}
     ports:
       - "127.0.0.1:8501:8501"
     healthcheck:

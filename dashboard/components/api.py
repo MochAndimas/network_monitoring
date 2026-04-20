@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import json
 from collections.abc import Mapping
 
 import httpx
@@ -9,54 +8,14 @@ import streamlit as st
 
 
 API_BASE_URL = os.getenv("DASHBOARD_API_URL", "http://localhost:8000").rstrip("/")
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
-INTERNAL_API_KEYS = os.getenv("INTERNAL_API_KEYS", "")
 GET_CACHE_TTL_SECONDS = 2
 PENDING_API_REQUEST_KEY = "pending_api_request"
 
 
-def _read_scoped_api_key(raw_keys: str) -> str:
-    normalized_raw = str(raw_keys or "").strip()
-    if not normalized_raw:
-        return ""
-    if normalized_raw.startswith("{"):
-        try:
-            parsed = json.loads(normalized_raw)
-        except json.JSONDecodeError:
-            return ""
-        if not isinstance(parsed, dict):
-            return ""
-        for item in parsed.values():
-            if not isinstance(item, dict):
-                continue
-            scopes = {str(scope).strip().lower() for scope in item.get("scopes", []) if str(scope).strip()}
-            secret = str(item.get("key") or "").strip()
-            if secret and "read" in scopes:
-                return secret
-        return ""
-    for raw_line in normalized_raw.replace("\r", "\n").splitlines():
-        item = raw_line.strip()
-        if not item:
-            continue
-        parts = [part.strip() for part in item.split(":", 2)]
-        if len(parts) != 3:
-            continue
-        _key_name, secret, scopes_raw = parts
-        scopes = {scope.strip().lower() for scope in scopes_raw.split(",") if scope.strip()}
-        if secret and "read" in scopes:
-            return secret
-    return ""
-
-
-RESOLVED_INTERNAL_API_KEY = INTERNAL_API_KEY or _read_scoped_api_key(INTERNAL_API_KEYS)
-
-
-def _request_headers(internal_api_key: str, auth_token: str) -> dict[str, str]:
+def _request_headers(auth_token: str) -> dict[str, str]:
     headers: dict[str, str] = {}
     if auth_token:
         headers["authorization"] = f"Bearer {auth_token}"
-    elif internal_api_key:
-        headers["x-api-key"] = internal_api_key
     return headers
 
 
@@ -89,7 +48,6 @@ def _request_json(
     payload: dict | None = None,
     timeout: float = 5.0,
     api_base_url: str = API_BASE_URL,
-    internal_api_key: str = RESOLVED_INTERNAL_API_KEY,
     auth_token: str = "",
 ):
     client = _client(api_base_url)
@@ -98,7 +56,7 @@ def _request_json(
         path,
         json=payload,
         timeout=timeout,
-        headers=_request_headers(internal_api_key, auth_token),
+        headers=_request_headers(auth_token),
     )
     response.raise_for_status()
     return response.json()
@@ -150,7 +108,6 @@ def _request_with_auth_recovery(
     timeout: float,
     fallback,
     api_base_url: str = API_BASE_URL,
-    internal_api_key: str = RESOLVED_INTERNAL_API_KEY,
     auth_token: str = "",
     action: str,
     rerun_on_401: bool = False,
@@ -167,7 +124,6 @@ def _request_with_auth_recovery(
             payload=request_payload,
             timeout=timeout,
             api_base_url=api_base_url,
-            internal_api_key=internal_api_key,
             auth_token=auth_token,
         )
         if action_key:
@@ -192,20 +148,19 @@ def _request_with_auth_recovery(
 
 
 @st.cache_data(show_spinner=False, ttl=GET_CACHE_TTL_SECONDS)
-def _cached_get_json(path: str, timeout: float, api_base_url: str, internal_api_key: str, auth_token: str):
-    return _request_json("GET", path, timeout=timeout, api_base_url=api_base_url, internal_api_key=internal_api_key, auth_token=auth_token)
+def _cached_get_json(path: str, timeout: float, api_base_url: str, auth_token: str):
+    return _request_json("GET", path, timeout=timeout, api_base_url=api_base_url, auth_token=auth_token)
 
 
 @st.cache_data(show_spinner=False, ttl=GET_CACHE_TTL_SECONDS)
 def _cached_get_json_map(
     request_items: tuple[tuple[str, str], ...],
     api_base_url: str,
-    internal_api_key: str,
     auth_token: str,
 ) -> dict[str, object]:
     payload: dict[str, object] = {}
     for name, path in request_items:
-        payload[name] = _request_json("GET", path, api_base_url=api_base_url, internal_api_key=internal_api_key, auth_token=auth_token)
+        payload[name] = _request_json("GET", path, api_base_url=api_base_url, auth_token=auth_token)
     return payload
 
 
@@ -216,7 +171,6 @@ def get_json(path: str, fallback):
         timeout=5.0,
         fallback=fallback,
         api_base_url=API_BASE_URL,
-        internal_api_key=RESOLVED_INTERNAL_API_KEY,
         auth_token=str(st.session_state.get("auth_token") or ""),
         action="Gagal mengambil data",
         rerun_on_401=True,
@@ -252,7 +206,7 @@ def put_json(path: str, payload: dict, fallback, *, action_key: str | None = Non
 def get_json_map(requests: Mapping[str, tuple[str, object]]) -> dict[str, object]:
     request_items = tuple((name, path) for name, (path, _fallback) in requests.items())
     try:
-        payload = _cached_get_json_map(request_items, API_BASE_URL, RESOLVED_INTERNAL_API_KEY, str(st.session_state.get("auth_token") or ""))
+        payload = _cached_get_json_map(request_items, API_BASE_URL, str(st.session_state.get("auth_token") or ""))
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 401 and st.session_state.get("dashboard_authenticated"):
             _prepare_auth_restore()

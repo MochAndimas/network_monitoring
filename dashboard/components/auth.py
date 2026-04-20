@@ -197,24 +197,6 @@ def _login_error_message_from_exception(exc: httpx.HTTPError, *, request_id: str
     )
 
 
-def _try_direct_login(payload: dict, *, request_id: str) -> bool:
-    try:
-        login_payload = _login_request(
-            str(payload.get("username") or "").strip(),
-            str(payload.get("password") or ""),
-            bool(payload.get("remember")),
-        )
-    except httpx.HTTPError as exc:
-        st.session_state["auth_login_error"] = _login_error_message_from_exception(exc, request_id=request_id)
-        st.session_state["auth_bridge_request"] = None
-        return True
-
-    _apply_auth_payload(login_payload)
-    st.session_state["auth_bridge_request"] = None
-    st.rerun()
-    return True
-
-
 def _restore_login_state() -> bool:
     if _restore_not_needed():
         return True
@@ -287,8 +269,6 @@ def require_dashboard_login() -> None:
         request_id = str(pending_request.get("id") or "login")
         bridge_response = consume_auth_bridge_response(component_key=_bridge_component_key("login"))
         if bridge_response is None:
-            if _try_direct_login(pending_request.get("payload") or {}, request_id=request_id):
-                st.stop()
             st.caption("Signing in...")
             st.stop()
 
