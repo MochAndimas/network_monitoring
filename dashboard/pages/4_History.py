@@ -380,10 +380,39 @@ def _prepare_history_frame(history: list[dict], *, sort_desc: bool = True) -> pd
         dataframe = dataframe.sort_values("checked_at", ascending=False).copy()
     else:
         dataframe = dataframe.copy()
-    dataframe["metric_label"] = dataframe["metric_name"].map(lambda name: _friendly_metric_name(name))
+    metric_names = dataframe["metric_name"].dropna().astype(str).unique()
+    metric_label_map = {metric_name: _friendly_metric_name(metric_name) for metric_name in metric_names}
+    dataframe["metric_label"] = dataframe["metric_name"].astype(str).map(metric_label_map)
     dataframe["checked_at_wib"] = dataframe["checked_at"].map(format_wib_timestamp)
-    dataframe["display_value"] = dataframe.apply(_format_metric_value, axis=1)
+    dataframe["display_value"] = _format_metric_values(dataframe)
     return dataframe
+
+
+def _format_metric_values(dataframe: pd.DataFrame) -> pd.Series:
+    unit_suffix = dataframe["unit"].map(lambda unit: f" {unit}" if unit else "")
+    display_values = dataframe["metric_value"].astype(str) + unit_suffix
+    numeric_values = pd.to_numeric(dataframe["metric_value_numeric"], errors="coerce")
+    metric_names = dataframe["metric_name"].astype(str)
+
+    uptime_mask = metric_names.eq("printer_uptime_seconds") & numeric_values.notna()
+    if uptime_mask.any():
+        display_values.loc[uptime_mask] = numeric_values.loc[uptime_mask].map(
+            lambda value: _format_duration(pd.Timedelta(seconds=float(value)))
+        )
+
+    pages_mask = metric_names.eq("printer_total_pages") & numeric_values.notna()
+    if pages_mask.any():
+        display_values.loc[pages_mask] = numeric_values.loc[pages_mask].map(lambda value: f"{int(value):,} pages")
+
+    humanized_mask = metric_names.isin(
+        {"printer_ink_status", "printer_status", "printer_error_state", "printer_paper_status"}
+    )
+    if humanized_mask.any():
+        display_values.loc[humanized_mask] = dataframe.loc[humanized_mask, "metric_value"].map(
+            lambda value: _humanize_printer_text(str(value or "-"))
+        )
+
+    return display_values
 
 
 def _fetch_device_history_rows(
@@ -657,8 +686,11 @@ def _latest_metric_snapshot_map(dataframe: pd.DataFrame) -> dict[str, pd.Series]
     return {str(row["metric_name"]): row for _, row in latest_rows.iterrows()}
 
 
-def _latest_metric_value(dataframe: pd.DataFrame, metric_name: str, default: str = "-") -> str:
-    latest_map = _latest_metric_snapshot_map(dataframe)
+def _latest_metric_value_from_map(
+    latest_map: dict[str, pd.Series],
+    metric_name: str,
+    default: str = "-",
+) -> str:
     row = latest_map.get(metric_name)
     if row is None:
         return default
@@ -783,16 +815,25 @@ def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> No
         st.info("Belum ada metric Mikrotik API yang tersimpan untuk device ini.")
         return
 
+    latest_map = _latest_metric_snapshot_map(mikrotik_history_frame)
     interface_frame = _interface_view(mikrotik_history_frame)
     firewall_frame = _firewall_view(mikrotik_history_frame)
 
     st.markdown("### Mikrotik Metrics")
     health_col1, health_col2, health_col3, health_col4, health_col5 = st.columns(5)
-    _render_stat_card(health_col1, "CPU Load", _format_percent(_latest_metric_value(mikrotik_history_frame, "cpu_percent")))
-    _render_stat_card(health_col2, "Memory Used", _format_percent(_latest_metric_value(mikrotik_history_frame, "memory_percent")))
-    _render_stat_card(health_col3, "Storage Used", _format_percent(_latest_metric_value(mikrotik_history_frame, "disk_percent")))
-    _render_stat_card(health_col4, "DHCP Leases", _latest_metric_value(mikrotik_history_frame, "dhcp_active_leases"))
-    _render_stat_card(health_col5, "Connected Clients", _latest_metric_value(mikrotik_history_frame, "connected_clients"))
+    _render_stat_card(health_col1, "CPU Load", _format_percent(_latest_metric_value_from_map(latest_map, "cpu_percent")))
+    _render_stat_card(
+        health_col2,
+        "Memory Used",
+        _format_percent(_latest_metric_value_from_map(latest_map, "memory_percent")),
+    )
+    _render_stat_card(
+        health_col3,
+        "Storage Used",
+        _format_percent(_latest_metric_value_from_map(latest_map, "disk_percent")),
+    )
+    _render_stat_card(health_col4, "DHCP Leases", _latest_metric_value_from_map(latest_map, "dhcp_active_leases"))
+    _render_stat_card(health_col5, "Connected Clients", _latest_metric_value_from_map(latest_map, "connected_clients"))
 
     st.markdown("### Interface Traffic")
     if interface_frame.empty:
@@ -1095,13 +1136,10 @@ def _render_history_body() -> None:
     latest_timestamp = dataframe["checked_at"].max()
     snapshot_frame = _prepare_history_frame(snapshot_history, sort_desc=False)
     latest_per_series = snapshot_frame if not snapshot_frame.empty else _latest_snapshot_frame(dataframe)
-    latest_per_series["uptime"] = latest_per_series.apply(
-        lambda row: _format_duration(
-            pd.Timedelta(seconds=float(snapshot_uptime_map.get(f'{int(row["device_id"])}:{row["metric_name"]}', 0)))
-        )
-        if str(snapshot_uptime_map.get(f'{int(row["device_id"])}:{row["metric_name"]}', "-")) not in {"", "-"}
-        else "-",
-        axis=1,
+    uptime_keys = latest_per_series["device_id"].astype(int).astype(str) + ":" + latest_per_series["metric_name"].astype(str)
+    uptime_values = uptime_keys.map(snapshot_uptime_map).fillna("-").astype(str)
+    latest_per_series["uptime"] = uptime_values.map(
+        lambda value: _format_duration(pd.Timedelta(seconds=float(value))) if value not in {"", "-"} else "-"
     )
 
     with summary_container:
@@ -1199,9 +1237,15 @@ def _render_history_body() -> None:
             metric_name for metric_name in metric_names_to_render if not _is_dynamic_mikrotik_metric(metric_name)
         ]
     rendered_metric_frames: list[pd.DataFrame] = []
+    metric_frame_by_name = {
+        str(metric_name): metric_frame
+        for metric_name, metric_frame in device_history_frame.groupby(device_history_frame["metric_name"].astype(str))
+    }
     for metric_name in metric_names_to_render:
-        metric_series_frame = device_history_frame[device_history_frame["metric_name"] == str(metric_name)].copy()
-        metric_series_frame = metric_series_frame.dropna(subset=["metric_value_numeric"]).sort_values("checked_at")
+        metric_series_frame = metric_frame_by_name.get(str(metric_name))
+        if metric_series_frame is None:
+            continue
+        metric_series_frame = metric_series_frame.dropna(subset=["metric_value_numeric"]).sort_values("checked_at").copy()
         if metric_series_frame.empty:
             continue
         rendered_metric_frames.append(metric_series_frame)
