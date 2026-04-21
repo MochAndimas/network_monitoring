@@ -17,6 +17,10 @@ DEFAULT_THRESHOLDS = {
     "jitter_critical": (75.0, "Critical jitter threshold in milliseconds"),
     "dns_resolution_warning": (500.0, "DNS resolution warning threshold in milliseconds"),
     "http_response_warning": (1000.0, "HTTP response warning threshold in milliseconds"),
+    "mikrotik_connected_clients_warning": (100.0, "Mikrotik connected clients warning threshold"),
+    "mikrotik_interface_mbps_warning": (80.0, "Mikrotik interface traffic warning threshold in Mbps"),
+    "mikrotik_firewall_spike_pps_warning": (1000.0, "Mikrotik firewall rule packet-rate spike threshold in packets per second"),
+    "mikrotik_firewall_spike_mbps_warning": (50.0, "Mikrotik firewall rule traffic spike threshold in Mbps"),
     "printer_ink_warning": (20.0, "Printer ink warning threshold in percent"),
     "printer_ink_critical": (10.0, "Printer ink critical threshold in percent"),
 }

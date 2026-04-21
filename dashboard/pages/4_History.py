@@ -183,8 +183,14 @@ METRIC_LABELS = {
     "cpu_percent": ("CPU Usage", "Persentase penggunaan CPU."),
     "memory_percent": ("Memory Usage", "Persentase penggunaan RAM/memori."),
     "disk_percent": ("Disk Usage", "Persentase penggunaan disk."),
+    "memory_used_bytes": ("Memory Used", "Memori terpakai dari Mikrotik."),
+    "memory_free_bytes": ("Memory Free", "Memori kosong dari Mikrotik."),
+    "disk_used_bytes": ("Storage Used", "Storage terpakai dari Mikrotik."),
+    "disk_free_bytes": ("Storage Free", "Storage kosong dari Mikrotik."),
     "boot_time_epoch": ("Boot Time", "Waktu boot terakhir dalam epoch timestamp."),
     "interfaces_running": ("Active Interfaces", "Jumlah interface Mikrotik yang sedang running."),
+    "dhcp_active_leases": ("DHCP Active Leases", "Jumlah lease DHCP aktif/bound di Mikrotik."),
+    "connected_clients": ("Connected Clients", "Jumlah client unik dari DHCP lease aktif dan ARP table."),
     "mikrotik_api": ("Mikrotik API Status", "Status koneksi ke API Mikrotik."),
     "printer_uptime_seconds": ("Printer Uptime", "Durasi hidup printer sejak reboot terakhir."),
     "printer_status": ("Printer Status", "Status umum printer dari SNMP Host Resources MIB."),
@@ -254,6 +260,9 @@ def _format_metric_value(row: pd.Series) -> str:
 
 
 def _friendly_metric_name(metric_name: str) -> str:
+    dynamic_label = _dynamic_mikrotik_metric_label(metric_name)
+    if dynamic_label:
+        return dynamic_label
     return METRIC_LABELS.get(metric_name, (metric_name.replace("_", " ").title(), ""))[0]
 
 
@@ -261,6 +270,35 @@ def _metric_filter_label(metric_name: str) -> str:
     if metric_name == "All Metrics":
         return metric_name
     return f"{_friendly_metric_name(metric_name)} ({metric_name})"
+
+
+def _dynamic_mikrotik_metric_label(metric_name: str) -> str | None:
+    parts = str(metric_name or "").split(":")
+    if len(parts) < 3:
+        return None
+    category = parts[0]
+    name = parts[1].replace("_", " ").title()
+    metric_key = parts[-1]
+    metric_labels = {
+        "rx_bytes": "RX Bytes",
+        "tx_bytes": "TX Bytes",
+        "rx_mbps": "RX Mbps",
+        "tx_mbps": "TX Mbps",
+        "packets": "Packets",
+        "bytes": "Bytes",
+        "pps": "Packets/s",
+        "mbps": "Mbps",
+    }
+    suffix = metric_labels.get(metric_key, metric_key.replace("_", " ").title())
+    if category == "interface":
+        return f"Interface {name} {suffix}"
+    if category == "queue":
+        return f"Queue {name} {suffix}"
+    if category == "firewall" and len(parts) >= 4:
+        section = parts[1].upper()
+        rule = parts[2].replace("_", " ").title()
+        return f"Firewall {section} {rule} {suffix}"
+    return None
 
 
 def _humanize_printer_text(value: str) -> str:
@@ -355,25 +393,33 @@ def _fetch_device_history_rows(
     checked_to_date,
     metric_names: list[str] | None = None,
     status: str | None = None,
+    max_pages: int | None = None,
+    initial_payload: dict | None = None,
 ) -> list[dict]:
     if metric_names:
-        metric_name_set = {str(metric_name) for metric_name in metric_names}
-        return [
-            item
-            for item in _fetch_history_pages(
-                device_id=device_id,
-                status=status,
-                checked_from_date=checked_from_date,
-                checked_to_date=checked_to_date,
+        items: list[dict] = []
+        unique_metric_names = list(dict.fromkeys(str(metric_name) for metric_name in metric_names))
+        for metric_name in unique_metric_names:
+            items.extend(
+                _fetch_history_pages(
+                    device_id=device_id,
+                    metric_name=metric_name,
+                    status=status,
+                    checked_from_date=checked_from_date,
+                    checked_to_date=checked_to_date,
+                    max_pages=max_pages,
+                    initial_payload=initial_payload if len(unique_metric_names) == 1 else None,
+                )
             )
-            if str(item.get("metric_name") or "") in metric_name_set
-        ]
+        return items
 
     return _fetch_history_pages(
         device_id=device_id,
         status=status,
         checked_from_date=checked_from_date,
         checked_to_date=checked_to_date,
+        max_pages=max_pages,
+        initial_payload=initial_payload,
     )
 
 
@@ -410,34 +456,51 @@ def _fetch_history_pages(
     status: str | None = None,
     checked_from_date=None,
     checked_to_date=None,
+    max_pages: int | None = None,
+    initial_payload: dict | None = None,
 ) -> list[dict]:
     page_size = 500
     offset = 0
     items: list[dict] = []
+    next_payload = initial_payload
 
     while True:
-        query_params = _history_query_params(
-            device_id=device_id,
-            metric_name=metric_name,
-            status=status,
-            checked_from_date=checked_from_date,
-            checked_to_date=checked_to_date,
-            limit=page_size,
-            offset=offset,
-        )
-        payload = get_json(f"/metrics/history/paged?{urlencode(query_params)}", {"items": [], "meta": {}})
+        if next_payload is None:
+            query_params = _history_query_params(
+                device_id=device_id,
+                metric_name=metric_name,
+                status=status,
+                checked_from_date=checked_from_date,
+                checked_to_date=checked_to_date,
+                limit=page_size,
+                offset=offset,
+            )
+            payload = get_json(f"/metrics/history/paged?{urlencode(query_params)}", {"items": [], "meta": {}})
+        else:
+            payload = next_payload
+            next_payload = None
         page_items = paged_items(payload)
         if not page_items:
             break
 
         items.extend(page_items)
         meta = paged_meta(payload)
-        offset += len(page_items)
+        offset = int(meta.get("offset", offset) or 0) + len(page_items)
         total = int(meta.get("total", 0) or 0)
         if offset >= total:
             break
+        if max_pages is not None and offset >= page_size * max_pages:
+            break
 
     return items
+
+
+def _fetch_latest_device_snapshot(device_id: int, limit: int = 500) -> list[dict]:
+    payload = get_json(
+        f"/metrics/latest-snapshot/paged?{urlencode({'device_id': device_id, 'limit': limit, 'offset': 0})}",
+        {"items": [], "meta": {}},
+    )
+    return paged_items(payload)
 
 
 def _latest_snapshot_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -465,6 +528,28 @@ def _snapshot_pagination_controls(total_rows: int) -> tuple[int, int]:
         key="history_snapshot_page",
     )
     return int(page_size), int(page_number)
+
+
+def _paginate_frame(dataframe: pd.DataFrame, *, key_prefix: str, page_size: int = 10) -> pd.DataFrame:
+    if dataframe.empty:
+        return dataframe
+    total_rows = len(dataframe)
+    total_pages = max((total_rows - 1) // page_size + 1, 1)
+    page_key = f"{key_prefix}_page"
+    current_page = min(int(st.session_state.get(page_key, 1)), total_pages)
+    page_col, meta_col = st.columns([1, 5])
+    page_number = page_col.number_input(
+        "Raw History Page",
+        min_value=1,
+        max_value=total_pages,
+        value=current_page,
+        step=1,
+        key=page_key,
+    )
+    start = (int(page_number) - 1) * page_size
+    end = start + page_size
+    meta_col.caption(f"Menampilkan {start + 1}-{min(end, total_rows)} dari {total_rows} rows.")
+    return dataframe.iloc[start:end].copy()
 
 
 def _render_metric_trend_section(
@@ -570,6 +655,178 @@ def _latest_metric_snapshot_map(dataframe: pd.DataFrame) -> dict[str, pd.Series]
         return {}
     latest_rows = dataframe.sort_values("checked_at").drop_duplicates(subset=["metric_name"], keep="last")
     return {str(row["metric_name"]): row for _, row in latest_rows.iterrows()}
+
+
+def _latest_metric_value(dataframe: pd.DataFrame, metric_name: str, default: str = "-") -> str:
+    latest_map = _latest_metric_snapshot_map(dataframe)
+    row = latest_map.get(metric_name)
+    if row is None:
+        return default
+    return str(row.get("metric_value") or default)
+
+
+def _format_percent(value: str) -> str:
+    try:
+        return f"{float(value):.1f}%"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _format_bytes(value: float | int | None) -> str:
+    if value is None or pd.isna(value):
+        return "-"
+    size = float(value)
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if abs(size) < 1024 or unit == "TB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+        size /= 1024
+    return "-"
+
+
+def _format_mbps(value: float | int | None) -> str:
+    if value is None or pd.isna(value):
+        return "-"
+    return f"{float(value):.2f}"
+
+
+def _dynamic_mikrotik_metric_table(dataframe: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    if dataframe.empty:
+        return pd.DataFrame()
+
+    latest_rows = dataframe.sort_values("checked_at").drop_duplicates(subset=["metric_name"], keep="last")
+    rows = latest_rows[latest_rows["metric_name"].astype(str).str.startswith(f"{prefix}:")].copy()
+    if rows.empty:
+        return pd.DataFrame()
+
+    parsed_rows = []
+    for _, row in rows.iterrows():
+        parts = str(row["metric_name"]).split(":")
+        if prefix == "firewall":
+            if len(parts) < 4:
+                continue
+            group_key = (parts[1], parts[2])
+            metric_key = parts[3]
+            label = f"{parts[1]} / {parts[2].replace('_', ' ')}"
+        else:
+            if len(parts) < 3:
+                continue
+            group_key = parts[1]
+            metric_key = parts[2]
+            label = parts[1].replace("_", " ")
+        parsed_rows.append(
+            {
+                "group_key": group_key,
+                "label": label,
+                "metric_key": metric_key,
+                "value": row.get("metric_value_numeric"),
+                "status": row.get("status"),
+            }
+        )
+
+    if not parsed_rows:
+        return pd.DataFrame()
+
+    table: dict[object, dict] = {}
+    for row in parsed_rows:
+        item = table.setdefault(row["group_key"], {"Name": row["label"], "Status": "ok"})
+        item[row["metric_key"]] = row["value"]
+        if row["status"] == "warning":
+            item["Status"] = "warning"
+        elif row["status"] in {"down", "error"} and item["Status"] != "warning":
+            item["Status"] = row["status"]
+    return pd.DataFrame(table.values())
+
+
+def _interface_view(dataframe: pd.DataFrame) -> pd.DataFrame:
+    table = _dynamic_mikrotik_metric_table(dataframe, "interface")
+    if table.empty:
+        return table
+    for column in ["rx_bytes", "tx_bytes", "rx_mbps", "tx_mbps"]:
+        if column not in table.columns:
+            table[column] = 0.0
+    table = table[
+        table[["rx_bytes", "tx_bytes", "rx_mbps", "tx_mbps"]]
+        .fillna(0)
+        .astype(float)
+        .gt(0)
+        .any(axis=1)
+    ].copy()
+    if table.empty:
+        return table
+    view = table[["Name", "rx_bytes", "tx_bytes", "rx_mbps", "tx_mbps", "Status"]].copy()
+    view["RX Bytes"] = view["rx_bytes"].apply(_format_bytes)
+    view["TX Bytes"] = view["tx_bytes"].apply(_format_bytes)
+    view["RX Mbps"] = view["rx_mbps"].apply(_format_mbps)
+    view["TX Mbps"] = view["tx_mbps"].apply(_format_mbps)
+    return view[["Name", "RX Bytes", "TX Bytes", "RX Mbps", "TX Mbps", "Status"]].rename(columns={"Name": "Interface"})
+
+
+def _firewall_view(dataframe: pd.DataFrame) -> pd.DataFrame:
+    table = _dynamic_mikrotik_metric_table(dataframe, "firewall")
+    if table.empty:
+        return table
+    for column in ["packets", "bytes", "pps", "mbps"]:
+        if column not in table.columns:
+            table[column] = 0.0
+    table = table.sort_values(["pps", "mbps", "packets"], ascending=False).head(12)
+    view = table[["Name", "packets", "bytes", "pps", "mbps", "Status"]].copy()
+    view["Packets"] = view["packets"].fillna(0).astype(int).map(lambda value: f"{value:,}")
+    view["Bytes"] = view["bytes"].apply(_format_bytes)
+    view["PPS"] = view["pps"].apply(lambda value: f"{float(value or 0):.1f}")
+    view["Mbps"] = view["mbps"].apply(_format_mbps)
+    view["Spike"] = view["Status"].map(lambda status: "Possible spike" if status == "warning" else "-")
+    return view[["Name", "Packets", "Bytes", "PPS", "Mbps", "Spike"]].rename(columns={"Name": "Rule"})
+
+
+def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> None:
+    if mikrotik_history_frame.empty:
+        st.info("Belum ada metric Mikrotik API yang tersimpan untuk device ini.")
+        return
+
+    interface_frame = _interface_view(mikrotik_history_frame)
+    firewall_frame = _firewall_view(mikrotik_history_frame)
+
+    st.markdown("### Mikrotik Metrics")
+    health_col1, health_col2, health_col3, health_col4, health_col5 = st.columns(5)
+    _render_stat_card(health_col1, "CPU Load", _format_percent(_latest_metric_value(mikrotik_history_frame, "cpu_percent")))
+    _render_stat_card(health_col2, "Memory Used", _format_percent(_latest_metric_value(mikrotik_history_frame, "memory_percent")))
+    _render_stat_card(health_col3, "Storage Used", _format_percent(_latest_metric_value(mikrotik_history_frame, "disk_percent")))
+    _render_stat_card(health_col4, "DHCP Leases", _latest_metric_value(mikrotik_history_frame, "dhcp_active_leases"))
+    _render_stat_card(health_col5, "Connected Clients", _latest_metric_value(mikrotik_history_frame, "connected_clients"))
+
+    st.markdown("### Interface Traffic")
+    if interface_frame.empty:
+        st.info("Belum ada data interface traffic dari Mikrotik API.")
+    else:
+        chart_frame = interface_frame.copy()
+        chart_frame["RX Mbps"] = pd.to_numeric(chart_frame["RX Mbps"], errors="coerce").fillna(0)
+        chart_frame["TX Mbps"] = pd.to_numeric(chart_frame["TX Mbps"], errors="coerce").fillna(0)
+        traffic_chart_col, traffic_table_col = st.columns([1, 2])
+        with traffic_chart_col:
+            st.bar_chart(chart_frame.set_index("Interface")[["RX Mbps", "TX Mbps"]])
+        with traffic_table_col:
+            st.dataframe(interface_frame, width="stretch", hide_index=True)
+
+    st.markdown("### Firewall / NAT Counters")
+    if firewall_frame.empty:
+        st.info("Belum ada counter firewall/NAT dari Mikrotik API.")
+    else:
+        st.dataframe(firewall_frame, width="stretch", hide_index=True)
+
+
+def _is_dynamic_mikrotik_metric(metric_name: str) -> bool:
+    return str(metric_name or "").startswith(("interface:", "queue:", "firewall:"))
+
+
+def _default_mikrotik_trend_metrics(metric_names: list[str]) -> list[str]:
+    preferred_metrics = [
+        "ping",
+        "packet_loss",
+        "jitter",
+        "cpu_percent",
+    ]
+    available = set(str(metric_name) for metric_name in metric_names)
+    return [metric_name for metric_name in preferred_metrics if metric_name in available]
 
 
 def _printer_chip(label: str, value: str, meta: str = "") -> str:
@@ -715,6 +972,11 @@ def _render_history_body() -> None:
     }
     if selected_device_id is not None:
         context_query_params["device_id"] = selected_device_id
+    if selected_device_id is not None and _is_mikrotik_device(
+        selected_device_type,
+        selected_device_record.get("name") if selected_device_record else None,
+    ):
+        context_query_params["include_selected_device_snapshot"] = "true"
     if current_selected_metric != "All Metrics" and not _should_hide_metric_for_device(
         current_selected_metric,
         selected_device_type,
@@ -734,6 +996,7 @@ def _render_history_body() -> None:
             "history": {"items": [], "meta": {}},
             "selected_device_history": {"items": [], "meta": {}},
             "latest_snapshot": {"items": [], "meta": {}},
+            "selected_device_snapshot": {"items": [], "meta": {}},
             "latest_snapshot_status_summary": {},
             "snapshot_uptime_map": {},
         },
@@ -767,9 +1030,20 @@ def _render_history_body() -> None:
     history_meta = paged_meta(history_payload)
     history = _filter_history_rows(history, device_type_by_id, device_name_by_id)
     selected_device_history = _filter_history_rows(selected_device_history_raw, device_type_by_id, device_name_by_id)
+    selected_is_mikrotik = selected_device_id is not None and _is_mikrotik_device(
+        selected_device_type,
+        selected_device_record.get("name") if selected_device_record else None,
+    )
     full_device_history = selected_device_history
     if selected_device_id is not None:
-        metric_names = None if selected_metric == "All Metrics" else [selected_metric]
+        if selected_is_mikrotik and selected_metric == "All Metrics":
+            metric_names = _default_mikrotik_trend_metrics(metric_name_options)
+            max_history_pages = 1
+            initial_history_payload = None
+        else:
+            metric_names = None if selected_metric == "All Metrics" else [selected_metric]
+            max_history_pages = None
+            initial_history_payload = selected_device_history_payload
         full_device_history = _filter_history_rows(
             _fetch_device_history_rows(
                 device_id=selected_device_id,
@@ -777,6 +1051,8 @@ def _render_history_body() -> None:
                 checked_to_date=checked_to_date,
                 metric_names=metric_names,
                 status=status_value,
+                max_pages=max_history_pages,
+                initial_payload=initial_history_payload,
             ),
             device_type_by_id,
             device_name_by_id,
@@ -870,6 +1146,22 @@ def _render_history_body() -> None:
         else:
             status_right.bar_chart(status_counts.set_index("status"))
 
+    if selected_is_mikrotik:
+        selected_device_snapshot_payload = history_context.get("selected_device_snapshot", {"items": [], "meta": {}})
+        mikrotik_snapshot = _filter_history_rows(
+            paged_items(selected_device_snapshot_payload),
+            device_type_by_id,
+            device_name_by_id,
+        )
+        if not mikrotik_snapshot:
+            mikrotik_snapshot = _filter_history_rows(
+                _fetch_latest_device_snapshot(selected_device_id),
+                device_type_by_id,
+                device_name_by_id,
+            )
+        mikrotik_history_frame = _prepare_history_frame(mikrotik_snapshot, sort_desc=False)
+        _render_mikrotik_history_section(mikrotik_history_frame)
+
     if selected_device_id is not None and selected_device_type == "printer":
         printer_history = [
             row for row in selected_device_history if str(row.get("metric_name") or "") in PRINTER_METRIC_NAMES
@@ -892,16 +1184,20 @@ def _render_history_body() -> None:
         st.info("Belum ada history lengkap untuk device ini pada rentang waktu yang dipilih.")
         return
 
-    metric_names_to_render = (
-        [selected_metric]
-        if selected_metric != "All Metrics"
-        else sorted(device_history_frame["metric_name"].dropna().unique().tolist())
-    )
+    available_metric_names = sorted(device_history_frame["metric_name"].dropna().unique().tolist())
+    if selected_is_mikrotik and selected_metric == "All Metrics":
+        metric_names_to_render = _default_mikrotik_trend_metrics(available_metric_names)
+    else:
+        metric_names_to_render = [selected_metric] if selected_metric != "All Metrics" else available_metric_names
     metric_names_to_render = _filter_metric_names(
         metric_names_to_render,
         selected_device_type,
         selected_device_record.get("name") if selected_device_record else None,
     )
+    if selected_is_mikrotik and selected_metric == "All Metrics":
+        metric_names_to_render = [
+            metric_name for metric_name in metric_names_to_render if not _is_dynamic_mikrotik_metric(metric_name)
+        ]
     rendered_metric_frames: list[pd.DataFrame] = []
     for metric_name in metric_names_to_render:
         metric_series_frame = device_history_frame[device_history_frame["metric_name"] == str(metric_name)].copy()
@@ -929,6 +1225,8 @@ def _render_history_body() -> None:
         raw_history_frame = (
             device_history_frame if not device_history_frame.empty else dataframe.copy()
         ).sort_values("checked_at", ascending=False)
+    elif selected_is_mikrotik and selected_metric == "All Metrics":
+        raw_history_frame = dataframe.copy().sort_values("checked_at", ascending=False)
     else:
         raw_history_frame = pd.concat(rendered_metric_frames, ignore_index=True).sort_values("checked_at", ascending=False)
     raw_view = raw_history_frame[
@@ -942,7 +1240,8 @@ def _render_history_body() -> None:
             "status": "Status",
         }
     )
-    st.dataframe(raw_view, width="stretch")
+    paged_raw_view = _paginate_frame(raw_view, key_prefix="history_raw", page_size=10)
+    st.dataframe(paged_raw_view, width="stretch", hide_index=True)
 
 
 render_live_section(auto_refresh, interval_seconds, _render_history_body)

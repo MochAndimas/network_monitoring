@@ -59,6 +59,8 @@ def _request_json(
         headers=_request_headers(auth_token),
     )
     response.raise_for_status()
+    if response.status_code == 204 or not response.content:
+        return True
     return response.json()
 
 
@@ -199,6 +201,18 @@ def put_json(path: str, payload: dict, fallback, *, action_key: str | None = Non
         fallback=fallback,
         auth_token=str(st.session_state.get("auth_token") or ""),
         action="Gagal mengirim update",
+        action_key=action_key,
+    )
+
+
+def delete_json(path: str, fallback=False, *, action_key: str | None = None):
+    return _request_with_auth_recovery(
+        "DELETE",
+        path,
+        timeout=20.0,
+        fallback=fallback,
+        auth_token=str(st.session_state.get("auth_token") or ""),
+        action="Gagal menghapus data",
         action_key=action_key,
     )
 

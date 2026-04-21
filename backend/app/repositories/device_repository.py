@@ -1,9 +1,13 @@
-from sqlalchemy import Select, desc, func, or_, select
+from sqlalchemy import Select, delete, desc, func, or_, select, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.device import Device
+from ..models.alert import Alert
+from ..models.incident import Incident
 from ..models.metric import Metric
+from ..models.metric_cold_archive import MetricColdArchive
+from ..models.metric_daily_rollup import MetricDailyRollup
 
 
 class DeviceRepository:
@@ -322,3 +326,12 @@ class DeviceRepository:
         await self.db.flush()
         await self.db.commit()
         return device
+
+    async def delete_device(self, device: Device) -> None:
+        device_id = device.id
+        await self.db.execute(update(Alert).where(Alert.device_id == device_id).values(device_id=None))
+        await self.db.execute(update(Incident).where(Incident.device_id == device_id).values(device_id=None))
+        await self.db.execute(delete(MetricDailyRollup).where(MetricDailyRollup.device_id == device_id))
+        await self.db.execute(delete(MetricColdArchive).where(MetricColdArchive.device_id == device_id))
+        await self.db.delete(device)
+        await self.db.commit()

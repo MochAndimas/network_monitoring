@@ -159,6 +159,14 @@ async def evaluate_alerts(db) -> list[dict]:
                     message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
                 )
 
+        if _is_mikrotik_device(device):
+            _evaluate_mikrotik_alerts(
+                device=device,
+                latest_metrics=latest_metrics,
+                thresholds=thresholds,
+                expected_alerts=expected_alerts,
+            )
+
         if device.device_type == "printer":
             uptime_metric = latest_metrics.get((device.id, "printer_uptime_seconds"))
             current_uptime = _safe_float(uptime_metric.metric_value) if uptime_metric is not None else None
@@ -269,6 +277,85 @@ def _safe_float(value: str) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _is_mikrotik_device(device) -> bool:
+    return str(device.device_type or "").lower() == "mikrotik" or "mikrotik" in str(device.name or "").lower()
+
+
+def _evaluate_mikrotik_alerts(*, device, latest_metrics: dict, thresholds: dict[str, float], expected_alerts: dict) -> None:
+    api_metric = latest_metrics.get((device.id, "mikrotik_api"))
+    if api_metric is not None and (
+        str(api_metric.status or "").lower() == "error" or str(api_metric.metric_value or "") == "connection_failed"
+    ):
+        expected_alerts[(device.id, "mikrotik_api_failed")] = _build_alert_payload(
+            device_id=device.id,
+            alert_type="mikrotik_api_failed",
+            message=f"{device.name} Mikrotik API connection failed",
+        )
+
+    client_metric = latest_metrics.get((device.id, "connected_clients"))
+    client_count = _safe_float(client_metric.metric_value) if client_metric is not None else None
+    if client_count is not None and client_count >= thresholds["mikrotik_connected_clients_warning"]:
+        expected_alerts[(device.id, "mikrotik_connected_clients_high")] = _build_alert_payload(
+            device_id=device.id,
+            alert_type="mikrotik_connected_clients_high",
+            message=f"{device.name} connected clients reached {int(client_count)}",
+        )
+
+    interface_spike = _highest_dynamic_metric(
+        latest_metrics,
+        device_id=device.id,
+        prefix="interface:",
+        suffixes=(":rx_mbps", ":tx_mbps"),
+    )
+    if interface_spike is not None:
+        metric_name, metric = interface_spike
+        value = _safe_float(metric.metric_value)
+        if value is not None and value >= thresholds["mikrotik_interface_mbps_warning"]:
+            expected_alerts[(device.id, "mikrotik_interface_traffic_high")] = _build_alert_payload(
+                device_id=device.id,
+                alert_type="mikrotik_interface_traffic_high",
+                message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
+            )
+
+    firewall_spike = _highest_dynamic_metric(
+        latest_metrics,
+        device_id=device.id,
+        prefix="firewall:",
+        suffixes=(":pps", ":mbps"),
+    )
+    if firewall_spike is not None:
+        metric_name, metric = firewall_spike
+        value = _safe_float(metric.metric_value)
+        threshold = (
+            thresholds["mikrotik_firewall_spike_pps_warning"]
+            if metric_name.endswith(":pps")
+            else thresholds["mikrotik_firewall_spike_mbps_warning"]
+        )
+        if value is not None and (value >= threshold or str(metric.status or "").lower() == "warning"):
+            expected_alerts[(device.id, "mikrotik_firewall_spike")] = _build_alert_payload(
+                device_id=device.id,
+                alert_type="mikrotik_firewall_spike",
+                message=f"{device.name} firewall spike on {metric_name}: {value:.2f}{metric.unit or ''}",
+            )
+
+
+def _highest_dynamic_metric(latest_metrics: dict, *, device_id: int, prefix: str, suffixes: tuple[str, ...]):
+    matches = [
+        (metric_name, metric)
+        for (current_device_id, metric_name), metric in latest_metrics.items()
+        if current_device_id == device_id and str(metric_name).startswith(prefix) and str(metric_name).endswith(suffixes)
+    ]
+    numeric_matches = [
+        (metric_name, metric, value)
+        for metric_name, metric in matches
+        if (value := _safe_float(metric.metric_value)) is not None
+    ]
+    if not numeric_matches:
+        return None
+    metric_name, metric, _value = max(numeric_matches, key=lambda item: item[2])
+    return metric_name, metric
 
 
 def _build_alert_payload(device_id: int | None, alert_type: str, message: str) -> dict:

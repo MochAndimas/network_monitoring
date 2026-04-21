@@ -92,6 +92,7 @@ async def get_metrics_history_context(
     selected_device_offset: int = Query(default=0, ge=0),
     snapshot_limit: int = Query(default=10, ge=1, le=500),
     snapshot_offset: int = Query(default=0, ge=0),
+    include_selected_device_snapshot: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     repository = MetricRepository(db)
@@ -107,19 +108,31 @@ async def get_metrics_history_context(
     selected_device_history_rows = []
     selected_device_history_total = 0
     if device_id is not None:
-        selected_device_history_rows, selected_device_history_total = await repository.list_recent_metric_rows_paged(
-            limit=selected_device_limit,
-            offset=selected_device_offset,
-            device_id=device_id,
-            metric_name=metric_name,
-            status=status,
-            checked_from=checked_from,
-            checked_to=checked_to,
-        )
+        if selected_device_offset == 0 and selected_device_limit == limit:
+            selected_device_history_rows = history_rows
+            selected_device_history_total = history_total
+        else:
+            selected_device_history_rows, selected_device_history_total = await repository.list_recent_metric_rows_paged(
+                limit=selected_device_limit,
+                offset=selected_device_offset,
+                device_id=device_id,
+                metric_name=metric_name,
+                status=status,
+                checked_from=checked_from,
+                checked_to=checked_to,
+            )
     latest_snapshot_rows, latest_snapshot_total = await repository.list_latest_metric_rows_paged(
         limit=snapshot_limit,
         offset=snapshot_offset,
     )
+    selected_device_snapshot_rows = []
+    selected_device_snapshot_total = 0
+    if include_selected_device_snapshot and device_id is not None:
+        selected_device_snapshot_rows, selected_device_snapshot_total = await repository.list_latest_metric_rows_paged(
+            limit=500,
+            offset=0,
+            device_id=device_id,
+        )
     return {
         "metric_names": await repository.list_metric_names(device_id=device_id),
         "history": {
@@ -138,6 +151,10 @@ async def get_metrics_history_context(
             "items": _metric_history_dicts(latest_snapshot_rows),
             "meta": {"total": latest_snapshot_total, "limit": snapshot_limit, "offset": snapshot_offset},
         },
+        "selected_device_snapshot": {
+            "items": _metric_history_dicts(selected_device_snapshot_rows),
+            "meta": {"total": selected_device_snapshot_total, "limit": 500, "offset": 0},
+        },
         "latest_snapshot_status_summary": await repository.summarize_latest_snapshot_status_counts(),
         "snapshot_uptime_map": await repository.latest_snapshot_uptime_map_for_rows(latest_snapshot_rows),
     }
@@ -147,10 +164,11 @@ async def get_metrics_history_context(
 async def get_latest_metrics_snapshot_paged(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    device_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricHistoryPage:
     repository = MetricRepository(db)
-    metrics, total = await repository.list_latest_metric_rows_paged(limit=limit, offset=offset)
+    metrics, total = await repository.list_latest_metric_rows_paged(limit=limit, offset=offset, device_id=device_id)
     return MetricHistoryPage(
         items=_metric_history_response_items(metrics),
         meta=PageMeta(total=total, limit=limit, offset=offset),

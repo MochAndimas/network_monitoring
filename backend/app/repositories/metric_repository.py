@@ -290,6 +290,7 @@ class MetricRepository:
         *,
         limit: int = 100,
         offset: int = 0,
+        device_id: int | None = None,
     ) -> tuple[list[dict], int]:
         internet_target_name_priority = case(
             (
@@ -326,32 +327,31 @@ class MetricRepository:
             else_=3,
         )
         ranked_metrics = self._latest_metrics_ranked_subquery()
-        rows = (
-            await self.db.execute(
-                select(
-                    Metric.id,
-                    Metric.device_id,
-                    Device.name.label("device_name"),
-                    Metric.metric_name,
-                    Metric.metric_value,
-                    Metric.status,
-                    Metric.unit,
-                    Metric.checked_at,
-                    func.count().over().label("total_count"),
-                )
-                .join(ranked_metrics, Metric.id == ranked_metrics.c.metric_id)
-                .outerjoin(Device, Device.id == Metric.device_id)
-                .where(ranked_metrics.c.row_number == 1)
-                .order_by(
-                    device_type_priority.asc(),
-                    internet_target_name_priority.asc(),
-                    Device.name.asc(),
-                    Metric.metric_name.asc(),
-                )
-                .offset(offset)
-                .limit(limit)
+        query = (
+            select(
+                Metric.id,
+                Metric.device_id,
+                Device.name.label("device_name"),
+                Metric.metric_name,
+                Metric.metric_value,
+                Metric.status,
+                Metric.unit,
+                Metric.checked_at,
+                func.count().over().label("total_count"),
             )
-        ).all()
+            .join(ranked_metrics, Metric.id == ranked_metrics.c.metric_id)
+            .outerjoin(Device, Device.id == Metric.device_id)
+            .where(ranked_metrics.c.row_number == 1)
+        )
+        if device_id is not None:
+            query = query.where(Metric.device_id == device_id)
+        query = query.order_by(
+            device_type_priority.asc(),
+            internet_target_name_priority.asc(),
+            Device.name.asc(),
+            Metric.metric_name.asc(),
+        ).offset(offset).limit(limit)
+        rows = (await self.db.execute(query)).all()
         total = int(rows[0].total_count) if rows else 0
         return [self._metric_row_payload(row) for row in rows], total
 

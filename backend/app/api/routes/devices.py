@@ -9,6 +9,7 @@ from ...repositories.device_repository import DeviceRepository
 from ...services.audit_service import record_admin_audit_log
 from ...services.device_service import (
     create_device,
+    delete_device,
     get_device_row,
     list_device_rows_filtered,
     update_device,
@@ -125,3 +126,28 @@ async def update_device_endpoint(
         details=payload.model_dump(exclude_unset=True),
     )
     return DeviceListItem(**await get_device_row(db, updated_device.id))
+
+
+@router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_device_endpoint(
+    device_id: int,
+    request: Request,
+    actor=Depends(require_write_access),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    existing = await get_device_row(db, device_id)
+    await delete_device(db, device_id)
+    await record_admin_audit_log(
+        db,
+        actor=actor,
+        action="device.delete",
+        target_type="device",
+        target_id=str(device_id),
+        ip_address=request.client.host if request.client else "",
+        user_agent=request.headers.get("user-agent", ""),
+        details={
+            "name": existing["name"],
+            "ip_address": existing["ip_address"],
+            "device_type": existing["device_type"],
+        },
+    )

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     mikrotik_host: str = ""
+    mikrotik_port: int = 8728
     mikrotik_username: str = ""
     mikrotik_password: str = ""
     dashboard_api_url: str = "http://localhost:8000"

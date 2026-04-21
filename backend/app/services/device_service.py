@@ -52,3 +52,11 @@ async def update_device(db: AsyncSession, device_id: int, payload: dict):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="IP address already exists")
 
     return await repository.update_device(device, payload)
+
+
+async def delete_device(db: AsyncSession, device_id: int) -> None:
+    repository = DeviceRepository(db)
+    device = await repository.get_by_id(device_id)
+    if device is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    await repository.delete_device(device)

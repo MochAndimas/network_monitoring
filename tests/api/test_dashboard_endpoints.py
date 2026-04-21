@@ -791,8 +791,8 @@ def test_dashboard_overview_panels_and_problem_devices_endpoints():
         assert "problem_devices" in compatibility_response.json()
 
 
-def test_create_and_update_device_endpoint():
-    with client_context() as (client, _session_factory):
+def test_create_update_and_delete_device_endpoint():
+    with client_context() as (client, session_factory):
         create_response = client.post(
             "/devices",
             headers=API_HEADERS,
@@ -825,6 +825,45 @@ def test_create_and_update_device_endpoint():
         updated_payload = update_response.json()
         assert updated_payload["name"] == "AP Lobby Updated"
         assert updated_payload["is_active"] is False
+
+        async def seed_related_rows():
+            async with session_factory() as db:
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": created_payload["id"],
+                            "metric_name": "ping",
+                            "metric_value": "12",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": utcnow(),
+                        }
+                    ]
+                )
+                db.add(
+                    Alert(
+                        device_id=created_payload["id"],
+                        alert_type="device_down",
+                        severity="critical",
+                        message="AP Lobby Updated is unreachable",
+                        status="active",
+                        created_at=utcnow(),
+                    )
+                )
+                await db.commit()
+
+        run(seed_related_rows())
+
+        delete_response = client.delete(f'/devices/{created_payload["id"]}', headers=API_HEADERS)
+        get_deleted_response = client.get(f'/devices/{created_payload["id"]}', headers=API_HEADERS)
+
+        async def fetch_alert_device_id():
+            async with session_factory() as db:
+                return await db.scalar(select(Alert.device_id).where(Alert.alert_type == "device_down"))
+
+        assert delete_response.status_code == 204
+        assert get_deleted_response.status_code == 404
+        assert run(fetch_alert_device_id()) is None
 
 
 def test_device_type_metadata_and_validation():
@@ -1212,6 +1251,10 @@ def test_threshold_endpoints_and_update():
         assert any(item["key"] == "jitter_critical" for item in payload)
         assert any(item["key"] == "dns_resolution_warning" for item in payload)
         assert any(item["key"] == "http_response_warning" for item in payload)
+        assert any(item["key"] == "mikrotik_connected_clients_warning" for item in payload)
+        assert any(item["key"] == "mikrotik_interface_mbps_warning" for item in payload)
+        assert any(item["key"] == "mikrotik_firewall_spike_pps_warning" for item in payload)
+        assert any(item["key"] == "mikrotik_firewall_spike_mbps_warning" for item in payload)
         assert any(item["key"] == "printer_ink_warning" for item in payload)
         assert any(item["key"] == "printer_ink_critical" for item in payload)
 
@@ -1280,6 +1323,96 @@ def test_run_cycle_creates_ping_latency_alert():
         assert len(alerts_payload) == 1
         assert alerts_payload[0]["alert_type"] == "high_ping_latency_critical"
         assert alerts_payload[0]["severity"] == "critical"
+
+
+def test_run_cycle_creates_mikrotik_metric_alerts():
+    with client_context() as (client, session_factory):
+        mikrotik_device_id = run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "Mikrotik Utama", "ip_address": "192.168.88.1", "device_type": "internet_target"}],
+                [],
+            )
+        )[0].id
+
+        import backend.app.services.run_cycle_service as run_cycle_module
+
+        original_internet = run_cycle_module.run_internet_checks
+        original_device = run_cycle_module.run_device_checks
+        original_server = run_cycle_module.run_server_checks
+        original_mikrotik = run_cycle_module.run_mikrotik_checks
+
+        async def fake_mikrotik_checks(_db):
+            checked_at = utcnow()
+            return [
+                {
+                    "device_id": mikrotik_device_id,
+                    "metric_name": "mikrotik_api",
+                    "metric_value": "connection_failed",
+                    "status": "error",
+                    "unit": None,
+                    "checked_at": checked_at,
+                },
+                {
+                    "device_id": mikrotik_device_id,
+                    "metric_name": "connected_clients",
+                    "metric_value": "150",
+                    "status": "ok",
+                    "unit": "count",
+                    "checked_at": checked_at,
+                },
+                {
+                    "device_id": mikrotik_device_id,
+                    "metric_name": "interface:ether1-wan:rx_mbps",
+                    "metric_value": "95.00",
+                    "status": "up",
+                    "unit": "Mbps",
+                    "checked_at": checked_at,
+                },
+                {
+                    "device_id": mikrotik_device_id,
+                    "metric_name": "firewall:filter:001_forward_drop_bad:pps",
+                    "metric_value": "1200.00",
+                    "status": "warning",
+                    "unit": "pps",
+                    "checked_at": checked_at,
+                },
+            ]
+
+        try:
+            async def empty_checks(_db):
+                return []
+
+            run_cycle_module.run_internet_checks = empty_checks
+            run_cycle_module.run_device_checks = empty_checks
+            run_cycle_module.run_server_checks = empty_checks
+            run_cycle_module.run_mikrotik_checks = fake_mikrotik_checks
+
+            cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
+            alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+            incidents_response = client.get("/incidents?status=active", headers=API_HEADERS)
+        finally:
+            run_cycle_module.run_internet_checks = original_internet
+            run_cycle_module.run_device_checks = original_device
+            run_cycle_module.run_server_checks = original_server
+            run_cycle_module.run_mikrotik_checks = original_mikrotik
+
+        assert cycle_response.status_code == 200
+        cycle_payload = cycle_response.json()
+        assert cycle_payload["metrics_collected"] == 4
+        assert cycle_payload["alerts_created"] == 4
+        assert cycle_payload["incidents_created"] == 1
+
+        assert alerts_response.status_code == 200
+        alert_types = {alert["alert_type"] for alert in alerts_response.json()}
+        assert alert_types == {
+            "mikrotik_api_failed",
+            "mikrotik_connected_clients_high",
+            "mikrotik_interface_traffic_high",
+            "mikrotik_firewall_spike",
+        }
+        assert incidents_response.status_code == 200
+        assert len(incidents_response.json()) == 1
 
 
 def test_run_cycle_creates_internet_quality_alerts():

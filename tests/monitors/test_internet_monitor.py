@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 
 import httpx
 import pytest
@@ -267,6 +268,99 @@ def test_mikrotik_checks_collect_packet_loss_and_jitter(monkeypatch, session_fac
     assert metrics_by_name["ping"]["metric_value"] == "25.00"
     assert metrics_by_name["packet_loss"]["metric_value"] == "0.00"
     assert metrics_by_name["jitter"]["metric_value"] == "7.50"
+
+
+def test_mikrotik_api_checks_collect_routeros_metrics(monkeypatch, session_factory):
+    ping_samples = iter([0.010, 0.010, 0.010])
+    monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
+
+    async def fake_safe_ping(_ip_address):
+        return next(ping_samples)
+
+    class FakeApi:
+        def path(self, *parts):
+            paths = {
+                ("system", "resource"): [
+                    {
+                        "cpu-load": "12",
+                        "total-memory": "1000",
+                        "free-memory": "250",
+                        "total-hdd-space": "2000",
+                        "free-hdd-space": "500",
+                    }
+                ],
+                ("interface",): [
+                    {"name": "ether1", "running": True, "rx-byte": "1001000", "tx-byte": "2002000"}
+                ],
+                ("ip", "dhcp-server", "lease"): [
+                    {"status": "bound", "active-address": "192.168.88.10", "mac-address": "AA:BB:CC:DD:EE:01"}
+                ],
+                ("ip", "arp"): [
+                    {"address": "192.168.88.10", "mac-address": "AA:BB:CC:DD:EE:01"},
+                    {"address": "192.168.88.11", "mac-address": "AA:BB:CC:DD:EE:02"},
+                ],
+                ("ip", "firewall", "filter"): [
+                    {"chain": "forward", "action": "drop", "comment": "bad", "packets": "5000", "bytes": "10000000"}
+                ],
+                ("ip", "firewall", "nat"): [],
+                ("queue", "simple"): [
+                    {"name": "user-a", "bytes": "3003000/4004000", "rate": "7000000/8000000"}
+                ],
+            }
+            return paths.get(parts, [])
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_host", "192.168.88.1")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_username", "monitor")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_password", "secret")
+    monkeypatch.setattr(mikrotik_service, "connect", lambda **_kwargs: FakeApi())
+
+    async def scenario():
+        async with session_factory() as db:
+            devices = await DeviceRepository(db).upsert_devices(
+                [{"name": "Mikrotik Utama", "ip_address": "192.168.88.1", "device_type": "internet_target"}]
+            )
+            device_id = devices[0].id
+            previous_checked_at = utcnow() - timedelta(seconds=1)
+            await MetricRepository(db).create_metrics(
+                [
+                    {
+                        "device_id": device_id,
+                        "metric_name": "interface:ether1:rx_bytes",
+                        "metric_value": "1000",
+                        "status": "up",
+                        "unit": "bytes",
+                        "checked_at": previous_checked_at,
+                    },
+                    {
+                        "device_id": device_id,
+                        "metric_name": "firewall:filter:001_forward_drop_bad:packets",
+                        "metric_value": "0",
+                        "status": "ok",
+                        "unit": "packets",
+                        "checked_at": previous_checked_at,
+                    },
+                ]
+            )
+            return await mikrotik_service.run_mikrotik_checks(db)
+
+    metrics = run(scenario())
+    metrics_by_name = {metric["metric_name"]: metric for metric in metrics}
+
+    assert metrics_by_name["mikrotik_api"]["metric_value"] == "ok"
+    assert metrics_by_name["mikrotik_api"]["status"] == "ok"
+    assert metrics_by_name["cpu_percent"]["metric_value"] == "12"
+    assert metrics_by_name["memory_percent"]["metric_value"] == "75.00"
+    assert metrics_by_name["disk_percent"]["metric_value"] == "75.00"
+    assert metrics_by_name["dhcp_active_leases"]["metric_value"] == "1"
+    assert metrics_by_name["connected_clients"]["metric_value"] == "2"
+    assert float(metrics_by_name["interface:ether1:rx_mbps"]["metric_value"]) > 0
+    assert metrics_by_name["queue:user-a:rx_mbps"]["metric_value"] == "7.00"
+    assert metrics_by_name["queue:user-a:tx_mbps"]["metric_value"] == "8.00"
+    assert metrics_by_name["firewall:filter:001_forward_drop_bad:pps"]["status"] == "warning"
 
 
 @pytest.fixture
