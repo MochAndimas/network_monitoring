@@ -14,11 +14,16 @@ collapse_sidebar_on_page_load()
 require_dashboard_login()
 render_page_header(
     "Incidents",
-    "Pelacakan insiden aktif dan selesai untuk melihat dampak operasional serta durasi gangguan.",
+    "Pelacakan insiden aktif dan selesai untuk evaluasi dampak operasional.",
 )
 
 filter_col1, filter_col2 = st.columns([1, 2])
-status_filter = filter_col1.selectbox("Incident Status", options=["All", "active", "resolved"], index=0)
+status_filter = filter_col1.selectbox(
+    "Status Insiden",
+    options=["All", "active", "resolved"],
+    index=0,
+    format_func=lambda value: "Semua" if value == "All" else normalize_status_label(str(value)),
+)
 search_filter = filter_col2.text_input("Cari", placeholder="Filter berdasarkan device atau ringkasan")
 with st.expander("Filter Lanjutan"):
     adv_col1, adv_col2 = st.columns(2)
@@ -49,7 +54,7 @@ def _render_incidents_body() -> None:
     )
 
     if not incidents:
-        st.info("Belum ada incident yang tercatat.")
+        st.info("Belum ada insiden tercatat. Data akan muncul setelah gangguan terdeteksi.")
         return
 
     dataframe = pd.DataFrame(incidents)
@@ -91,7 +96,7 @@ def _render_incidents_body() -> None:
         ]
 
     if filtered_frame.empty:
-        st.info("Tidak ada incident yang cocok dengan filter saat ini.")
+        st.info("Tidak ada insiden yang cocok dengan filter. Coba ubah kata kunci pencarian.")
         return
 
     if sort_mode == "Berdasarkan Status":
@@ -124,40 +129,40 @@ def _render_incidents_body() -> None:
         filtered_frame["status"]
         .value_counts()
         .rename_axis("Status")
-        .reset_index(name="Count")
+        .reset_index(name="Jumlah")
     )
     status_counts["Priority"] = status_counts["Status"].map(status_priority)
-    status_counts = status_counts.sort_values(["Priority", "Count", "Status"], ascending=[True, False, True])
+    status_counts = status_counts.sort_values(["Priority", "Jumlah", "Status"], ascending=[True, False, True])
     top_devices = (
         filtered_frame["device_name"]
         .value_counts()
-        .rename_axis("Device")
-        .reset_index(name="Incidents")
-        .sort_values("Incidents", ascending=False)
+        .rename_axis("Nama Device")
+        .reset_index(name="Jumlah Insiden")
+        .sort_values("Jumlah Insiden", ascending=False)
         .head(10)
     )
 
     summary_col, top_col = st.columns([1, 1])
     with summary_col:
-        st.markdown("### Incident Distribution")
+        st.markdown("### Distribusi Status Insiden")
         status_chart = (
             alt.Chart(status_counts)
             .mark_bar()
             .encode(
-                x=alt.X("Count:Q", title="Incidents"),
+                x=alt.X("Jumlah:Q", title="Jumlah Insiden"),
                 y=alt.Y("Status:N", sort="-x", title="Status"),
-                tooltip=[alt.Tooltip("Status:N", title="Status"), alt.Tooltip("Count:Q", title="Count")],
+                tooltip=[alt.Tooltip("Status:N", title="Status"), alt.Tooltip("Jumlah:Q", title="Jumlah")],
             )
-            .properties(height=280)
+            .properties(height=260)
         )
         st.altair_chart(status_chart, width="stretch")
         st.dataframe(
-            status_counts[["Status", "Count"]],
+            status_counts[["Status", "Jumlah"]],
             width="stretch",
             hide_index=True,
             column_config={
                 "Status": st.column_config.TextColumn("Status", width="small"),
-                "Count": st.column_config.NumberColumn("Count", width="small", format="%d"),
+                "Jumlah": st.column_config.NumberColumn("Jumlah", width="small", format="%d"),
             },
         )
     with top_col:
@@ -166,11 +171,11 @@ def _render_incidents_body() -> None:
             alt.Chart(top_devices)
             .mark_bar()
             .encode(
-                x=alt.X("Incidents:Q", title="Incidents"),
-                y=alt.Y("Device:N", sort="-x", title="Device"),
-                tooltip=[alt.Tooltip("Device:N", title="Device"), alt.Tooltip("Incidents:Q", title="Incidents")],
+                x=alt.X("Jumlah Insiden:Q", title="Jumlah Insiden"),
+                y=alt.Y("Nama Device:N", sort="-x", title="Nama Device"),
+                tooltip=[alt.Tooltip("Nama Device:N", title="Nama Device"), alt.Tooltip("Jumlah Insiden:Q", title="Jumlah")],
             )
-            .properties(height=280)
+            .properties(height=260)
         )
         st.altair_chart(device_chart, width="stretch")
         st.dataframe(
@@ -178,20 +183,20 @@ def _render_incidents_body() -> None:
             width="stretch",
             hide_index=True,
             column_config={
-                "Device": st.column_config.TextColumn("Device", width="large"),
-                "Incidents": st.column_config.NumberColumn("Incidents", width="small", format="%d"),
+                "Nama Device": st.column_config.TextColumn("Nama Device", width="large"),
+                "Jumlah Insiden": st.column_config.NumberColumn("Jumlah Insiden", width="small", format="%d"),
             },
         )
 
     detail_columns = ["started_at_wib", "ended_at_wib", "duration_label", "device_name", "status", "summary"]
     detail_frame = filtered_frame[detail_columns].rename(
         columns={
-            "started_at_wib": "Started At (WIB)",
-            "ended_at_wib": "Ended At (WIB)",
-            "duration_label": "Duration",
-            "device_name": "Device",
+            "started_at_wib": "Mulai (WIB)",
+            "ended_at_wib": "Selesai (WIB)",
+            "duration_label": "Durasi",
+            "device_name": "Nama Device",
             "status": "Status",
-            "summary": "Summary",
+            "summary": "Ringkasan",
         }
     )
     st.markdown("### Detail Insiden")
@@ -200,14 +205,16 @@ def _render_incidents_body() -> None:
         width="stretch",
         hide_index=True,
         column_config={
-            "Started At (WIB)": st.column_config.TextColumn("Started At (WIB)", width="medium"),
-            "Ended At (WIB)": st.column_config.TextColumn("Ended At (WIB)", width="medium"),
-            "Duration": st.column_config.TextColumn("Duration", width="small"),
-            "Device": st.column_config.TextColumn("Device", width="medium"),
+            "Mulai (WIB)": st.column_config.TextColumn("Mulai (WIB)", width="medium"),
+            "Selesai (WIB)": st.column_config.TextColumn("Selesai (WIB)", width="medium"),
+            "Durasi": st.column_config.TextColumn("Durasi", width="small"),
+            "Nama Device": st.column_config.TextColumn("Nama Device", width="medium"),
             "Status": st.column_config.TextColumn("Status", width="small"),
-            "Summary": st.column_config.TextColumn("Summary", width="large"),
+            "Ringkasan": st.column_config.TextColumn("Ringkasan", width="large"),
         },
     )
+    st.markdown("")
+    st.caption("Tip: gunakan urutan Durasi Terpanjang untuk meninjau insiden dengan dampak waktu terbesar.")
 
 
 render_live_section(auto_refresh, interval_seconds, _render_incidents_body)

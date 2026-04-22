@@ -25,153 +25,6 @@ CHART_WINDOW_OPTIONS = {
     "24 jam": 24,
     "7 hari": 24 * 7,
 }
-def _history_css() -> str:
-    return """
-<style>
-.stMainBlockContainer,
-[data-testid="stAppViewContainer"] .main .block-container {
-    max-width: 100%;
-    padding-left: 2rem;
-    padding-right: 2rem;
-}
-.history-meta,
-.printer-panel,
-.printer-status-chip,
-.printer-ink-card {
-    color: var(--text-color);
-}
-.history-meta {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    margin: 0.3rem 0 1.1rem 0;
-}
-.history-pill {
-    border: 1px solid color-mix(in srgb, var(--text-color) 18%, transparent);
-    background: transparent;
-    border-radius: 999px;
-    padding: 0.45rem 0.8rem;
-    font-size: 0.9rem;
-    color: color-mix(in srgb, var(--text-color) 58%, transparent);
-}
-.history-card-label {
-    font-size: 0.9rem;
-    line-height: 1.35;
-    color: color-mix(in srgb, var(--text-color) 72%, transparent);
-    margin-bottom: 0.6rem;
-}
-.history-card-content {
-    display: flex;
-    min-height: 92px;
-    flex-direction: column;
-    justify-content: flex-start;
-}
-.history-card-content p {
-    margin: 0;
-}
-.history-card-value {
-    font-size: clamp(1.35rem, 2vw, 2.5rem);
-    line-height: 1.08;
-    font-weight: 700;
-    color: var(--text-color);
-    white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-}
-.history-card-value.compact {
-    font-size: clamp(1rem, 1.35vw, 1.4rem);
-    line-height: 1.25;
-}
-.printer-panel {
-    border: 1px solid color-mix(in srgb, var(--text-color) 18%, transparent);
-    background: transparent;
-    border-radius: 22px;
-    padding: 1.25rem 1.25rem 1.1rem 1.25rem;
-    margin: 0.25rem 0 1rem 0;
-    box-shadow: none;
-}
-.printer-panel-title {
-    font-size: 1.05rem;
-    font-weight: 700;
-    color: var(--text-color);
-    margin-bottom: 0.35rem;
-}
-.printer-panel-subtitle {
-    font-size: 0.92rem;
-    line-height: 1.5;
-    color: color-mix(in srgb, var(--text-color) 72%, transparent);
-    margin-bottom: 1rem;
-}
-.printer-status-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 0.85rem;
-    margin-bottom: 0.9rem;
-}
-.printer-status-chip-label {
-    font-size: 0.82rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: color-mix(in srgb, var(--text-color) 58%, transparent);
-    margin-bottom: 0.7rem;
-}
-.printer-status-chip-value {
-    font-size: clamp(1.05rem, 1.45vw, 1.4rem);
-    font-weight: 700;
-    color: var(--text-color);
-    line-height: 1.3;
-    min-height: 2.25rem;
-    display: flex;
-    align-items: flex-start;
-}
-.printer-status-chip-meta {
-    margin-top: auto;
-    font-size: 0.8rem;
-    color: color-mix(in srgb, var(--text-color) 72%, transparent);
-    line-height: 1.5;
-}
-.printer-status-chip-content {
-    display: flex;
-    min-height: 112px;
-    flex-direction: column;
-    justify-content: flex-start;
-    gap: 0.15rem;
-}
-.printer-status-chip-content p {
-    margin: 0;
-}
-.printer-ink-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 0.85rem;
-}
-.printer-ink-card {
-    border-radius: 18px;
-    padding: 1rem;
-    border: 1px solid color-mix(in srgb, var(--text-color) 18%, transparent);
-    background: transparent;
-    box-shadow: none;
-}
-.printer-ink-swatch {
-    width: 14px;
-    height: 14px;
-    border-radius: 999px;
-    margin-bottom: 0.7rem;
-    border: 1px solid color-mix(in srgb, var(--text-color) 16%, transparent);
-}
-.printer-ink-value {
-    font-size: 1.35rem;
-    font-weight: 700;
-    color: var(--text-color);
-    line-height: 1.1;
-}
-.printer-ink-caption {
-    margin-top: 0.35rem;
-    font-size: 0.85rem;
-    color: color-mix(in srgb, var(--text-color) 72%, transparent);
-}
-</style>
-"""
 
 METRIC_LABELS = {
     "ping": ("Ping Latency", "Waktu respon ping ke device/target."),
@@ -195,7 +48,7 @@ METRIC_LABELS = {
     "mikrotik_api": ("Mikrotik API Status", "Status koneksi ke API Mikrotik."),
     "printer_uptime_seconds": ("Printer Uptime", "Durasi hidup printer sejak reboot terakhir."),
     "printer_status": ("Printer Status", "Status umum printer dari SNMP Host Resources MIB."),
-    "printer_error_state": ("Printer Error State", "Bitmask error printer yang sudah diterjemahkan ke label operasional."),
+    "printer_error_state": ("Status Error Printer", "Bitmask error printer yang sudah diterjemahkan ke label operasional."),
     "printer_ink_status": ("Ink Status", "Status tinta overall yang diturunkan dari status/error printer."),
     "printer_paper_status": ("Paper Status", "Kondisi kertas/tray printer berdasarkan SNMP."),
     "printer_total_pages": ("Total Pages", "Counter total halaman yang sudah tercetak."),
@@ -219,7 +72,7 @@ def _format_device_label(device: dict) -> str:
 def _default_device_option_label(devices: list[dict]) -> str:
     internet_targets = [device for device in devices if device.get("device_type") == "internet_target"]
     if not internet_targets:
-        return "All Devices"
+        return "Semua Device"
 
     preferred_device = next(
         (device for device in internet_targets if "myrepublic" in str(device.get("name", "")).lower()),
@@ -241,7 +94,7 @@ def _default_device_option_label(devices: list[dict]) -> str:
     )
     if preferred_device:
         return _format_device_label(preferred_device)
-    return "All Devices"
+    return "Semua Device"
 
 
 def _format_metric_value(row: pd.Series) -> str:
@@ -282,7 +135,7 @@ def _friendly_metric_name(metric_name: str) -> str:
 
 def _metric_filter_label(metric_name: str) -> str:
     if metric_name == "All Metrics":
-        return metric_name
+        return "Semua Metrik"
     return f"{_friendly_metric_name(metric_name)} ({metric_name})"
 
 
@@ -692,10 +545,10 @@ def _render_metric_trend_section(
                 title=_y_axis_label(metric_name, metric_unit),
             ),
             tooltip=[
-                alt.Tooltip("checked_at_wib:N", title="Checked At"),
+                alt.Tooltip("checked_at_wib:N", title="Dicek"),
                 alt.Tooltip("device_name:N", title="Device"),
-                alt.Tooltip("metric_label:N", title="Metric"),
-                alt.Tooltip("display_value:N", title="Value"),
+                alt.Tooltip("metric_label:N", title="Metrik"),
+                alt.Tooltip("display_value:N", title="Nilai"),
                 alt.Tooltip("status:N", title="Status"),
             ],
         )
@@ -707,15 +560,15 @@ def _render_metric_trend_section(
             y=alt.Y("line_value:Q"),
             color=alt.Color(
                 "line_label:N",
-                title="Reference",
+                title="Referensi",
                 scale=alt.Scale(
                     domain=["Min", "Avg", "Max"],
                     range=["#f59e0b", "#22c55e", "#ef4444"],
                 ),
             ),
             tooltip=[
-                alt.Tooltip("line_label:N", title="Line"),
-                alt.Tooltip("line_value:Q", title="Value", format=".2f"),
+                alt.Tooltip("line_label:N", title="Garis"),
+                alt.Tooltip("line_value:Q", title="Nilai", format=".2f"),
             ],
         )
     )
@@ -861,14 +714,14 @@ def _firewall_view(dataframe: pd.DataFrame) -> pd.DataFrame:
 
 def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> None:
     if mikrotik_history_frame.empty:
-        st.info("Belum ada metric Mikrotik API yang tersimpan untuk device ini.")
+        st.info("Belum ada metrik Mikrotik API. Pastikan device aktif dan monitoring cycle berjalan.")
         return
 
     latest_map = _latest_metric_snapshot_map(mikrotik_history_frame)
     interface_frame = _interface_view(mikrotik_history_frame)
     firewall_frame = _firewall_view(mikrotik_history_frame)
 
-    st.markdown("### Mikrotik Metrics")
+    st.markdown("### Metrik Mikrotik")
     health_col1, health_col2, health_col3, health_col4, health_col5 = st.columns(5)
     _render_stat_card(health_col1, "CPU Load", _format_percent(_latest_metric_value_from_map(latest_map, "cpu_percent")))
     _render_stat_card(
@@ -886,7 +739,7 @@ def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> No
 
     st.markdown("### Interface Traffic")
     if interface_frame.empty:
-        st.info("Belum ada data interface traffic dari Mikrotik API.")
+        st.info("Belum ada data interface traffic. Coba perluas rentang waktu atau cek status API Mikrotik.")
     else:
         chart_frame = interface_frame.copy()
         chart_frame["RX Mbps"] = pd.to_numeric(chart_frame["RX Mbps"], errors="coerce").fillna(0)
@@ -932,7 +785,7 @@ def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> No
 
     st.markdown("### Firewall / NAT Counters")
     if firewall_frame.empty:
-        st.info("Belum ada counter firewall/NAT dari Mikrotik API.")
+        st.info("Belum ada counter firewall/NAT. Pastikan metrik firewall diambil pada siklus monitoring.")
     else:
         st.dataframe(
             firewall_frame,
@@ -968,7 +821,7 @@ def _render_printer_history_section(
     printer_history_frame: pd.DataFrame,
 ) -> None:
     if printer_history_frame.empty:
-        st.info("Belum ada metric printer SNMP yang tersimpan untuk device ini.")
+        st.info("Belum ada metrik printer SNMP. Periksa koneksi SNMP printer dan jalankan monitoring cycle.")
         return
 
     latest_map = _latest_metric_snapshot_map(printer_history_frame)
@@ -978,29 +831,29 @@ def _render_printer_history_section(
     paper_row = latest_map.get("printer_paper_status")
     uptime_row = latest_map.get("printer_uptime_seconds")
     pages_row = latest_map.get("printer_total_pages")
-    st.markdown("### Printer Health")
+    st.markdown("### Kesehatan Printer")
     st.caption("Ringkasan status printer, deteksi gangguan, uptime, dan counter halaman.")
     status_columns = st.columns(6)
     status_cards = [
         (
-            "Overall Status",
+            "Status Keseluruhan",
             str(status_row["display_value"]) if status_row is not None else "-",
-            f"Status metric: {str(status_row['status']).upper()}" if status_row is not None else "",
+            f"Status metrik: {str(status_row['status']).upper()}" if status_row is not None else "",
         ),
         (
-            "Error State",
+            "Status Error",
             str(error_row["display_value"]) if error_row is not None else "-",
-            f"Severity: {str(error_row['status']).upper()}" if error_row is not None else "",
+            f"Tingkat: {str(error_row['status']).upper()}" if error_row is not None else "",
         ),
         (
-            "Paper Status",
+            "Status Kertas",
             str(paper_row["display_value"]) if paper_row is not None else "-",
-            f"Status metric: {str(paper_row['status']).upper()}" if paper_row is not None else "",
+            f"Status metrik: {str(paper_row['status']).upper()}" if paper_row is not None else "",
         ),
         (
-            "Ink Status",
+            "Status Tinta",
             str(ink_status_row["display_value"]) if ink_status_row is not None else "-",
-            "Overall consumable state dari printer",
+            "Status consumable keseluruhan dari printer",
         ),
         (
             "Uptime",
@@ -1008,7 +861,7 @@ def _render_printer_history_section(
             "Dipakai untuk deteksi reboot",
         ),
         (
-            "Total Pages",
+            "Total Halaman",
             str(pages_row["display_value"]) if pages_row is not None else "-",
             "Counter akumulatif printer",
         ),
@@ -1021,7 +874,7 @@ def _render_printer_history_section(
 
 render_page_header(
     "History",
-    "Histori pengecekan metrik untuk analisis tren, snapshot terbaru, dan investigasi insiden.",
+    "Histori metrik untuk analisis tren dan investigasi insiden.",
 )
 
 devices = get_json("/devices/options?active_only=false&limit=300&offset=0", [])
@@ -1037,7 +890,7 @@ device_by_id = {
     int(device["id"]): device
     for device in devices
 }
-device_options = {"All Devices": None}
+device_options = {"Semua Device": None}
 for device in devices:
     device_options[_format_device_label(device)] = device["id"]
 
@@ -1079,19 +932,24 @@ def _render_history_body() -> None:
     selected_device_record = device_by_id.get(int(selected_device_id)) if selected_device_id is not None else None
     selected_device_type = str(selected_device_record.get("device_type")) if selected_device_record else None
     current_selected_metric = str(st.session_state.get("history_selected_metric", "All Metrics"))
-    status_value = filter_col3.selectbox("Status", options=STATUS_OPTIONS, index=0)
+    status_value = filter_col3.selectbox(
+        "Status",
+        options=STATUS_OPTIONS,
+        index=0,
+        format_func=lambda value: "Semua" if value == "All" else normalize_status_label(str(value)),
+    )
     with st.expander("Filter Lanjutan"):
         advanced_col1, advanced_col2, advanced_col3, advanced_col4 = st.columns(4)
-        limit_value = advanced_col1.selectbox("Rows", options=[50, 100, 200, 300, 500], index=2)
+        limit_value = advanced_col1.selectbox("Baris", options=[50, 100, 200, 300, 500], index=2)
         chart_window_label = advanced_col2.selectbox(
-            "Chart Window",
+            "Rentang Chart",
             options=list(CHART_WINDOW_OPTIONS.keys()),
             index=list(CHART_WINDOW_OPTIONS.keys()).index("1 jam"),
-            help="Pilih rentang waktu yang dipakai untuk chart trend.",
+            help="Pilih rentang waktu yang dipakai untuk chart tren.",
             key="history_chart_window",
         )
-        checked_from_date = advanced_col3.date_input("Checked From", value=default_start_date)
-        checked_to_date = advanced_col4.date_input("Checked To", value=today)
+        checked_from_date = advanced_col3.date_input("Dicek Dari", value=default_start_date)
+        checked_to_date = advanced_col4.date_input("Dicek Sampai", value=today)
 
     snapshot_page_size = int(st.session_state.get("history_snapshot_page_size", 10))
     snapshot_page = int(st.session_state.get("history_snapshot_page", 1))
@@ -1152,11 +1010,11 @@ def _render_history_body() -> None:
         for metric_name in metric_select_options
     }
     selected_metric = filter_col2.selectbox(
-        "Metric Name",
+        "Nama Metrik",
         options=metric_select_options,
         index=0,
         format_func=lambda metric_name: metric_filter_labels.get(metric_name, str(metric_name)),
-        help="Daftar metric yang sudah tersimpan di history.",
+        help="Daftar metrik yang sudah tersimpan di history.",
         key="history_selected_metric",
     )
     history_payload = history_context.get("history", {"items": [], "meta": {}})
@@ -1209,20 +1067,20 @@ def _render_history_body() -> None:
             [
                 ("Refresh Otomatis", live_status_text(auto_refresh, interval_seconds)),
                 ("Terakhir Diperbarui", rendered_at_label()),
-                ("Filter Device", selected_device),
+                ("Device", selected_device),
                 ("Rentang", f"{checked_from_date} s/d {checked_to_date}"),
-                ("Chart Window", chart_window_label),
-                ("Total Match", int(history_meta.get("total", 0) or 0)),
+                ("Window Chart", chart_window_label),
+                ("Total Data Sesuai", int(history_meta.get("total", 0) or 0)),
             ]
         )
 
     if not history:
-        st.info("Belum ada histori metric yang tersimpan untuk filter ini.")
+        st.info("Belum ada histori metrik untuk filter ini. Ubah rentang waktu atau jalankan monitoring cycle.")
         return
 
     dataframe = _prepare_history_frame_cached(history)
     if dataframe.empty:
-        st.info("Belum ada histori metric yang tersimpan untuk filter ini.")
+        st.info("Belum ada histori metrik untuk filter ini. Ubah rentang waktu atau jalankan monitoring cycle.")
         return
 
     latest_timestamp = dataframe["checked_at"].max()
@@ -1236,12 +1094,12 @@ def _render_history_body() -> None:
 
     with summary_container:
         summary_col1, summary_col2, summary_col3 = st.columns(3)
-        _render_stat_card(summary_col1, "Rows Loaded", int(len(dataframe)))
-        _render_stat_card(summary_col2, "Latest Check", format_wib_timestamp(latest_timestamp), compact=True)
-        _render_stat_card(summary_col3, "Total Devices", int(len(devices)))
+        _render_stat_card(summary_col1, "Baris Tertampil", int(len(dataframe)))
+        _render_stat_card(summary_col2, "Check Terakhir", format_wib_timestamp(latest_timestamp), compact=True)
+        _render_stat_card(summary_col3, "Total Device", int(len(devices)))
 
     with snapshot_container:
-        st.markdown("### Latest Snapshot")
+        st.markdown("### Snapshot Terbaru")
         st.caption(
             f"Menampilkan {len(latest_per_series)} dari total {snapshot_meta.get('total', len(latest_per_series))} snapshot terbaru."
         )
@@ -1250,11 +1108,11 @@ def _render_history_body() -> None:
         ].rename(
             columns={
                 "device_name": "Device",
-                "metric_label": "Metric",
-                "display_value": "Latest Value",
+                "metric_label": "Metrik",
+                "display_value": "Nilai Terakhir",
                 "uptime": "Uptime",
                 "status": "Status",
-                "checked_at_wib": "Checked At (WIB)",
+                "checked_at_wib": "Dicek (WIB)",
             }
         )
         st.dataframe(
@@ -1263,49 +1121,49 @@ def _render_history_body() -> None:
             hide_index=True,
             column_config={
                 "Device": st.column_config.TextColumn("Device", width="medium"),
-                "Metric": st.column_config.TextColumn("Metric", width="medium"),
-                "Latest Value": st.column_config.TextColumn("Latest Value", width="small"),
+                "Metrik": st.column_config.TextColumn("Metrik", width="medium"),
+                "Nilai Terakhir": st.column_config.TextColumn("Nilai Terakhir", width="small"),
                 "Uptime": st.column_config.TextColumn("Uptime", width="small"),
                 "Status": st.column_config.TextColumn("Status", width="small"),
-                "Checked At (WIB)": st.column_config.TextColumn("Checked At (WIB)", width="medium"),
+                "Dicek (WIB)": st.column_config.TextColumn("Dicek (WIB)", width="medium"),
             },
         )
         _snapshot_pagination_controls(int(snapshot_meta.get("total", len(latest_per_series))))
 
     with status_container:
-        st.markdown("### Status Summary")
+        st.markdown("### Ringkasan Status")
         status_counts = (
             pd.DataFrame(
-                [{"status": normalize_status_label(status), "count": count} for status, count in latest_snapshot_status_summary.items()]
-            ).sort_values(["count", "status"], ascending=[False, True])
+                [{"status": normalize_status_label(status), "Jumlah": count} for status, count in latest_snapshot_status_summary.items()]
+            ).sort_values(["Jumlah", "status"], ascending=[False, True])
             if latest_snapshot_status_summary
-            else pd.DataFrame(columns=["status", "count"])
+            else pd.DataFrame(columns=["status", "Jumlah"])
         )
         status_left, status_right = st.columns([1, 2])
         if not status_counts.empty:
             status_counts["priority"] = status_counts["status"].map(status_priority)
-            status_counts = status_counts.sort_values(["priority", "count", "status"], ascending=[True, False, True])
+            status_counts = status_counts.sort_values(["priority", "Jumlah", "status"], ascending=[True, False, True])
         status_left.dataframe(
-            status_counts[["status", "count"]] if not status_counts.empty else status_counts,
+            status_counts[["status", "Jumlah"]] if not status_counts.empty else status_counts,
             width="stretch",
             hide_index=True,
             column_config={
                 "status": st.column_config.TextColumn("Status", width="small"),
-                "count": st.column_config.NumberColumn("Count", width="small", format="%d"),
+                "Jumlah": st.column_config.NumberColumn("Jumlah", width="small", format="%d"),
             },
         )
         if status_counts.empty:
-            status_right.info("Belum ada status device untuk diringkas.")
+            status_right.info("Belum ada status device untuk diringkas pada rentang ini.")
         else:
             status_chart = (
                 alt.Chart(status_counts)
                 .mark_bar()
                 .encode(
-                    x=alt.X("count:Q", title="Count"),
+                    x=alt.X("Jumlah:Q", title="Jumlah"),
                     y=alt.Y("status:N", sort="-x", title="Status"),
-                    tooltip=[alt.Tooltip("status:N", title="Status"), alt.Tooltip("count:Q", title="Count")],
+                    tooltip=[alt.Tooltip("status:N", title="Status"), alt.Tooltip("Jumlah:Q", title="Jumlah")],
                 )
-                .properties(height=220)
+                .properties(height=260)
             )
             status_right.altair_chart(status_chart, width="stretch")
 
@@ -1332,19 +1190,19 @@ def _render_history_body() -> None:
         printer_history_frame = _prepare_history_frame_cached(printer_history, sort_desc=False)
         _render_printer_history_section(printer_history_frame)
 
-    st.markdown("### Metric Trend")
+    st.markdown("### Tren Metrik")
     if selected_device_id is None:
-        st.info("Pilih satu device dari filter di atas supaya chart trend bisa ditampilkan.")
+        st.info("Pilih satu device untuk menampilkan grafik tren.")
         return
 
     numeric_frame = dataframe.dropna(subset=["metric_value_numeric"]).copy()
     if numeric_frame.empty:
-        st.info("Tidak ada metric numerik pada filter ini, jadi grafik trend belum bisa ditampilkan.")
+        st.info("Tidak ada metrik numerik pada filter ini. Pilih metrik lain atau perluas rentang waktu.")
         return
 
     device_history_frame = _prepare_history_frame_cached(full_device_history, sort_desc=False)
     if device_history_frame.empty:
-        st.info("Belum ada history lengkap untuk device ini pada rentang waktu yang dipilih.")
+        st.info("Belum ada history lengkap untuk device ini pada rentang waktu terpilih.")
         return
     dataframe_desc = dataframe.sort_values("checked_at", ascending=False).copy()
     device_history_frame_desc = device_history_frame.sort_values("checked_at", ascending=False).copy()
@@ -1378,7 +1236,7 @@ def _render_history_body() -> None:
         rendered_metric_frames.append(metric_series_frame)
 
     if not rendered_metric_frames:
-        st.info("Belum ada data numerik untuk kombinasi filter device dan metric ini.")
+        st.info("Belum ada data numerik untuk kombinasi device dan metrik ini.")
         return
 
     chart_rows = [rendered_metric_frames[i:i + 1] for i in range(0, len(rendered_metric_frames), 1)]
@@ -1402,10 +1260,10 @@ def _render_history_body() -> None:
         ["checked_at_wib", "device_name", "metric_label", "display_value", "status"]
     ].rename(
         columns={
-            "checked_at_wib": "Checked At (WIB)",
+            "checked_at_wib": "Dicek (WIB)",
             "device_name": "Device",
-            "metric_label": "Metric",
-            "display_value": "Value",
+            "metric_label": "Metrik",
+            "display_value": "Nilai",
             "status": "Status",
         }
     )
@@ -1415,10 +1273,10 @@ def _render_history_body() -> None:
         width="stretch",
         hide_index=True,
         column_config={
-            "Checked At (WIB)": st.column_config.TextColumn("Checked At (WIB)", width="medium"),
+            "Dicek (WIB)": st.column_config.TextColumn("Dicek (WIB)", width="medium"),
             "Device": st.column_config.TextColumn("Device", width="medium"),
-            "Metric": st.column_config.TextColumn("Metric", width="medium"),
-            "Value": st.column_config.TextColumn("Value", width="small"),
+            "Metrik": st.column_config.TextColumn("Metrik", width="medium"),
+            "Nilai": st.column_config.TextColumn("Nilai", width="small"),
             "Status": st.column_config.TextColumn("Status", width="small"),
         },
     )

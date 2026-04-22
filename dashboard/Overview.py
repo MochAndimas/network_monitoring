@@ -147,11 +147,11 @@ def _render_overview_body() -> None:
     with ops_left:
         st.markdown("### Device Perlu Perhatian")
         if devices_frame.empty:
-            st.info("Belum ada device yang tersedia.")
+            st.info("Belum ada data device. Tambahkan device di halaman Devices untuk mulai monitoring.")
         else:
             filtered_devices = devices_frame[devices_frame["latest_status"].isin(["down", "warning", "error"])].copy()
             if filtered_devices.empty:
-                st.success("Semua device aktif saat ini terlihat sehat dari snapshot terbaru.")
+                st.success("Tidak ada device bermasalah pada snapshot terbaru.")
             else:
                 problem_view = filtered_devices[
                     ["name", "ip_address", "device_type", "site", "latest_status_label", "latest_checked_at_wib"]
@@ -180,27 +180,27 @@ def _render_overview_body() -> None:
                 )
 
     with ops_right:
-        st.markdown("### Distribusi Severity Alert")
+        st.markdown("### Distribusi Tingkat Alert")
         if severity_counts.empty:
-            st.success("Tidak ada alert aktif.")
+            st.success("Tidak ada alert aktif. Sistem dalam kondisi normal.")
         else:
             severity_chart = (
                 alt.Chart(severity_counts)
                 .mark_bar()
                 .encode(
                     x=alt.X("count:Q", title="Jumlah"),
-                    y=alt.Y("severity:N", sort="-x", title="Severity"),
-                    tooltip=[alt.Tooltip("severity:N", title="Severity"), alt.Tooltip("count:Q", title="Jumlah")],
+                    y=alt.Y("severity:N", sort="-x", title="Tingkat"),
+                    tooltip=[alt.Tooltip("severity:N", title="Tingkat"), alt.Tooltip("count:Q", title="Jumlah")],
                 )
                 .properties(height=220)
             )
             st.altair_chart(severity_chart, width="stretch")
             st.dataframe(
-                severity_counts[["severity", "count"]].rename(columns={"severity": "Severity", "count": "Jumlah"}),
+                severity_counts[["severity", "count"]].rename(columns={"severity": "Tingkat", "count": "Jumlah"}),
                 width="stretch",
                 hide_index=True,
                 column_config={
-                    "Severity": st.column_config.TextColumn("Severity", width="small"),
+                    "Tingkat": st.column_config.TextColumn("Tingkat", width="small"),
                     "Jumlah": st.column_config.NumberColumn("Jumlah", width="small", format="%d"),
                 },
             )
@@ -210,16 +210,16 @@ def _render_overview_body() -> None:
     with insight_left:
         st.markdown("### Alert Aktif Terbaru")
         if alerts_frame.empty:
-            st.info("Belum ada alert aktif.")
+            st.info("Belum ada alert aktif. Cek kembali setelah monitoring cycle berikutnya.")
         else:
             latest_alerts_view = alerts_frame.sort_values("created_at", ascending=False)[
                 ["created_at_wib", "device_name", "severity", "message"]
             ].rename(
                 columns={
-                    "created_at_wib": "Created At (WIB)",
+                    "created_at_wib": "Dibuat (WIB)",
                     "device_name": "Device",
-                    "severity": "Severity",
-                    "message": "Message",
+                    "severity": "Tingkat",
+                    "message": "Pesan",
                 }
             )
             st.dataframe(
@@ -227,25 +227,25 @@ def _render_overview_body() -> None:
                 width="stretch",
                 hide_index=True,
                 column_config={
-                    "Created At (WIB)": st.column_config.TextColumn("Created At (WIB)", width="medium"),
+                    "Dibuat (WIB)": st.column_config.TextColumn("Dibuat (WIB)", width="medium"),
                     "Device": st.column_config.TextColumn("Device", width="medium"),
-                    "Severity": st.column_config.TextColumn("Severity", width="small"),
-                    "Message": st.column_config.TextColumn("Message", width="large"),
+                    "Tingkat": st.column_config.TextColumn("Tingkat", width="small"),
+                    "Pesan": st.column_config.TextColumn("Pesan", width="large"),
                 },
             )
 
     with insight_right:
         st.markdown("### Insiden Aktif")
         if incidents_frame.empty:
-            st.info("Belum ada incident aktif.")
+            st.info("Belum ada insiden aktif. Jika ada gangguan, insiden akan muncul di panel ini.")
         else:
             incident_view = incidents_frame.sort_values("started_at", ascending=False)[
                 ["started_at_wib", "device_name", "summary", "status"]
             ].rename(
                 columns={
-                    "started_at_wib": "Started At (WIB)",
+                    "started_at_wib": "Mulai (WIB)",
                     "device_name": "Device",
-                    "summary": "Summary",
+                    "summary": "Ringkasan",
                     "status": "Status",
                 }
             )
@@ -254,16 +254,16 @@ def _render_overview_body() -> None:
                 width="stretch",
                 hide_index=True,
                 column_config={
-                    "Started At (WIB)": st.column_config.TextColumn("Started At (WIB)", width="medium"),
+                    "Mulai (WIB)": st.column_config.TextColumn("Mulai (WIB)", width="medium"),
                     "Device": st.column_config.TextColumn("Device", width="medium"),
-                    "Summary": st.column_config.TextColumn("Summary", width="large"),
+                    "Ringkasan": st.column_config.TextColumn("Ringkasan", width="large"),
                     "Status": st.column_config.TextColumn("Status", width="small"),
                 },
             )
 
     st.markdown("### Snapshot Metric Terbaru")
     if history_frame.empty:
-        st.info("Belum ada metric history yang bisa ditampilkan.")
+        st.info("Belum ada snapshot metrik. Jalankan monitoring cycle untuk menghasilkan data awal.")
     else:
         metric_view = history_frame[
             ["checked_at_wib", "device_name", "metric_name", "value", "status"]
@@ -271,8 +271,8 @@ def _render_overview_body() -> None:
             columns={
                 "checked_at_wib": "Checked At (WIB)",
                 "device_name": "Device",
-                "metric_name": "Metric",
-                "value": "Value",
+                "metric_name": "Metrik",
+                "value": "Nilai",
                 "status": "Status",
             }
         )
@@ -283,8 +283,8 @@ def _render_overview_body() -> None:
             column_config={
                 "Checked At (WIB)": st.column_config.TextColumn("Checked At (WIB)", width="medium"),
                 "Device": st.column_config.TextColumn("Device", width="medium"),
-                "Metric": st.column_config.TextColumn("Metric", width="medium"),
-                "Value": st.column_config.TextColumn("Value", width="small"),
+                "Metrik": st.column_config.TextColumn("Metrik", width="medium"),
+                "Nilai": st.column_config.TextColumn("Nilai", width="small"),
                 "Status": st.column_config.TextColumn("Status", width="small"),
             },
         )
@@ -295,16 +295,16 @@ collapse_sidebar_on_page_load()
 require_dashboard_login()
 render_page_header(
     "Overview",
-    "Ringkasan kondisi jaringan, gangguan aktif, dan snapshot telemetry terkini.",
+    "Ringkasan kesehatan jaringan dan antrian gangguan aktif.",
 )
 
 action_col, info_col = st.columns([1, 3])
 with action_col:
     if not is_admin():
-        st.caption(f"Session expiry: {session_expiry_label()}")
-        st.info("Role viewer tidak bisa menjalankan monitoring cycle manual.")
+        st.caption(f"Kedaluwarsa sesi: {session_expiry_label()}")
+        st.info("Role viewer tidak dapat menjalankan monitoring cycle manual.")
     else:
-        run_cycle_clicked = st.button("Run Monitoring Cycle Now", type="primary", width="stretch")
+        run_cycle_clicked = st.button("Jalankan Monitoring Cycle", type="primary", width="stretch")
     if is_admin() and (run_cycle_clicked or has_pending_action("run_monitoring_cycle")):
         cycle_result = post_json(
             "/system/run-cycle",
@@ -319,16 +319,16 @@ with action_col:
             action_key="run_monitoring_cycle",
         )
         st.success(
-            "Cycle selesai: "
-            f"metrics={cycle_result['metrics_collected']}, "
-            f"alerts baru={cycle_result['alerts_created']}, "
-            f"alerts resolved={cycle_result['alerts_resolved']}, "
-            f"incidents baru={cycle_result['incidents_created']}"
+            "Monitoring cycle selesai: "
+            f"metric={cycle_result['metrics_collected']}, "
+            f"alert baru={cycle_result['alerts_created']}, "
+            f"alert selesai={cycle_result['alerts_resolved']}, "
+            f"insiden baru={cycle_result['incidents_created']}"
         )
 with info_col:
     st.info(
-        "Gunakan halaman ini untuk quick check operasional. "
-        "Detail histori, inventory, dan threshold tetap tersedia di halaman masing-masing."
+        "Gunakan halaman ini untuk pengecekan cepat. "
+        "Analisis detail tersedia di halaman History, Devices, Alerts, dan Thresholds."
     )
 
 auto_refresh, interval_seconds = refresh_controls("overview", default_enabled=True, default_interval=15)

@@ -14,7 +14,7 @@ require_dashboard_login()
 
 render_page_header(
     "Devices",
-    "Inventory perangkat monitoring dan pengelolaan data master device.",
+    "Inventaris perangkat monitoring dan pengelolaan data master device.",
 )
 payload = get_json_map(
     {
@@ -42,7 +42,7 @@ def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
     if dataframe.empty:
         return dataframe
     dataframe["site"] = dataframe["site"].fillna("-")
-    dataframe["active_label"] = dataframe["is_active"].map(lambda value: "Active" if bool(value) else "Inactive")
+    dataframe["active_label"] = dataframe["is_active"].map(lambda value: "Aktif" if bool(value) else "Nonaktif")
     dataframe["type_label"] = dataframe["device_type"].astype(str).map(_device_type_label)
     dataframe["selector_label"] = (
         dataframe["name"].astype(str)
@@ -55,7 +55,7 @@ def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
     return dataframe
 
 
-@st.dialog("Edit Device")
+@st.dialog("Ubah Device")
 def _render_edit_device_dialog(device: dict) -> None:
     edit_key_prefix = f"edit_device_{device['id']}"
     type_options = list(type_labels.keys())
@@ -64,22 +64,22 @@ def _render_edit_device_dialog(device: dict) -> None:
         existing_type_label = type_options[0]
 
     with st.form(f"{edit_key_prefix}_form"):
-        edit_name = st.text_input("Name", value=device["name"], key=f"{edit_key_prefix}_name")
+        edit_name = st.text_input("Nama", value=device["name"], key=f"{edit_key_prefix}_name")
         edit_ip = st.text_input("IP Address", value=device["ip_address"], key=f"{edit_key_prefix}_ip")
         edit_type_label = st.selectbox(
-            "Device Type",
+            "Tipe Device",
             options=type_options,
             index=type_options.index(existing_type_label) if existing_type_label in type_options else 0,
             key=f"{edit_key_prefix}_type",
         )
-        edit_site = st.text_input("Site", value=device.get("site") or "", key=f"{edit_key_prefix}_site")
+        edit_site = st.text_input("Lokasi", value=device.get("site") or "", key=f"{edit_key_prefix}_site")
         edit_description = st.text_area(
-            "Description",
+            "Deskripsi",
             value=device.get("description") or "",
             key=f"{edit_key_prefix}_description",
         )
-        edit_active = st.checkbox("Active", value=bool(device["is_active"]), key=f"{edit_key_prefix}_active")
-        submitted = st.form_submit_button("Update Device", use_container_width=True)
+        edit_active = st.checkbox("Aktif", value=bool(device["is_active"]), key=f"{edit_key_prefix}_active")
+        submitted = st.form_submit_button("Simpan Perubahan", use_container_width=True)
 
     if submitted:
         update_payload = {
@@ -97,44 +97,45 @@ def _render_edit_device_dialog(device: dict) -> None:
             st.rerun()
 
 
-@st.dialog("Delete Device")
+@st.dialog("Hapus Device")
 def _render_delete_device_dialog(device: dict) -> None:
     st.warning(f"Hapus device `{device['name']}` ({device['ip_address']})?")
     st.caption("Metric device ini akan ikut dihapus. Alert dan incident lama tetap disimpan tanpa relasi device.")
     confirm = st.text_input("Ketik DELETE untuk konfirmasi", key=f"delete_device_{device['id']}_confirm")
     left, right = st.columns(2)
-    if left.button("Delete Device", type="primary", use_container_width=True, disabled=confirm != "DELETE"):
+    if left.button("Hapus Device", type="primary", use_container_width=True, disabled=confirm != "DELETE"):
         result = delete_json(f"/devices/{device['id']}", False, action_key=f"delete_device_{device['id']}")
         if result:
             _clear_cached_gets()
             st.success(f"Device `{device['name']}` berhasil dihapus.")
             st.rerun()
-    if right.button("Cancel", use_container_width=True):
+    if right.button("Batal", use_container_width=True):
         st.rerun()
 
 
-inventory_tab, manage_tab = st.tabs(["Inventory", "Manage"])
+inventory_tab, manage_tab = st.tabs(["Inventory", "Kelola"])
 
 with inventory_tab:
     inventory_col1, inventory_col2 = st.columns([2, 1])
     inventory_search = inventory_col1.text_input("Cari", placeholder="Nama, IP, atau site")
     inventory_status = inventory_col2.selectbox(
-        "Latest status",
+        "Status Terakhir",
         options=["All", "unknown", "up", "ok", "warning", "down", "error"],
         index=0,
+        format_func=lambda value: "Semua" if value == "All" else normalize_status_label(str(value)),
     )
     with st.expander("Filter Lanjutan"):
         advanced_col1, advanced_col2, advanced_col3, advanced_col4 = st.columns(4)
-        inventory_active_only = advanced_col1.checkbox("Active only", value=False)
+        inventory_active_only = advanced_col1.checkbox("Hanya Aktif", value=False)
         inventory_type_options = ["All"] + [item["value"] for item in device_types]
         selected_inventory_type = advanced_col2.selectbox(
-            "Filter device type",
+            "Tipe Device",
             options=inventory_type_options,
             index=0,
-            format_func=lambda value: "All" if value == "All" else value.replace("_", " ").title(),
+            format_func=lambda value: "Semua" if value == "All" else value.replace("_", " ").title(),
         )
-        inventory_page_size = advanced_col3.selectbox("Rows per page", options=[25, 50, 100, 200], index=1)
-        inventory_page_number = advanced_col4.number_input("Page", min_value=1, value=1, step=1)
+        inventory_page_size = advanced_col3.selectbox("Baris per Halaman", options=[25, 50, 100, 200], index=1)
+        inventory_page_number = advanced_col4.number_input("Halaman", min_value=1, value=1, step=1)
 
     inventory_query_params = {
         "limit": inventory_page_size,
@@ -158,14 +159,14 @@ with inventory_tab:
         dataframe = pd.DataFrame(inventory_devices)
         dataframe["status_label"] = dataframe["latest_status"].map(normalize_status_label)
         dataframe["type_label"] = dataframe["device_type"].astype(str).map(_device_type_label)
-        dataframe["active_label"] = dataframe["is_active"].map(lambda value: "Active" if bool(value) else "Inactive")
+        dataframe["active_label"] = dataframe["is_active"].map(lambda value: "Aktif" if bool(value) else "Nonaktif")
 
         render_kpi_cards(
             [
-                ("Rows Loaded", int(len(dataframe)), None),
-                ("Total Match", int(inventory_meta.get("total", len(dataframe))), None),
-                ("Devices Down", int((dataframe["latest_status"] == "down").sum()), None),
-                ("Warning Devices", int((dataframe["latest_status"] == "warning").sum()), None),
+                ("Baris Tertampil", int(len(dataframe)), None),
+                ("Total Cocok", int(inventory_meta.get("total", len(dataframe))), None),
+                ("Device Down", int((dataframe["latest_status"] == "down").sum()), None),
+                ("Device Warning", int((dataframe["latest_status"] == "warning").sum()), None),
             ],
             columns_per_row=4,
         )
@@ -177,12 +178,12 @@ with inventory_tab:
             ["name", "ip_address", "type_label", "site", "status_label", "active_label"]
         ].rename(
             columns={
-                "name": "Device",
-                "ip_address": "IP Address",
-                "type_label": "Type",
-                "site": "Site",
-                "status_label": "Latest Status",
-                "active_label": "State",
+                "name": "Nama Device",
+                "ip_address": "Alamat IP",
+                "type_label": "Tipe",
+                "site": "Lokasi",
+                "status_label": "Status Terakhir",
+                "active_label": "Status Aktif",
             }
         )
         st.dataframe(
@@ -190,35 +191,35 @@ with inventory_tab:
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Device": st.column_config.TextColumn("Device", width="medium"),
-                "IP Address": st.column_config.TextColumn("IP Address", width="small"),
-                "Type": st.column_config.TextColumn("Type", width="small"),
-                "Site": st.column_config.TextColumn("Site", width="small"),
-                "Latest Status": st.column_config.TextColumn("Latest Status", width="small"),
-                "State": st.column_config.TextColumn("State", width="small"),
+                "Nama Device": st.column_config.TextColumn("Nama Device", width="medium"),
+                "Alamat IP": st.column_config.TextColumn("Alamat IP", width="small"),
+                "Tipe": st.column_config.TextColumn("Tipe", width="small"),
+                "Lokasi": st.column_config.TextColumn("Lokasi", width="small"),
+                "Status Terakhir": st.column_config.TextColumn("Status Terakhir", width="small"),
+                "Status Aktif": st.column_config.TextColumn("Status Aktif", width="small"),
             },
         )
     else:
-        st.info("Tidak ada device yang cocok dengan filter inventory saat ini.")
+        st.info("Tidak ada device yang cocok dengan filter. Ubah status, tipe, atau kata kunci pencarian.")
 
 with manage_tab:
     if not is_admin():
-        st.info("Halaman manage device hanya tersedia untuk role admin.")
+        st.info("Mode kelola device hanya tersedia untuk role admin.")
     elif not device_types:
         st.warning("Daftar device type belum tersedia dari backend.")
     else:
         create_column, manage_column = st.columns([1, 2])
 
         with create_column:
-            st.subheader("Add Device")
+            st.subheader("Tambah Device")
             with st.form("create_device_form", clear_on_submit=True):
-                create_name = st.text_input("Name", placeholder="Google DNS")
+                create_name = st.text_input("Nama", placeholder="Google DNS")
                 create_ip = st.text_input("IP Address", placeholder="8.8.8.8")
-                create_type_label = st.selectbox("Device Type", options=list(type_labels.keys()), key="create_device_type")
-                create_site = st.text_input("Site", placeholder="WAN")
-                create_description = st.text_area("Description", placeholder="Target monitoring ISP utama")
-                create_active = st.checkbox("Active", value=True)
-                create_submitted = st.form_submit_button("Create Device", use_container_width=True)
+                create_type_label = st.selectbox("Tipe Device", options=list(type_labels.keys()), key="create_device_type")
+                create_site = st.text_input("Lokasi", placeholder="WAN")
+                create_description = st.text_area("Deskripsi", placeholder="Target monitoring ISP utama")
+                create_active = st.checkbox("Aktif", value=True)
+                create_submitted = st.form_submit_button("Tambah Device", use_container_width=True)
 
             if create_submitted:
                 payload = {
@@ -242,19 +243,28 @@ with manage_tab:
                     st.rerun()
 
         with manage_column:
-            st.subheader("Manage Existing Devices")
+            st.subheader("Kelola Device")
             if not devices:
-                st.info("Belum ada device untuk dikelola.")
+                st.info("Belum ada device untuk dikelola. Tambahkan device baru di panel kiri.")
             else:
                 manage_search = st.text_input("Cari", placeholder="Nama, IP, site")
                 with st.expander("Filter Lanjutan"):
                     filter_col1, filter_col2 = st.columns([1, 1])
                     manage_type = filter_col1.selectbox(
-                        "Type",
+                        "Tipe",
                         options=["All"] + [item["value"] for item in device_types],
-                        format_func=lambda value: "All" if value == "All" else _device_type_label(str(value)),
+                        format_func=lambda value: "Semua" if value == "All" else _device_type_label(str(value)),
                     )
-                    manage_active = filter_col2.selectbox("State", options=["All", "Active", "Inactive"], index=0)
+                    manage_active = filter_col2.selectbox(
+                        "Status Aktif",
+                        options=["All", "Active", "Inactive"],
+                        index=0,
+                        format_func=lambda value: {
+                            "All": "Semua",
+                            "Active": "Aktif",
+                            "Inactive": "Nonaktif",
+                        }.get(value, value),
+                    )
 
                 manage_frame = _prepare_manage_frame(devices)
                 if manage_search.strip():
@@ -272,10 +282,10 @@ with manage_tab:
 
                 render_kpi_cards(
                     [
-                        ("Filtered Devices", int(len(manage_frame)), None),
-                        ("Active", int(manage_frame["is_active"].astype(bool).sum()) if not manage_frame.empty else 0, None),
+                        ("Device Tersaring", int(len(manage_frame)), None),
+                        ("Aktif", int(manage_frame["is_active"].astype(bool).sum()) if not manage_frame.empty else 0, None),
                         (
-                            "Inactive",
+                            "Nonaktif",
                             int((~manage_frame["is_active"].astype(bool)).sum()) if not manage_frame.empty else 0,
                             None,
                         ),
@@ -284,17 +294,17 @@ with manage_tab:
                 )
 
                 if manage_frame.empty:
-                    st.info("Tidak ada device yang cocok dengan filter manage.")
+                    st.info("Tidak ada device yang cocok dengan filter kelola. Ubah filter untuk menampilkan data.")
                 else:
                     view_frame = manage_frame[
                         ["name", "ip_address", "type_label", "site", "active_label"]
                     ].rename(
                         columns={
-                            "name": "Device",
-                            "ip_address": "IP Address",
-                            "type_label": "Type",
-                            "site": "Site",
-                            "active_label": "State",
+                            "name": "Nama Device",
+                            "ip_address": "Alamat IP",
+                            "type_label": "Tipe",
+                            "site": "Lokasi",
+                            "active_label": "Status Aktif",
                         }
                     )
                     st.dataframe(
@@ -302,11 +312,11 @@ with manage_tab:
                         use_container_width=True,
                         hide_index=True,
                         column_config={
-                            "Device": st.column_config.TextColumn("Device", width="medium"),
-                            "IP Address": st.column_config.TextColumn("IP Address", width="small"),
-                            "Type": st.column_config.TextColumn("Type", width="small"),
-                            "Site": st.column_config.TextColumn("Site", width="small"),
-                            "State": st.column_config.TextColumn("State", width="small"),
+                            "Nama Device": st.column_config.TextColumn("Nama Device", width="medium"),
+                            "Alamat IP": st.column_config.TextColumn("Alamat IP", width="small"),
+                            "Tipe": st.column_config.TextColumn("Tipe", width="small"),
+                            "Lokasi": st.column_config.TextColumn("Lokasi", width="small"),
+                            "Status Aktif": st.column_config.TextColumn("Status Aktif", width="small"),
                         },
                     )
 
@@ -315,14 +325,14 @@ with manage_tab:
                         for _, row in manage_frame.sort_values(["name", "ip_address"]).iterrows()
                     }
                     selected_label = st.selectbox(
-                        "Selected Device",
+                        "Device Terpilih",
                         options=list(selector_map.keys()),
                         index=0,
                     )
                     selected_device = selector_map[selected_label]
 
                     action_col1, action_col2 = st.columns([1, 1])
-                    if action_col1.button("Edit Selected Device", use_container_width=True):
+                    if action_col1.button("Ubah Device Terpilih", use_container_width=True):
                         _render_edit_device_dialog(selected_device)
-                    if action_col2.button("Delete Selected Device", type="primary", use_container_width=True):
+                    if action_col2.button("Hapus Device Terpilih", type="primary", use_container_width=True):
                         _render_delete_device_dialog(selected_device)

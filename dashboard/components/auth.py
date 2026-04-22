@@ -206,10 +206,9 @@ def _restore_login_state() -> bool:
         start_auth_bridge_request("restore")
         pending_request = st.session_state.get("auth_bridge_request")
 
-    request_id = str((pending_request or {}).get("id") or "restore")
     bridge_response = consume_auth_bridge_response(component_key=_bridge_component_key("restore"))
     if bridge_response is None:
-        st.caption("Restoring your session...")
+        st.caption("Memulihkan sesi...")
         return False
 
     payload = bridge_response.get("payload", {})
@@ -226,10 +225,9 @@ def _consume_logout_request() -> bool:
     if not isinstance(pending_request, dict) or pending_request.get("action") != "logout":
         return False
 
-    request_id = str(pending_request.get("id") or "logout")
     bridge_response = consume_auth_bridge_response(component_key=_bridge_component_key("logout"))
     if bridge_response is None:
-        st.caption("Logging out...")
+        st.caption("Memproses logout...")
         st.stop()
 
     _clear_auth_state(restore_completed=True)
@@ -250,9 +248,15 @@ def require_dashboard_login() -> None:
 
     if st.session_state.get("dashboard_authenticated") is True and st.session_state.get("auth_token"):
         with st.sidebar:
-            st.caption(f"Signed in as `{st.session_state.get('auth_username', '-')}`")
-            st.caption(f"Role: `{st.session_state.get('auth_role', '-')}`")
-            if st.button("Logout", use_container_width=True):
+            st.markdown("### Sesi Pengguna")
+            with st.container(border=True):
+                st.caption("Akun")
+                st.write(str(st.session_state.get("auth_username", "-")))
+                st.caption("Peran")
+                st.write(str(st.session_state.get("auth_role", "-")))
+                st.caption("Kedaluwarsa")
+                st.write(session_expiry_label())
+            if st.button("Keluar", use_container_width=True):
                 start_auth_bridge_request(
                     "logout",
                     {"access_token": str(st.session_state.get("auth_token") or "")},
@@ -261,15 +265,14 @@ def require_dashboard_login() -> None:
         return
 
     _hide_sidebar_navigation()
-    st.title("Dashboard Login")
-    st.caption("Masukkan akun backend monitoring untuk mengakses dashboard.")
+    st.title("Masuk Dashboard")
+    st.caption("Masuk dengan akun backend monitoring untuk membuka dashboard.")
 
     pending_request = st.session_state.get("auth_bridge_request")
     if isinstance(pending_request, dict) and pending_request.get("action") == "login":
-        request_id = str(pending_request.get("id") or "login")
         bridge_response = consume_auth_bridge_response(component_key=_bridge_component_key("login"))
         if bridge_response is None:
-            st.caption("Signing in...")
+            st.caption("Memproses login...")
             st.stop()
 
         payload = bridge_response.get("payload", {})
@@ -286,8 +289,8 @@ def require_dashboard_login() -> None:
     with st.form("dashboard_login_form", clear_on_submit=False):
         username = st.text_input("Username", value="")
         password = st.text_input("Password", value="", type="password")
-        remember = st.checkbox("Keep me signed in for 7 days")
-        submitted = st.form_submit_button("Sign In", use_container_width=True)
+        remember = st.checkbox("Tetap masuk selama 7 hari")
+        submitted = st.form_submit_button("Masuk", use_container_width=True)
 
     if submitted:
         username = username.strip()

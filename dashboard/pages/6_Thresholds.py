@@ -13,7 +13,7 @@ require_dashboard_login()
 
 render_page_header(
     "Thresholds",
-    "Parameter ambang alerting untuk setiap metrik utama pada monitoring.",
+    "Parameter ambang alert untuk setiap metrik monitoring.",
 )
 thresholds = get_json("/thresholds", [])
 
@@ -37,14 +37,15 @@ if thresholds:
 
     filter_col1, filter_col2 = st.columns([1, 2])
     selected_category = filter_col1.selectbox(
-        "Category",
+        "Kategori",
         options=["All"] + sorted(dataframe["category"].dropna().unique().tolist()),
         index=0,
+        format_func=lambda value: "Semua" if value == "All" else str(value),
     )
     search_key = filter_col2.text_input("Cari", placeholder="Cari threshold key")
     with st.expander("Filter Lanjutan"):
         adv_col1, adv_col2 = st.columns(2)
-        sort_by = adv_col1.selectbox("Urutkan", options=["Key (A-Z)", "Value (High-Low)", "Category"], index=0)
+        sort_by = adv_col1.selectbox("Urutkan", options=["Key (A-Z)", "Nilai (Tinggi-Rendah)", "Kategori"], index=0)
         max_rows = adv_col2.selectbox("Maks. Baris Detail", options=[25, 50, 100, 200], index=2)
 
     filtered_frame = dataframe.copy()
@@ -54,9 +55,9 @@ if thresholds:
         needle = search_key.strip().lower()
         filtered_frame = filtered_frame[filtered_frame["key"].str.lower().str.contains(needle, na=False)]
 
-    if sort_by == "Value (High-Low)":
+    if sort_by == "Nilai (Tinggi-Rendah)":
         filtered_frame = filtered_frame.sort_values(["value", "key"], ascending=[False, True])
-    elif sort_by == "Category":
+    elif sort_by == "Kategori":
         filtered_frame = filtered_frame.sort_values(["category", "key"], ascending=[True, True])
     else:
         filtered_frame = filtered_frame.sort_values("key", ascending=True)
@@ -68,16 +69,16 @@ if thresholds:
 
     render_kpi_cards(
         [
-            ("Thresholds", total_thresholds, None),
-            ("Categories", category_count, None),
-            ("Average Value", f"{avg_value:.2f}", None),
-            ("Max Value", f"{max_value:.2f}", None),
+            ("Total Threshold", total_thresholds, None),
+            ("Jumlah Kategori", category_count, None),
+            ("Nilai Rata-rata", f"{avg_value:.2f}", None),
+            ("Nilai Maksimum", f"{max_value:.2f}", None),
         ],
         columns_per_row=4,
     )
 
     if filtered_frame.empty:
-        st.info("Tidak ada threshold yang cocok dengan filter saat ini.")
+        st.info("Tidak ada threshold yang cocok dengan filter. Ubah kategori atau kata kunci pencarian.")
     else:
         summary_frame = (
             filtered_frame.groupby("category", dropna=False)["value"]
@@ -85,38 +86,38 @@ if thresholds:
             .reset_index()
             .rename(
                 columns={
-                    "category": "Category",
-                    "count": "Threshold Count",
-                    "min": "Min",
-                    "max": "Max",
-                    "mean": "Average",
+                    "category": "Kategori",
+                    "count": "Jumlah Threshold",
+                    "min": "Minimum",
+                    "max": "Maksimum",
+                    "mean": "Rata-rata",
                 }
             )
-            .sort_values(["Threshold Count", "Category"], ascending=[False, True])
+            .sort_values(["Jumlah Threshold", "Kategori"], ascending=[False, True])
         )
         detail_frame = filtered_frame[["category", "key", "value"]].rename(
             columns={
-                "category": "Category",
-                "key": "Threshold Key",
-                "value": "Current Value",
+                "category": "Kategori",
+                "key": "Kunci Threshold",
+                "value": "Nilai Saat Ini",
             }
         )
         summary_col, detail_col = st.columns([1, 2])
         with summary_col:
-            st.markdown("### Category Summary")
+            st.markdown("### Ringkasan Kategori")
             category_chart = (
                 alt.Chart(summary_frame)
                 .mark_bar()
                 .encode(
-                    x=alt.X("Threshold Count:Q", title="Threshold Count"),
-                    y=alt.Y("Category:N", sort="-x", title="Category"),
+                    x=alt.X("Jumlah Threshold:Q", title="Jumlah Threshold"),
+                    y=alt.Y("Kategori:N", sort="-x", title="Kategori"),
                     tooltip=[
-                        alt.Tooltip("Category:N", title="Category"),
-                        alt.Tooltip("Threshold Count:Q", title="Thresholds"),
-                        alt.Tooltip("Average:Q", title="Average", format=".2f"),
+                        alt.Tooltip("Kategori:N", title="Kategori"),
+                        alt.Tooltip("Jumlah Threshold:Q", title="Jumlah"),
+                        alt.Tooltip("Rata-rata:Q", title="Rata-rata", format=".2f"),
                     ],
                 )
-                .properties(height=240)
+                .properties(height=260)
             )
             st.altair_chart(category_chart, width="stretch")
             st.dataframe(
@@ -124,49 +125,49 @@ if thresholds:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Category": st.column_config.TextColumn("Category", width="small"),
-                    "Threshold Count": st.column_config.NumberColumn("Threshold Count", format="%d", width="small"),
-                    "Min": st.column_config.NumberColumn("Min", format="%.2f", width="small"),
-                    "Max": st.column_config.NumberColumn("Max", format="%.2f", width="small"),
-                    "Average": st.column_config.NumberColumn("Average", format="%.2f", width="small"),
+                    "Kategori": st.column_config.TextColumn("Kategori", width="small"),
+                    "Jumlah Threshold": st.column_config.NumberColumn("Jumlah Threshold", format="%d", width="small"),
+                    "Minimum": st.column_config.NumberColumn("Minimum", format="%.2f", width="small"),
+                    "Maksimum": st.column_config.NumberColumn("Maksimum", format="%.2f", width="small"),
+                    "Rata-rata": st.column_config.NumberColumn("Rata-rata", format="%.2f", width="small"),
                 },
             )
         with detail_col:
-            st.markdown("### Threshold Details")
+            st.markdown("### Detail Threshold")
             st.dataframe(
                 detail_frame.head(int(max_rows)),
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Category": st.column_config.TextColumn("Category", width="small"),
-                    "Threshold Key": st.column_config.TextColumn("Threshold Key", width="large"),
-                    "Current Value": st.column_config.NumberColumn("Current Value", format="%.4f", width="small"),
+                    "Kategori": st.column_config.TextColumn("Kategori", width="small"),
+                    "Kunci Threshold": st.column_config.TextColumn("Kunci Threshold", width="large"),
+                    "Nilai Saat Ini": st.column_config.NumberColumn("Nilai Saat Ini", format="%.4f", width="small"),
                 },
             )
 
-    st.markdown("### Threshold Editor")
+    st.markdown("### Editor Threshold")
     if not is_admin():
-        st.info("Role viewer hanya bisa melihat threshold.")
+        st.info("Role viewer hanya dapat melihat data threshold.")
     elif filtered_frame.empty:
-        st.info("Pilih filter lain untuk mengedit threshold.")
+        st.info("Pilih filter lain untuk menampilkan threshold yang ingin diubah.")
     else:
         selected_key = st.selectbox(
-            "Threshold key",
+            "Kunci Threshold",
             options=filtered_frame["key"].sort_values().tolist(),
             index=0,
         )
         selected_row = dataframe.loc[dataframe["key"] == selected_key].iloc[0]
         current_value = float(selected_row["value"])
         editor_col1, editor_col2 = st.columns([1, 1])
-        editor_col1.metric("Current Value", f"{current_value:.2f}")
+        editor_col1.metric("Nilai Saat Ini", f"{current_value:.2f}")
         updated_value = editor_col2.number_input(
-            "New value",
+            "Nilai Baru",
             value=current_value,
             step=1.0,
             format="%.4f",
         )
 
-        update_threshold_clicked = st.button("Update Threshold", use_container_width=True)
+        update_threshold_clicked = st.button("Simpan Perubahan Threshold", use_container_width=True)
         if is_admin() and (update_threshold_clicked or has_pending_action("update_threshold")):
             result = put_json(
                 f"/thresholds/{selected_key}",
@@ -174,6 +175,6 @@ if thresholds:
                 {"key": selected_key, "value": current_value},
                 action_key="update_threshold",
             )
-            st.success(f"Threshold {result['key']} updated to {result['value']}.")
+            st.success(f"Threshold `{result['key']}` berhasil diperbarui ke nilai `{result['value']}`.")
 else:
-    st.info("Belum ada threshold yang tersedia.")
+    st.info("Belum ada threshold tersedia. Tambahkan konfigurasi threshold di backend untuk menampilkan data.")

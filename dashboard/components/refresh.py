@@ -16,28 +16,29 @@ def refresh_controls(
     default_enabled: bool = True,
     default_interval: int = 15,
 ) -> tuple[bool, int]:
-    st.sidebar.markdown("### Live Refresh")
-    auto_refresh = st.sidebar.toggle(
-        "Auto Refresh",
-        value=default_enabled,
-        key=f"{page_key}_auto_refresh",
-        help="Kalau aktif, halaman ini akan ambil data terbaru secara berkala.",
-    )
-    interval_seconds = st.sidebar.selectbox(
-        "Refresh Interval",
-        options=REFRESH_INTERVAL_OPTIONS,
-        index=REFRESH_INTERVAL_OPTIONS.index(default_interval),
-        key=f"{page_key}_refresh_interval",
-        format_func=lambda value: f"{value} detik",
-        help="Pilih seberapa sering dashboard mengambil update baru dari backend.",
-    )
+    st.sidebar.markdown("### Pembaruan Data")
+    with st.sidebar.container(border=True):
+        auto_refresh = st.toggle(
+            "Refresh Otomatis",
+            value=default_enabled,
+            key=f"{page_key}_auto_refresh",
+            help="Aktifkan untuk memuat data terbaru secara berkala.",
+        )
+        interval_seconds = st.selectbox(
+            "Interval",
+            options=REFRESH_INTERVAL_OPTIONS,
+            index=REFRESH_INTERVAL_OPTIONS.index(default_interval),
+            key=f"{page_key}_refresh_interval",
+            format_func=lambda value: f"{value} detik",
+            help="Tentukan jeda pembaruan data.",
+        )
     return auto_refresh, int(interval_seconds)
 
 
 def live_status_text(auto_refresh: bool, interval_seconds: int) -> str:
     if auto_refresh:
-        return f"Live refresh aktif. Data akan diperbarui tiap {interval_seconds} detik."
-    return "Live refresh nonaktif. Gunakan tombol browser refresh kalau ingin update manual."
+        return f"Aktif, data diperbarui setiap {interval_seconds} detik."
+    return "Nonaktif, gunakan refresh browser untuk memperbarui data."
 
 
 def rendered_at_label() -> str:

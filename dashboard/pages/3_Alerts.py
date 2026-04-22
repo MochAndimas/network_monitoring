@@ -14,19 +14,20 @@ collapse_sidebar_on_page_load()
 require_dashboard_login()
 render_page_header(
     "Alerts",
-    "Pemantauan alert aktif dengan fokus severity, perangkat terdampak, dan prioritas tindak lanjut.",
+    "Ringkasan alert aktif untuk prioritasi penanganan gangguan.",
 )
 
 filter_col1, filter_col2 = st.columns([1, 2])
 severity_filter = filter_col1.selectbox(
-    "Severity",
+    "Tingkat Alert",
     options=["All", "Critical", "High", "Warning", "Error", "Down", "Unknown"],
     index=0,
+    format_func=lambda value: "Semua" if value == "All" else str(value),
 )
 search_filter = filter_col2.text_input("Cari", placeholder="Filter berdasarkan device atau pesan")
 with st.expander("Filter Lanjutan"):
     adv_col1, adv_col2 = st.columns(2)
-    sort_mode = adv_col1.selectbox("Urutkan", options=["Terbaru", "Severity Tertinggi"], index=0)
+    sort_mode = adv_col1.selectbox("Urutkan", options=["Terbaru", "Tingkat Tertinggi"], index=0)
     max_rows = adv_col2.selectbox("Maks. Baris Detail", options=[25, 50, 100, 200], index=1)
 
 auto_refresh, interval_seconds = refresh_controls("alerts", default_enabled=True, default_interval=15)
@@ -38,13 +39,13 @@ def _render_alerts_body() -> None:
         [
             ("Refresh Otomatis", live_status_text(auto_refresh, interval_seconds)),
             ("Terakhir Diperbarui", rendered_at_label()),
-            ("Filter Severity", severity_filter),
+            ("Filter Tingkat", severity_filter),
             ("Urutan", sort_mode),
         ]
     )
 
     if not alerts:
-        st.success("Tidak ada alert aktif saat ini.")
+        st.success("Tidak ada alert aktif. Pantau kembali pada siklus monitoring berikutnya.")
         return
 
     dataframe = pd.DataFrame(alerts)
@@ -79,10 +80,10 @@ def _render_alerts_body() -> None:
         ]
 
     if filtered_frame.empty:
-        st.info("Tidak ada alert yang cocok dengan filter saat ini.")
+        st.info("Tidak ada alert yang cocok dengan filter. Ubah severity atau kata kunci pencarian.")
         return
 
-    if sort_mode == "Severity Tertinggi":
+    if sort_mode == "Tingkat Tertinggi":
         filtered_frame = filtered_frame.sort_values(["severity_priority", "created_at"], ascending=[True, False])
     else:
         filtered_frame = filtered_frame.sort_values("created_at", ascending=False)
@@ -95,7 +96,7 @@ def _render_alerts_body() -> None:
 
     render_kpi_cards(
         [
-            ("Total Active Alerts", int(len(filtered_frame)), None),
+            ("Total Alert Aktif", int(len(filtered_frame)), None),
             ("Alert Critical / High", critical_count, None),
             ("Device Terdampak", affected_devices, None),
             ("Alert Tertua (WIB)", oldest_label, None),
@@ -106,11 +107,11 @@ def _render_alerts_body() -> None:
     severity_counts = (
         filtered_frame["severity"]
         .value_counts()
-        .rename_axis("Severity")
-        .reset_index(name="Count")
+        .rename_axis("Tingkat")
+        .reset_index(name="Jumlah")
     )
-    severity_counts["Priority"] = severity_counts["Severity"].map(status_priority)
-    severity_counts = severity_counts.sort_values(["Priority", "Count", "Severity"], ascending=[True, False, True])
+    severity_counts["Priority"] = severity_counts["Tingkat"].map(status_priority)
+    severity_counts = severity_counts.sort_values(["Priority", "Jumlah", "Tingkat"], ascending=[True, False, True])
     top_devices = (
         filtered_frame["device_name"]
         .value_counts()
@@ -122,25 +123,25 @@ def _render_alerts_body() -> None:
 
     chart_col, table_col = st.columns([1, 1])
     with chart_col:
-        st.markdown("### Severity Distribution")
+        st.markdown("### Distribusi Tingkat Alert")
         severity_chart = (
             alt.Chart(severity_counts)
             .mark_bar()
             .encode(
-                x=alt.X("Count:Q", title="Alerts"),
-                y=alt.Y("Severity:N", sort="-x", title="Severity"),
-                tooltip=[alt.Tooltip("Severity:N", title="Severity"), alt.Tooltip("Count:Q", title="Count")],
+                x=alt.X("Jumlah:Q", title="Jumlah Alert"),
+                y=alt.Y("Tingkat:N", sort="-x", title="Tingkat"),
+                tooltip=[alt.Tooltip("Tingkat:N", title="Tingkat"), alt.Tooltip("Jumlah:Q", title="Jumlah")],
             )
-            .properties(height=280)
+            .properties(height=260)
         )
         st.altair_chart(severity_chart, width="stretch")
         st.dataframe(
-            severity_counts[["Severity", "Count"]],
+            severity_counts[["Tingkat", "Jumlah"]],
             width="stretch",
             hide_index=True,
             column_config={
-                "Severity": st.column_config.TextColumn("Severity", width="small"),
-                "Count": st.column_config.NumberColumn("Count", width="small", format="%d"),
+                "Tingkat": st.column_config.TextColumn("Tingkat", width="small"),
+                "Jumlah": st.column_config.NumberColumn("Jumlah", width="small", format="%d"),
             },
         )
     with table_col:
@@ -149,11 +150,11 @@ def _render_alerts_body() -> None:
             alt.Chart(top_devices)
             .mark_bar()
             .encode(
-                x=alt.X("Alerts:Q", title="Alerts"),
+                x=alt.X("Alerts:Q", title="Jumlah Alert"),
                 y=alt.Y("Device:N", sort="-x", title="Device"),
-                tooltip=[alt.Tooltip("Device:N", title="Device"), alt.Tooltip("Alerts:Q", title="Alerts")],
+                tooltip=[alt.Tooltip("Device:N", title="Device"), alt.Tooltip("Alerts:Q", title="Jumlah")],
             )
-            .properties(height=280)
+            .properties(height=260)
         )
         st.altair_chart(device_chart, width="stretch")
         st.dataframe(
@@ -172,11 +173,11 @@ def _render_alerts_body() -> None:
         detail_columns.insert(3, "metric_name")
     detail_frame = filtered_frame[detail_columns].rename(
         columns={
-            "created_at_wib": "Created At (WIB)",
+            "created_at_wib": "Dibuat (WIB)",
             "device_name": "Device",
-            "severity": "Severity",
-            "metric_name": "Metric",
-            "message": "Message",
+            "severity": "Tingkat",
+            "metric_name": "Metrik",
+            "message": "Pesan",
         }
     )
     st.dataframe(
@@ -184,13 +185,15 @@ def _render_alerts_body() -> None:
         width="stretch",
         hide_index=True,
         column_config={
-            "Created At (WIB)": st.column_config.TextColumn("Created At (WIB)", width="medium"),
+            "Dibuat (WIB)": st.column_config.TextColumn("Dibuat (WIB)", width="medium"),
             "Device": st.column_config.TextColumn("Device", width="medium"),
-            "Severity": st.column_config.TextColumn("Severity", width="small"),
-            "Metric": st.column_config.TextColumn("Metric", width="small"),
-            "Message": st.column_config.TextColumn("Message", width="large"),
+            "Tingkat": st.column_config.TextColumn("Tingkat", width="small"),
+            "Metrik": st.column_config.TextColumn("Metrik", width="small"),
+            "Pesan": st.column_config.TextColumn("Pesan", width="large"),
         },
     )
+    st.markdown("")
+    st.caption("Tip: gunakan filter severity dan kata kunci untuk mempercepat triase alert.")
 
 
 render_live_section(auto_refresh, interval_seconds, _render_alerts_body)
