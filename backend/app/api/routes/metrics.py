@@ -46,6 +46,8 @@ async def get_metrics_history_paged(
     offset: int = Query(default=0, ge=0),
     device_id: int | None = Query(default=None),
     metric_name: str | None = Query(default=None),
+    metric_names: list[str] | None = Query(default=None),
+    per_metric_limit: int | None = Query(default=None, ge=1, le=500),
     status: str | None = Query(default=None),
     checked_from: datetime | None = Query(default=None),
     checked_to: datetime | None = Query(default=None),
@@ -57,6 +59,8 @@ async def get_metrics_history_paged(
         offset=offset,
         device_id=device_id,
         metric_name=metric_name,
+        metric_names=metric_names,
+        per_metric_limit=per_metric_limit,
         status=status,
         checked_from=checked_from,
         checked_to=checked_to,
@@ -125,6 +129,10 @@ async def get_metrics_history_context(
         limit=snapshot_limit,
         offset=snapshot_offset,
     )
+    if snapshot_offset == 0 and latest_snapshot_total <= snapshot_limit:
+        latest_snapshot_status_summary = repository.summarize_latest_snapshot_status_counts_for_rows(latest_snapshot_rows)
+    else:
+        latest_snapshot_status_summary = await repository.summarize_latest_snapshot_status_counts()
     selected_device_snapshot_rows = []
     selected_device_snapshot_total = 0
     if include_selected_device_snapshot and device_id is not None:
@@ -133,14 +141,20 @@ async def get_metrics_history_context(
             offset=0,
             device_id=device_id,
         )
+    history_items = _metric_history_dicts(history_rows)
+    selected_device_history_items = (
+        history_items
+        if selected_device_history_rows is history_rows
+        else _metric_history_dicts(selected_device_history_rows)
+    )
     return {
         "metric_names": await repository.list_metric_names(device_id=device_id),
         "history": {
-            "items": _metric_history_dicts(history_rows),
+            "items": history_items,
             "meta": {"total": history_total, "limit": limit, "offset": 0},
         },
         "selected_device_history": {
-            "items": _metric_history_dicts(selected_device_history_rows),
+            "items": selected_device_history_items,
             "meta": {
                 "total": selected_device_history_total,
                 "limit": selected_device_limit,
@@ -155,7 +169,7 @@ async def get_metrics_history_context(
             "items": _metric_history_dicts(selected_device_snapshot_rows),
             "meta": {"total": selected_device_snapshot_total, "limit": 500, "offset": 0},
         },
-        "latest_snapshot_status_summary": await repository.summarize_latest_snapshot_status_counts(),
+        "latest_snapshot_status_summary": latest_snapshot_status_summary,
         "snapshot_uptime_map": await repository.latest_snapshot_uptime_map_for_rows(latest_snapshot_rows),
     }
 

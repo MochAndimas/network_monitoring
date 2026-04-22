@@ -43,12 +43,46 @@ class MetricRepository:
             "checked_at": row.checked_at,
         }
 
+    @staticmethod
+    def _normalize_metric_names(metric_names: list[str] | None) -> list[str]:
+        if not metric_names:
+            return []
+        return list(dict.fromkeys(str(metric_name) for metric_name in metric_names if metric_name))
+
+    @staticmethod
+    def _recent_metric_filter_conditions(
+        *,
+        device_id: int | None = None,
+        metric_name: str | None = None,
+        metric_names: list[str] | None = None,
+        status: str | None = None,
+        checked_from=None,
+        checked_to=None,
+    ) -> list[object]:
+        conditions: list[object] = []
+        if device_id is not None:
+            conditions.append(Metric.device_id == device_id)
+        if metric_name:
+            conditions.append(Metric.metric_name == metric_name)
+        elif metric_names:
+            normalized_metric_names = MetricRepository._normalize_metric_names(metric_names)
+            if normalized_metric_names:
+                conditions.append(Metric.metric_name.in_(normalized_metric_names))
+        if status:
+            conditions.append(Metric.status == status)
+        if checked_from is not None:
+            conditions.append(Metric.checked_at >= checked_from)
+        if checked_to is not None:
+            conditions.append(Metric.checked_at <= checked_to)
+        return conditions
+
     def _recent_metric_rows_query(
         self,
         *,
         include_total_count: bool = False,
         device_id: int | None = None,
         metric_name: str | None = None,
+        metric_names: list[str] | None = None,
         status: str | None = None,
         checked_from=None,
         checked_to=None,
@@ -69,16 +103,16 @@ class MetricRepository:
             select(*columns)
             .outerjoin(Device, Device.id == Metric.device_id)
         )
-        if device_id is not None:
-            query = query.where(Metric.device_id == device_id)
-        if metric_name:
-            query = query.where(Metric.metric_name == metric_name)
-        if status:
-            query = query.where(Metric.status == status)
-        if checked_from is not None:
-            query = query.where(Metric.checked_at >= checked_from)
-        if checked_to is not None:
-            query = query.where(Metric.checked_at <= checked_to)
+        conditions = self._recent_metric_filter_conditions(
+            device_id=device_id,
+            metric_name=metric_name,
+            metric_names=metric_names,
+            status=status,
+            checked_from=checked_from,
+            checked_to=checked_to,
+        )
+        if conditions:
+            query = query.where(*conditions)
         return query
 
     async def create_metrics(self, payloads: Iterable[dict]) -> list[Metric]:
@@ -153,6 +187,7 @@ class MetricRepository:
         offset: int = 0,
         device_id: int | None = None,
         metric_name: str | None = None,
+        metric_names: list[str] | None = None,
         status: str | None = None,
         checked_from=None,
         checked_to=None,
@@ -160,6 +195,7 @@ class MetricRepository:
         query = self._recent_metric_rows_query(
             device_id=device_id,
             metric_name=metric_name,
+            metric_names=metric_names,
             status=status,
             checked_from=checked_from,
             checked_to=checked_to,
@@ -175,14 +211,29 @@ class MetricRepository:
         offset: int = 0,
         device_id: int | None = None,
         metric_name: str | None = None,
+        metric_names: list[str] | None = None,
+        per_metric_limit: int | None = None,
         status: str | None = None,
         checked_from=None,
         checked_to=None,
     ) -> tuple[list[dict], int]:
+        normalized_metric_names = self._normalize_metric_names(metric_names)
+        if normalized_metric_names and per_metric_limit is not None and offset == 0:
+            return await self._list_recent_metric_rows_per_metric_limit(
+                device_id=device_id,
+                metric_name=metric_name,
+                metric_names=normalized_metric_names,
+                per_metric_limit=per_metric_limit,
+                status=status,
+                checked_from=checked_from,
+                checked_to=checked_to,
+            )
+
         query = self._recent_metric_rows_query(
             include_total_count=True,
             device_id=device_id,
             metric_name=metric_name,
+            metric_names=normalized_metric_names,
             status=status,
             checked_from=checked_from,
             checked_to=checked_to,
@@ -194,6 +245,59 @@ class MetricRepository:
         ).all()
         total = int(rows[0].total_count) if rows else 0
         return [self._metric_row_payload(row) for row in rows], total
+
+    async def _list_recent_metric_rows_per_metric_limit(
+        self,
+        *,
+        device_id: int | None = None,
+        metric_name: str | None = None,
+        metric_names: list[str],
+        per_metric_limit: int,
+        status: str | None = None,
+        checked_from=None,
+        checked_to=None,
+    ) -> tuple[list[dict], int]:
+        conditions = self._recent_metric_filter_conditions(
+            device_id=device_id,
+            metric_name=metric_name,
+            metric_names=metric_names,
+            status=status,
+            checked_from=checked_from,
+            checked_to=checked_to,
+        )
+        ranked_metrics = (
+            select(
+                Metric.id.label("metric_id"),
+                Metric.metric_name.label("metric_name"),
+                func.row_number()
+                .over(
+                    partition_by=Metric.metric_name,
+                    order_by=(desc(Metric.checked_at), desc(Metric.id)),
+                )
+                .label("row_number"),
+            )
+            .where(*conditions)
+            .subquery()
+        )
+        query = (
+            select(
+                Metric.id,
+                Metric.device_id,
+                Device.name.label("device_name"),
+                Metric.metric_name,
+                Metric.metric_value,
+                Metric.status,
+                Metric.unit,
+                Metric.checked_at,
+            )
+            .join(ranked_metrics, Metric.id == ranked_metrics.c.metric_id)
+            .outerjoin(Device, Device.id == Metric.device_id)
+            .where(ranked_metrics.c.row_number <= per_metric_limit)
+            .order_by(desc(Metric.checked_at), desc(Metric.id))
+        )
+        rows = (await self.db.execute(query)).all()
+        payload = [self._metric_row_payload(row) for row in rows]
+        return payload, len(payload)
 
     async def count_recent_metric_rows(
         self,
@@ -390,7 +494,7 @@ class MetricRepository:
         query = (
             select(
                 ranked_metrics.c.device_id,
-                func.coalesce(Metric.status, "unknown").label("status"),
+                func.lower(func.coalesce(Metric.status, "unknown")).label("status"),
             )
             .join(Metric, Metric.id == ranked_metrics.c.metric_id)
             .where(ranked_metrics.c.row_number == 1)
@@ -399,6 +503,19 @@ class MetricRepository:
         device_statuses: dict[int, list[str]] = {}
         for device_id, status in rows:
             device_statuses.setdefault(int(device_id), []).append(str(status or "unknown"))
+
+        counts: dict[str, int] = {}
+        for statuses in device_statuses.values():
+            rolled_up = _rollup_statuses(statuses)
+            counts[rolled_up] = counts.get(rolled_up, 0) + 1
+        return counts
+
+    def summarize_latest_snapshot_status_counts_for_rows(self, latest_rows: list[dict]) -> dict[str, int]:
+        device_statuses: dict[int, list[str]] = {}
+        for row in latest_rows:
+            device_id = int(row.get("device_id") or 0)
+            status = str(row.get("status") or "unknown").lower()
+            device_statuses.setdefault(device_id, []).append(status)
 
         counts: dict[str, int] = {}
         for statuses in device_statuses.values():

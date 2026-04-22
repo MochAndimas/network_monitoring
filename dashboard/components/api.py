@@ -120,14 +120,17 @@ def _request_with_auth_recovery(
     request_payload = pending_request.get("payload") if pending_request else payload
     request_fallback = pending_request.get("fallback") if pending_request else fallback
     try:
-        result = _request_json(
-            method,
-            request_path,
-            payload=request_payload,
-            timeout=timeout,
-            api_base_url=api_base_url,
-            auth_token=auth_token,
-        )
+        if method == "GET" and request_payload is None:
+            result = _cached_get_json(request_path, timeout, api_base_url, auth_token)
+        else:
+            result = _request_json(
+                method,
+                request_path,
+                payload=request_payload,
+                timeout=timeout,
+                api_base_url=api_base_url,
+                auth_token=auth_token,
+            )
         if action_key:
             _clear_pending_action(action_key)
         return result

@@ -244,9 +244,22 @@ def _default_device_option_label(devices: list[dict]) -> str:
 
 
 def _format_metric_value(row: pd.Series) -> str:
-    metric_name = str(row.get("metric_name") or "")
-    metric_value = row.get("metric_value")
-    metric_value_numeric = row.get("metric_value_numeric")
+    return _format_metric_value_components(
+        metric_name=str(row.get("metric_name") or ""),
+        metric_value=row.get("metric_value"),
+        metric_value_numeric=row.get("metric_value_numeric"),
+        unit=row.get("unit"),
+    )
+
+
+def _format_metric_value_components(
+    *,
+    metric_name: str,
+    metric_value,
+    metric_value_numeric,
+    unit,
+) -> str:
+    metric_name = str(metric_name or "")
     if metric_name == "printer_uptime_seconds" and pd.notna(metric_value_numeric):
         return _format_duration(pd.Timedelta(seconds=float(metric_value_numeric)))
     if metric_name == "printer_total_pages" and pd.notna(metric_value_numeric):
@@ -255,8 +268,8 @@ def _format_metric_value(row: pd.Series) -> str:
         return _humanize_printer_text(str(metric_value or "-"))
     if metric_name in {"printer_status", "printer_error_state", "printer_paper_status"}:
         return _humanize_printer_text(str(metric_value or "-"))
-    unit = f' {row["unit"]}' if row.get("unit") else ""
-    return f'{row["metric_value"]}{unit}'
+    unit_suffix = f" {unit}" if unit else ""
+    return f"{metric_value}{unit_suffix}"
 
 
 def _friendly_metric_name(metric_name: str) -> str:
@@ -426,8 +439,18 @@ def _fetch_device_history_rows(
     initial_payload: dict | None = None,
 ) -> list[dict]:
     if metric_names:
-        items: list[dict] = []
         unique_metric_names = list(dict.fromkeys(str(metric_name) for metric_name in metric_names))
+        if max_pages == 1:
+            return _fetch_history_rows_bulk(
+                device_id=device_id,
+                metric_names=unique_metric_names,
+                status=status,
+                checked_from_date=checked_from_date,
+                checked_to_date=checked_to_date,
+                per_metric_limit=500,
+            )
+
+        items: list[dict] = []
         for metric_name in unique_metric_names:
             items.extend(
                 _fetch_history_pages(
@@ -461,6 +484,8 @@ def _history_query_params(
     checked_to_date=None,
     limit: int = 500,
     offset: int = 0,
+    metric_names: list[str] | None = None,
+    per_metric_limit: int | None = None,
 ) -> dict[str, object]:
     query_params: dict[str, object] = {
         "limit": limit,
@@ -469,6 +494,10 @@ def _history_query_params(
     }
     if metric_name:
         query_params["metric_name"] = metric_name
+    if metric_names:
+        query_params["metric_names"] = metric_names
+    if per_metric_limit is not None:
+        query_params["per_metric_limit"] = per_metric_limit
     if status and status != "All":
         query_params["status"] = status
     if checked_from_date:
@@ -504,7 +533,7 @@ def _fetch_history_pages(
                 limit=page_size,
                 offset=offset,
             )
-            payload = get_json(f"/metrics/history/paged?{urlencode(query_params)}", {"items": [], "meta": {}})
+            payload = get_json(f"/metrics/history/paged?{urlencode(query_params, doseq=True)}", {"items": [], "meta": {}})
         else:
             payload = next_payload
             next_payload = None
@@ -522,6 +551,31 @@ def _fetch_history_pages(
             break
 
     return items
+
+
+def _fetch_history_rows_bulk(
+    *,
+    device_id: int,
+    metric_names: list[str],
+    status: str | None = None,
+    checked_from_date=None,
+    checked_to_date=None,
+    per_metric_limit: int = 500,
+) -> list[dict]:
+    if not metric_names:
+        return []
+    query_params = _history_query_params(
+        device_id=device_id,
+        metric_names=metric_names,
+        status=status,
+        checked_from_date=checked_from_date,
+        checked_to_date=checked_to_date,
+        limit=max(per_metric_limit * len(metric_names), per_metric_limit),
+        offset=0,
+        per_metric_limit=per_metric_limit,
+    )
+    payload = get_json(f"/metrics/history/paged?{urlencode(query_params, doseq=True)}", {"items": [], "meta": {}})
+    return paged_items(payload)
 
 
 def _fetch_latest_device_snapshot(device_id: int, limit: int = 500) -> list[dict]:
@@ -957,6 +1011,10 @@ device_name_by_id = {
     int(device["id"]): str(device.get("name") or "")
     for device in devices
 }
+device_by_id = {
+    int(device["id"]): device
+    for device in devices
+}
 device_options = {"All Devices": None}
 for device in devices:
     device_options[_format_device_label(device)] = device["id"]
@@ -971,6 +1029,16 @@ def _render_history_body() -> None:
     summary_container = st.container()
     snapshot_container = st.container()
     status_container = st.container()
+    prepared_history_frame_cache: dict[tuple[int, bool], pd.DataFrame] = {}
+
+    def _prepare_history_frame_cached(rows: list[dict], *, sort_desc: bool = True) -> pd.DataFrame:
+        key = (id(rows), sort_desc)
+        cached = prepared_history_frame_cache.get(key)
+        if cached is not None:
+            return cached
+        prepared = _prepare_history_frame(rows, sort_desc=sort_desc)
+        prepared_history_frame_cache[key] = prepared
+        return prepared
 
     default_device_label = _default_device_option_label(devices)
     if "history_selected_device" not in st.session_state:
@@ -986,7 +1054,7 @@ def _render_history_body() -> None:
         key="history_selected_device",
     )
     selected_device_id = device_options[selected_device]
-    selected_device_record = next((device for device in devices if device["id"] == selected_device_id), None)
+    selected_device_record = device_by_id.get(int(selected_device_id)) if selected_device_id is not None else None
     selected_device_type = str(selected_device_record.get("device_type")) if selected_device_record else None
     current_selected_metric = str(st.session_state.get("history_selected_metric", "All Metrics"))
     status_value = filter_col3.selectbox("Status", options=STATUS_OPTIONS, index=0)
@@ -1056,11 +1124,15 @@ def _render_history_body() -> None:
     ):
         st.session_state["history_selected_metric"] = "All Metrics"
     metric_select_options = ["All Metrics"] + metric_name_options
+    metric_filter_labels = {
+        metric_name: _metric_filter_label(metric_name)
+        for metric_name in metric_select_options
+    }
     selected_metric = filter_col2.selectbox(
         "Metric Name",
         options=metric_select_options,
         index=0,
-        format_func=_metric_filter_label,
+        format_func=lambda metric_name: metric_filter_labels.get(metric_name, str(metric_name)),
         help="Daftar metric yang sudah tersimpan di history.",
         key="history_selected_metric",
     )
@@ -1128,14 +1200,14 @@ def _render_history_body() -> None:
         st.info("Belum ada histori metric yang tersimpan untuk filter ini.")
         return
 
-    dataframe = _prepare_history_frame(history)
+    dataframe = _prepare_history_frame_cached(history)
     if dataframe.empty:
         st.info("Belum ada histori metric yang tersimpan untuk filter ini.")
         return
 
     latest_timestamp = dataframe["checked_at"].max()
-    snapshot_frame = _prepare_history_frame(snapshot_history, sort_desc=False)
-    latest_per_series = snapshot_frame if not snapshot_frame.empty else _latest_snapshot_frame(dataframe)
+    snapshot_frame = _prepare_history_frame_cached(snapshot_history, sort_desc=False)
+    latest_per_series = snapshot_frame.copy() if not snapshot_frame.empty else _latest_snapshot_frame(dataframe)
     uptime_keys = latest_per_series["device_id"].astype(int).astype(str) + ":" + latest_per_series["metric_name"].astype(str)
     uptime_values = uptime_keys.map(snapshot_uptime_map).fillna("-").astype(str)
     latest_per_series["uptime"] = uptime_values.map(
@@ -1197,14 +1269,14 @@ def _render_history_body() -> None:
                 device_type_by_id,
                 device_name_by_id,
             )
-        mikrotik_history_frame = _prepare_history_frame(mikrotik_snapshot, sort_desc=False)
+        mikrotik_history_frame = _prepare_history_frame_cached(mikrotik_snapshot, sort_desc=False)
         _render_mikrotik_history_section(mikrotik_history_frame)
 
     if selected_device_id is not None and selected_device_type == "printer":
         printer_history = [
             row for row in selected_device_history if str(row.get("metric_name") or "") in PRINTER_METRIC_NAMES
         ]
-        printer_history_frame = _prepare_history_frame(printer_history, sort_desc=False)
+        printer_history_frame = _prepare_history_frame_cached(printer_history, sort_desc=False)
         _render_printer_history_section(printer_history_frame)
 
     st.markdown("### Metric Trend")
@@ -1217,10 +1289,12 @@ def _render_history_body() -> None:
         st.info("Tidak ada metric numerik pada filter ini, jadi grafik trend belum bisa ditampilkan.")
         return
 
-    device_history_frame = _prepare_history_frame(full_device_history, sort_desc=False)
+    device_history_frame = _prepare_history_frame_cached(full_device_history, sort_desc=False)
     if device_history_frame.empty:
         st.info("Belum ada history lengkap untuk device ini pada rentang waktu yang dipilih.")
         return
+    dataframe_desc = dataframe.sort_values("checked_at", ascending=False).copy()
+    device_history_frame_desc = device_history_frame.sort_values("checked_at", ascending=False).copy()
 
     available_metric_names = sorted(device_history_frame["metric_name"].dropna().unique().tolist())
     if selected_is_mikrotik and selected_metric == "All Metrics":
@@ -1266,11 +1340,9 @@ def _render_history_body() -> None:
 
     st.markdown("### Raw History")
     if selected_device_id is not None and selected_device_type == "printer":
-        raw_history_frame = (
-            device_history_frame if not device_history_frame.empty else dataframe.copy()
-        ).sort_values("checked_at", ascending=False)
+        raw_history_frame = device_history_frame_desc if not device_history_frame.empty else dataframe_desc
     elif selected_is_mikrotik and selected_metric == "All Metrics":
-        raw_history_frame = dataframe.copy().sort_values("checked_at", ascending=False)
+        raw_history_frame = dataframe_desc
     else:
         raw_history_frame = pd.concat(rendered_metric_frames, ignore_index=True).sort_values("checked_at", ascending=False)
     raw_view = raw_history_frame[

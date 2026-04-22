@@ -11,6 +11,7 @@ class Metric(Base):
     __tablename__ = "metrics"
     __table_args__ = (
         Index("ix_metrics_history_lookup", "device_id", "metric_name", "checked_at"),
+        Index("ix_metrics_history_lookup_with_id", "device_id", "metric_name", "checked_at", "id"),
         Index("ix_metrics_checked_at", "checked_at"),
         Index("ix_metrics_name_device_checked", "metric_name", "device_id", "checked_at"),
         Index("ix_metrics_history_status_checked", "status", "checked_at"),

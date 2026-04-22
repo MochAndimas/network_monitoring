@@ -1053,6 +1053,66 @@ def test_metrics_history_supports_time_window_filters():
         assert len(paged_payload["items"]) == 1
 
 
+def test_metrics_history_paged_supports_bulk_metric_names_with_per_metric_limit():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [{"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"}]
+                )
+                now = utcnow()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "10.00",
+                            "status": "ok",
+                            "unit": "%",
+                            "checked_at": now - timedelta(minutes=10),
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "20.00",
+                            "status": "ok",
+                            "unit": "%",
+                            "checked_at": now - timedelta(minutes=5),
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "memory_percent",
+                            "metric_value": "60.00",
+                            "status": "warning",
+                            "unit": "%",
+                            "checked_at": now - timedelta(minutes=8),
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "memory_percent",
+                            "metric_value": "70.00",
+                            "status": "warning",
+                            "unit": "%",
+                            "checked_at": now - timedelta(minutes=3),
+                        },
+                    ]
+                )
+                return devices[0].id
+
+        device_id = run(scenario())
+        response = client.get(
+            f"/metrics/history/paged?device_id={device_id}&metric_names=cpu_percent&metric_names=memory_percent&per_metric_limit=1&limit=500&offset=0",
+            headers=API_HEADERS,
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["meta"]["total"] == 2
+        assert len(payload["items"]) == 2
+        metric_names = sorted(item["metric_name"] for item in payload["items"])
+        assert metric_names == ["cpu_percent", "memory_percent"]
+
+
 def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
     with client_context() as (client, session_factory):
         async def scenario():
@@ -1169,6 +1229,47 @@ def test_metrics_history_context_endpoint():
         assert "latest_snapshot" in payload
         assert "latest_snapshot_status_summary" in payload
         assert "snapshot_uptime_map" in payload
+
+
+def test_latest_snapshot_status_summary_preserves_fallback_first_status_behavior():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [{"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"}]
+                )
+                now = utcnow()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "55.00",
+                            "status": "ok",
+                            "unit": "%",
+                            "checked_at": now,
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "memory_percent",
+                            "metric_value": "65.00",
+                            "status": "weird_state",
+                            "unit": "%",
+                            "checked_at": now,
+                        },
+                    ]
+                )
+
+        run(scenario())
+        response = client.get("/metrics/latest-snapshot/status-summary", headers=API_HEADERS)
+        context_response = client.get("/metrics/history/context?snapshot_limit=10&snapshot_offset=0", headers=API_HEADERS)
+
+        assert response.status_code == 200
+        assert context_response.status_code == 200
+        status_summary = response.json()
+        context_summary = context_response.json()["latest_snapshot_status_summary"]
+        assert status_summary == {"ok": 1}
+        assert context_summary == status_summary
 
 
 def test_run_cycle_creates_alerts_and_incidents():

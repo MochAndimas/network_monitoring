@@ -413,6 +413,63 @@ def test_dashboard_api_does_not_fallback_to_service_key_without_auth_token():
     assert api_module._request_headers("") == {}
 
 
+def test_get_json_uses_cached_get_reader(monkeypatch):
+    fake_st = FakeStreamlit(
+        {
+            "dashboard_authenticated": True,
+            "auth_token": "token-123",
+            "auth_restore_completed": True,
+        }
+    )
+    monkeypatch.setattr(api_module, "st", fake_st)
+
+    cached_calls: list[tuple[str, float, str, str]] = []
+
+    def fake_cached_get_json(path: str, timeout: float, api_base_url: str, auth_token: str):
+        cached_calls.append((path, timeout, api_base_url, auth_token))
+        return {"ok": True}
+
+    def fail_request_json(*_args, **_kwargs):
+        raise AssertionError("_request_json should not be called for get_json GET path")
+
+    monkeypatch.setattr(api_module, "_cached_get_json", fake_cached_get_json)
+    monkeypatch.setattr(api_module, "_request_json", fail_request_json)
+
+    payload = api_module.get_json("/alerts/active", [])
+
+    assert payload == {"ok": True}
+    assert cached_calls == [("/alerts/active", 5.0, api_module.API_BASE_URL, "token-123")]
+
+
+def test_get_json_keeps_401_recovery_with_cached_get_reader(monkeypatch):
+    fake_st = FakeStreamlit(
+        {
+            "dashboard_authenticated": True,
+            "auth_token": "expired-token",
+            "auth_expires_at": (datetime.now() + timedelta(minutes=5)).isoformat(),
+            "auth_restore_completed": True,
+        }
+    )
+    monkeypatch.setattr(api_module, "st", fake_st)
+
+    def fake_cached_get_json(path: str, timeout: float, api_base_url: str, auth_token: str):
+        _ = (path, timeout, api_base_url)
+        if auth_token == "expired-token":
+            raise _http_401()
+        return {"ok": True}
+
+    monkeypatch.setattr(api_module, "_cached_get_json", fake_cached_get_json)
+
+    try:
+        api_module.get_json("/devices/paged?limit=10&offset=0", {"items": [], "meta": {}})
+        assert False, "Expected rerun when cached GET receives 401"
+    except RerunTriggered:
+        pass
+
+    assert "auth_token" not in fake_st.session_state
+    assert fake_st.session_state["auth_restore_completed"] is False
+
+
 def test_auth_bridge_frontend_restricts_parent_origin():
     html = (auth_module.__file__)
     from pathlib import Path
