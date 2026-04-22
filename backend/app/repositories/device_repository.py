@@ -1,4 +1,4 @@
-from sqlalchemy import Select, delete, func, or_, select, update
+from sqlalchemy import Select, and_, case, delete, func, or_, select, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,12 +17,54 @@ class DeviceRepository:
 
     @staticmethod
     def _latest_ping_metrics_subquery():
-        return (
+        mikrotik_device_filter = or_(
+            func.lower(Device.device_type) == "mikrotik",
+            func.lower(Device.name).like("%mikrotik%"),
+        )
+        health_metric_priority = case(
+            (LatestMetric.metric_name == "ping", 0),
+            (
+                and_(
+                    mikrotik_device_filter,
+                    LatestMetric.metric_name == "mikrotik_api",
+                ),
+                1,
+            ),
+            else_=2,
+        )
+        ranked_health_metrics = (
             select(
                 LatestMetric.metric_id.label("metric_id"),
                 LatestMetric.device_id.label("device_id"),
+                func.row_number()
+                .over(
+                    partition_by=LatestMetric.device_id,
+                    order_by=(
+                        health_metric_priority.asc(),
+                        LatestMetric.checked_at.desc(),
+                        LatestMetric.metric_id.desc(),
+                    ),
+                )
+                .label("rank"),
             )
-            .where(LatestMetric.metric_name == "ping")
+            .join(Device, Device.id == LatestMetric.device_id)
+            .where(
+                or_(
+                    LatestMetric.metric_name == "ping",
+                    and_(
+                        mikrotik_device_filter,
+                        LatestMetric.metric_name == "mikrotik_api",
+                    ),
+                )
+            )
+            .subquery()
+        )
+        return (
+            select(
+                ranked_health_metrics.c.metric_id,
+                ranked_health_metrics.c.device_id,
+            )
+            .where(ranked_health_metrics.c.rank == 1)
             .subquery()
         )
 
@@ -73,7 +115,7 @@ class DeviceRepository:
         if device_id is not None:
             query = query.where(Device.id == device_id)
         if device_type:
-            query = query.where(Device.device_type == device_type)
+            query = query.where(func.lower(Device.device_type) == str(device_type).lower())
         if latest_status:
             normalized_status = func.coalesce(latest_ping.status, "unknown")
             if isinstance(latest_status, (list, tuple, set)):
@@ -225,7 +267,7 @@ class DeviceRepository:
         latest_status = func.coalesce(latest_ping.status, "unknown").label("latest_status")
         query = (
             select(
-                Device.device_type,
+                func.lower(Device.device_type).label("device_type"),
                 latest_status,
                 func.count().label("device_count"),
             )
@@ -240,8 +282,40 @@ class DeviceRepository:
         rows = (await self.db.execute(query)).all()
         summary: dict[str, dict[str, int]] = {}
         for device_type, status, device_count in rows:
-            summary.setdefault(device_type, {})[str(status or "unknown")] = int(device_count)
+            normalized_device_type = str(device_type or "unknown").lower()
+            normalized_status = str(status or "unknown")
+            summary.setdefault(normalized_device_type, {})[normalized_status] = int(device_count)
+        mikrotik_rows = await self._summarize_active_mikrotik_named_statuses()
+        if mikrotik_rows:
+            summary["mikrotik"] = mikrotik_rows
         return summary
+
+    async def _summarize_active_mikrotik_named_statuses(self) -> dict[str, int]:
+        latest_ping_metrics = self._latest_ping_metrics_subquery()
+        latest_ping = aliased(Metric)
+        latest_status = func.coalesce(latest_ping.status, "unknown").label("latest_status")
+        query = (
+            select(
+                latest_status,
+                func.count().label("device_count"),
+            )
+            .select_from(Device)
+            .outerjoin(latest_ping_metrics, Device.id == latest_ping_metrics.c.device_id)
+            .outerjoin(
+                latest_ping,
+                latest_ping.id == latest_ping_metrics.c.metric_id,
+            )
+            .where(Device.is_active.is_(True))
+            .where(
+                or_(
+                    func.lower(Device.device_type) == "mikrotik",
+                    func.lower(Device.name).like("%mikrotik%"),
+                )
+            )
+            .group_by(latest_status)
+        )
+        rows = (await self.db.execute(query)).all()
+        return {str(status or "unknown"): int(device_count) for status, device_count in rows}
 
     async def summarize_device_status_counts(self, *, active_only: bool = False) -> dict[str, int]:
         latest_ping_metrics = self._latest_ping_metrics_subquery()

@@ -250,6 +250,36 @@ def test_dashboard_summary_and_alerts_endpoint():
         assert len(history_response.json()) == 3
 
 
+def test_dashboard_summary_uses_mikrotik_api_health_without_ping():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [
+                        {"name": "Mikrotik Utama", "ip_address": "192.168.1.254", "device_type": "internet_target"},
+                    ]
+                )
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "mikrotik_api",
+                            "metric_value": "reachable",
+                            "status": "ok",
+                            "unit": None,
+                            "checked_at": utcnow(),
+                        },
+                    ]
+                )
+
+        run(scenario())
+
+        summary_response = client.get("/dashboard/summary", headers=API_HEADERS)
+
+        assert summary_response.status_code == 200
+        assert summary_response.json()["mikrotik_status"] == "up"
+
+
 def test_auth_login_me_and_logout_flow():
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))

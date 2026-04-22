@@ -453,14 +453,14 @@ def _snapshot_pagination_controls(total_rows: int) -> tuple[int, int]:
     if default_page_size not in [10, 25, 50, 100]:
         default_page_size = 10
     page_size = page_size_col.selectbox(
-        "Snapshot Rows",
+        "Baris Snapshot",
         options=[10, 25, 50, 100],
         index=[10, 25, 50, 100].index(default_page_size),
         key="history_snapshot_page_size",
     )
     total_pages = max((total_rows - 1) // page_size + 1, 1)
     page_number = page_col.number_input(
-        "Snapshot Page",
+        "Halaman Snapshot",
         min_value=1,
         max_value=total_pages,
         value=min(st.session_state.get("history_snapshot_page", 1), total_pages),
@@ -479,7 +479,7 @@ def _paginate_frame(dataframe: pd.DataFrame, *, key_prefix: str, page_size: int 
     current_page = min(int(st.session_state.get(page_key, 1)), total_pages)
     page_col, meta_col = st.columns([1, 5])
     page_number = page_col.number_input(
-        "Raw History Page",
+        "Halaman Data",
         min_value=1,
         max_value=total_pages,
         value=current_page,
@@ -488,7 +488,7 @@ def _paginate_frame(dataframe: pd.DataFrame, *, key_prefix: str, page_size: int 
     )
     start = (int(page_number) - 1) * page_size
     end = start + page_size
-    meta_col.caption(f"Menampilkan {start + 1}-{min(end, total_rows)} dari {total_rows} rows.")
+    meta_col.caption(f"Menampilkan {start + 1}-{min(end, total_rows)} dari {total_rows} baris.")
     return dataframe.iloc[start:end].copy()
 
 
@@ -514,23 +514,32 @@ def _render_metric_trend_section(
     chart_min = float(chart_metric_frame["metric_value_numeric"].min())
     chart_max = float(chart_metric_frame["metric_value_numeric"].max())
     chart_avg = float(chart_metric_frame["metric_value_numeric"].mean())
+    sample_count = int(len(chart_metric_frame))
+    previous_value = (
+        float(chart_metric_frame["metric_value_numeric"].iloc[-2])
+        if sample_count > 1
+        else None
+    )
+    latest_value = float(latest_metric_row["metric_value_numeric"])
+    delta_value = latest_value - previous_value if previous_value is not None else None
+    trend_text = _trend_direction_text(delta_value)
 
     unit_suffix = f" ({metric_unit})" if metric_unit else ""
     container.markdown(f"#### {metric_label} - {metric_device_name}")
     container.caption(
-        f"Latest {_format_metric_value(latest_metric_row)} | "
-        f"Status {str(latest_metric_row['status']).upper()} | "
-        f"Window {chart_window_label}{unit_suffix}"
+        f"Nilai terakhir {_format_metric_value(latest_metric_row)} | "
+        f"{trend_text} | "
+        f"Rentang {chart_min:.2f} - {chart_max:.2f}{unit_suffix} | "
+        f"{sample_count} sampel ({chart_window_label})"
     )
+    stat_col1, stat_col2, stat_col3, stat_col4 = container.columns(4)
+    _render_stat_card(stat_col1, "Nilai Terakhir", _format_metric_value(latest_metric_row))
+    _render_stat_card(stat_col2, "Arah", trend_text)
+    _render_stat_card(stat_col3, "Rata-rata", _format_metric_numeric(chart_avg, metric_unit))
+    _render_stat_card(stat_col4, "Status", _status_label_for_display(latest_metric_row["status"]))
 
-    chart_title = f"{metric_label} Trend - {metric_device_name}"
-    rules_frame = pd.DataFrame(
-        [
-            {"line_label": "Min", "line_value": chart_min},
-            {"line_label": "Avg", "line_value": chart_avg},
-            {"line_label": "Max", "line_value": chart_max},
-        ]
-    )
+    chart_title = f"Tren {metric_label} - {metric_device_name}"
+    avg_frame = pd.DataFrame([{"line_label": "Rata-rata", "line_value": chart_avg}])
     line_chart = (
         alt.Chart(chart_metric_frame)
         .mark_line(point=True)
@@ -554,7 +563,7 @@ def _render_metric_trend_section(
         )
     )
     reference_lines = (
-        alt.Chart(rules_frame)
+        alt.Chart(avg_frame)
         .mark_rule(strokeDash=[6, 4], strokeWidth=1.5)
         .encode(
             y=alt.Y("line_value:Q"),
@@ -562,8 +571,8 @@ def _render_metric_trend_section(
                 "line_label:N",
                 title="Referensi",
                 scale=alt.Scale(
-                    domain=["Min", "Avg", "Max"],
-                    range=["#f59e0b", "#22c55e", "#ef4444"],
+                    domain=["Rata-rata"],
+                    range=["#22c55e"],
                 ),
             ),
             tooltip=[
@@ -579,6 +588,204 @@ def _render_metric_trend_section(
 def _render_stat_card(column, label: str, value: str | int, *, compact: bool = False) -> None:
     with column.container(border=True):
         st.metric(label, value)
+
+
+def _status_counts_frame(
+    latest_snapshot_status_summary: dict[str, int],
+    fallback_frame: pd.DataFrame,
+) -> pd.DataFrame:
+    if latest_snapshot_status_summary:
+        status_counts = pd.DataFrame(
+            [{"status": normalize_status_label(status), "Jumlah": count} for status, count in latest_snapshot_status_summary.items()]
+        )
+    elif not fallback_frame.empty:
+        counts = fallback_frame["status"].fillna("Unknown").map(normalize_status_label).value_counts()
+        status_counts = pd.DataFrame({"status": counts.index.tolist(), "Jumlah": counts.values.tolist()})
+    else:
+        status_counts = pd.DataFrame(columns=["status", "Jumlah"])
+    if status_counts.empty:
+        return status_counts
+    status_counts["priority"] = status_counts["status"].map(status_priority)
+    return status_counts.sort_values(["priority", "Jumlah", "status"], ascending=[True, False, True]).reset_index(drop=True)
+
+
+def _status_color_scale() -> alt.Scale:
+    return alt.Scale(
+        domain=["Down", "Error", "Warning", "Unknown", "Active", "Resolved", "OK", "Up"],
+        range=["#dc2626", "#ef4444", "#f59e0b", "#6b7280", "#3b82f6", "#10b981", "#22c55e", "#16a34a"],
+    )
+
+
+def _health_score_percent(status_counts: pd.DataFrame) -> int:
+    if status_counts.empty:
+        return 0
+    total = int(status_counts["Jumlah"].sum())
+    if total <= 0:
+        return 0
+    weighted_score = 0.0
+    status_weights = {
+        "Up": 1.0,
+        "OK": 1.0,
+        "Resolved": 0.8,
+        "Active": 0.6,
+        "Warning": 0.5,
+        "Unknown": 0.3,
+        "Error": 0.0,
+        "Down": 0.0,
+    }
+    for _, row in status_counts.iterrows():
+        weighted_score += float(row.get("Jumlah", 0) or 0) * float(status_weights.get(str(row.get("status") or ""), 0.4))
+    return max(0, min(100, round((weighted_score / total) * 100)))
+
+
+def _entity_volume_frame(dataframe: pd.DataFrame, column_name: str, label_name: str, top_n: int = 6) -> pd.DataFrame:
+    if dataframe.empty or column_name not in dataframe.columns:
+        return pd.DataFrame(columns=[label_name, "Jumlah"])
+    grouped = (
+        dataframe[column_name]
+        .fillna("-")
+        .astype(str)
+        .value_counts()
+        .head(top_n)
+        .reset_index()
+    )
+    grouped.columns = [label_name, "Jumlah"]
+    return grouped
+
+
+def _recent_anomaly_frame(dataframe: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
+    if dataframe.empty:
+        return pd.DataFrame()
+    anomaly_statuses = {"Warning", "Down", "Error"}
+    anomaly_frame = dataframe[dataframe["status"].isin(anomaly_statuses)].copy()
+    if anomaly_frame.empty:
+        return anomaly_frame
+    return anomaly_frame.sort_values("checked_at", ascending=False).head(top_n)
+
+
+def _format_metric_numeric(value: float | int | None, unit: str | None = None) -> str:
+    if value is None or pd.isna(value):
+        return "-"
+    suffix = f" {unit}" if unit else ""
+    return f"{float(value):.2f}{suffix}"
+
+
+def _trend_direction_text(delta_value: float | None) -> str:
+    if delta_value is None or pd.isna(delta_value):
+        return "Stabil (data awal)"
+    if abs(float(delta_value)) < 1e-9:
+        return "Stabil (0)"
+    direction = "Naik" if float(delta_value) > 0 else "Turun"
+    return f"{direction} {abs(float(delta_value)):.2f}"
+
+
+def _metric_kpi_summary(metric_frame: pd.DataFrame) -> dict[str, object]:
+    if metric_frame.empty:
+        return {}
+    ordered = metric_frame.sort_values("checked_at").copy()
+    latest_row = ordered.iloc[-1]
+    latest_value_numeric = pd.to_numeric(latest_row.get("metric_value_numeric"), errors="coerce")
+    previous_value = (
+        float(ordered["metric_value_numeric"].iloc[-2])
+        if len(ordered) > 1 and pd.notna(ordered["metric_value_numeric"].iloc[-2])
+        else None
+    )
+    delta_value = (
+        float(latest_value_numeric) - previous_value
+        if pd.notna(latest_value_numeric) and previous_value is not None
+        else None
+    )
+    numeric_series = pd.to_numeric(ordered["metric_value_numeric"], errors="coerce")
+    unit = latest_row.get("unit")
+    return {
+        "metric_label": _friendly_metric_name(str(latest_row.get("metric_name") or "")),
+        "device_name": str(latest_row.get("device_name") or "-"),
+        "latest_display": _format_metric_value(latest_row),
+        "latest_numeric": float(latest_value_numeric) if pd.notna(latest_value_numeric) else None,
+        "avg": float(numeric_series.mean()) if numeric_series.notna().any() else None,
+        "min": float(numeric_series.min()) if numeric_series.notna().any() else None,
+        "max": float(numeric_series.max()) if numeric_series.notna().any() else None,
+        "count": int(len(ordered)),
+        "status": _status_label_for_display(latest_row.get("status")),
+        "delta": delta_value,
+        "unit": str(unit) if unit else None,
+    }
+
+
+def _raw_history_view(raw_history_frame: pd.DataFrame, *, metric_selected: bool) -> pd.DataFrame:
+    if raw_history_frame.empty:
+        return pd.DataFrame(columns=["Dicek (WIB)", "Nilai", "Status", "Device", "Metrik"])
+    if not metric_selected:
+        return raw_history_frame[
+            ["checked_at_wib", "device_name", "metric_label", "display_value", "status"]
+        ].rename(
+            columns={
+                "checked_at_wib": "Dicek (WIB)",
+                "device_name": "Device",
+                "metric_label": "Metrik",
+                "display_value": "Nilai",
+                "status": "Status",
+            }
+        )
+
+    enriched = raw_history_frame.sort_values("checked_at").copy()
+    enriched["numeric_value"] = pd.to_numeric(enriched["metric_value_numeric"], errors="coerce")
+    enriched["delta_numeric"] = enriched["numeric_value"].diff()
+    enriched["Nilai Numerik"] = enriched.apply(
+        lambda row: _format_metric_numeric(row.get("numeric_value"), row.get("unit")),
+        axis=1,
+    )
+    enriched["Perubahan"] = enriched["delta_numeric"].map(
+        lambda value: "-" if pd.isna(value) else f"{value:+.2f}"
+    )
+    enriched["Catatan"] = "-"
+    numeric_series = enriched["numeric_value"]
+    if numeric_series.notna().any():
+        max_value = float(numeric_series.max())
+        min_value = float(numeric_series.min())
+        enriched.loc[numeric_series.eq(max_value), "Catatan"] = "Puncak window"
+        enriched.loc[numeric_series.eq(min_value), "Catatan"] = "Terendah window"
+    enriched = enriched.sort_values("checked_at", ascending=False)
+    return enriched[
+        ["checked_at_wib", "display_value", "Nilai Numerik", "Perubahan", "status", "device_name", "metric_label", "Catatan"]
+    ].rename(
+        columns={
+            "checked_at_wib": "Dicek (WIB)",
+            "display_value": "Nilai",
+            "status": "Status",
+            "device_name": "Device",
+            "metric_label": "Metrik",
+        }
+    )
+
+
+def _status_label_for_display(status_value: object) -> str:
+    normalized = str(status_value or "").strip().lower()
+    if normalized in {"down", "error"}:
+        return f"Tinggi | {normalize_status_label(normalized)}"
+    if normalized == "warning":
+        return f"Sedang | {normalize_status_label(normalized)}"
+    if normalized in {"up", "ok"}:
+        return f"Normal | {normalize_status_label(normalized)}"
+    return f"Info | {normalize_status_label(normalized)}"
+
+
+def _non_numeric_metric_timeline(metric_frame: pd.DataFrame) -> pd.DataFrame:
+    if metric_frame.empty:
+        return pd.DataFrame(columns=["Dicek (WIB)", "Nilai", "Status", "Device", "Metrik"])
+    ordered = metric_frame.sort_values("checked_at", ascending=False).copy()
+    ordered["status_display"] = ordered["status"].map(_status_label_for_display)
+    return ordered[
+        ["checked_at_wib", "display_value", "status_display", "device_name", "metric_label"]
+    ].rename(
+        columns={
+            "checked_at_wib": "Dicek (WIB)",
+            "display_value": "Nilai",
+            "status_display": "Status",
+            "device_name": "Device",
+            "metric_label": "Metrik",
+        }
+    )
 
 
 def _latest_metric_snapshot_map(dataframe: pd.DataFrame) -> dict[str, pd.Series]:
@@ -1069,7 +1276,7 @@ def _render_history_body() -> None:
                 ("Terakhir Diperbarui", rendered_at_label()),
                 ("Device", selected_device),
                 ("Rentang", f"{checked_from_date} s/d {checked_to_date}"),
-                ("Window Chart", chart_window_label),
+                ("Jendela Grafik", chart_window_label),
                 ("Total Data Sesuai", int(history_meta.get("total", 0) or 0)),
             ]
         )
@@ -1091,17 +1298,37 @@ def _render_history_body() -> None:
     latest_per_series["uptime"] = uptime_values.map(
         lambda value: _format_duration(pd.Timedelta(seconds=float(value))) if value not in {"", "-"} else "-"
     )
+    metric_insight_snapshot = latest_per_series
+    if selected_metric != "All Metrics":
+        metric_insight_snapshot = latest_per_series[
+            latest_per_series["metric_name"].astype(str) == str(selected_metric)
+        ].copy()
+    status_counts = _status_counts_frame(
+        latest_snapshot_status_summary if selected_metric == "All Metrics" else {},
+        metric_insight_snapshot,
+    )
+    health_score = _health_score_percent(status_counts)
+    anomaly_count = (
+        int(status_counts[status_counts["status"].isin(["Warning", "Down", "Error"])]["Jumlah"].sum())
+        if not status_counts.empty
+        else 0
+    )
 
     with summary_container:
-        summary_col1, summary_col2, summary_col3 = st.columns(3)
-        _render_stat_card(summary_col1, "Baris Tertampil", int(len(dataframe)))
-        _render_stat_card(summary_col2, "Check Terakhir", format_wib_timestamp(latest_timestamp), compact=True)
-        _render_stat_card(summary_col3, "Total Device", int(len(devices)))
+        st.markdown("### Ringkasan Eksekutif")
+        st.caption("Ringkasan cepat untuk melihat kondisi keseluruhan sebelum masuk ke investigasi detail.")
+        summary_col1, summary_col2, summary_col3, summary_col4, summary_col5 = st.columns(5)
+        _render_stat_card(summary_col1, "Total Data", int(len(dataframe)))
+        _render_stat_card(summary_col2, "Device Terpantau", int(dataframe["device_name"].nunique()))
+        _render_stat_card(summary_col3, "Metrik Aktif", int(dataframe["metric_name"].nunique()))
+        _render_stat_card(summary_col4, "Anomali Aktif", anomaly_count)
+        _render_stat_card(summary_col5, "Skor Kesehatan", f"{health_score}%")
+        st.caption(f"Pengecekan terakhir pada {format_wib_timestamp(latest_timestamp)} WIB.")
 
     with snapshot_container:
         st.markdown("### Snapshot Terbaru")
         st.caption(
-            f"Menampilkan {len(latest_per_series)} dari total {snapshot_meta.get('total', len(latest_per_series))} snapshot terbaru."
+            f"Menampilkan {len(latest_per_series)} dari total {snapshot_meta.get('total', len(latest_per_series))} metrik terakhir."
         )
         snapshot_view = latest_per_series[
             ["device_name", "metric_label", "display_value", "uptime", "status", "checked_at_wib"]
@@ -1115,6 +1342,7 @@ def _render_history_body() -> None:
                 "checked_at_wib": "Dicek (WIB)",
             }
         )
+        snapshot_view["Status"] = snapshot_view["Status"].map(_status_label_for_display)
         st.dataframe(
             snapshot_view,
             width="stretch",
@@ -1131,41 +1359,125 @@ def _render_history_body() -> None:
         _snapshot_pagination_controls(int(snapshot_meta.get("total", len(latest_per_series))))
 
     with status_container:
-        st.markdown("### Ringkasan Status")
-        status_counts = (
-            pd.DataFrame(
-                [{"status": normalize_status_label(status), "Jumlah": count} for status, count in latest_snapshot_status_summary.items()]
-            ).sort_values(["Jumlah", "status"], ascending=[False, True])
-            if latest_snapshot_status_summary
-            else pd.DataFrame(columns=["status", "Jumlah"])
-        )
-        status_left, status_right = st.columns([1, 2])
-        if not status_counts.empty:
-            status_counts["priority"] = status_counts["status"].map(status_priority)
-            status_counts = status_counts.sort_values(["priority", "Jumlah", "status"], ascending=[True, False, True])
-        status_left.dataframe(
-            status_counts[["status", "Jumlah"]] if not status_counts.empty else status_counts,
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "status": st.column_config.TextColumn("Status", width="small"),
-                "Jumlah": st.column_config.NumberColumn("Jumlah", width="small", format="%d"),
-            },
-        )
+        st.markdown("### Insight Analisis")
+        insight_base_frame = dataframe.copy()
+        if selected_metric != "All Metrics":
+            insight_base_frame = insight_base_frame[
+                insight_base_frame["metric_name"].astype(str) == str(selected_metric)
+            ].copy()
+            st.caption(f"Insight difokuskan untuk metrik `{_friendly_metric_name(selected_metric)}`.")
+        insight_col1, insight_col2 = st.columns([2, 1])
         if status_counts.empty:
-            status_right.info("Belum ada status device untuk diringkas pada rentang ini.")
+            insight_col1.info("Belum ada status device untuk diringkas pada rentang ini.")
         else:
             status_chart = (
                 alt.Chart(status_counts)
-                .mark_bar()
+                .mark_arc(innerRadius=55)
                 .encode(
-                    x=alt.X("Jumlah:Q", title="Jumlah"),
-                    y=alt.Y("status:N", sort="-x", title="Status"),
-                    tooltip=[alt.Tooltip("status:N", title="Status"), alt.Tooltip("Jumlah:Q", title="Jumlah")],
+                    theta=alt.Theta("Jumlah:Q", title="Jumlah"),
+                    color=alt.Color("status:N", title="Status", scale=_status_color_scale()),
+                    tooltip=[
+                        alt.Tooltip("status:N", title="Status"),
+                        alt.Tooltip("Jumlah:Q", title="Jumlah"),
+                    ],
+                    order=alt.Order("priority:Q", sort="ascending"),
                 )
                 .properties(height=260)
             )
-            status_right.altair_chart(status_chart, width="stretch")
+            insight_col1.altair_chart(status_chart, width="stretch")
+
+        with insight_col2:
+            if not status_counts.empty:
+                status_view = status_counts[["status", "Jumlah"]].copy()
+                status_view["Status"] = status_view["status"].map(_status_label_for_display)
+                status_view = status_view[["Status", "Jumlah"]]
+            else:
+                status_view = pd.DataFrame(columns=["Status", "Jumlah"])
+            st.dataframe(
+                status_view,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Status": st.column_config.TextColumn("Status", width="small"),
+                    "Jumlah": st.column_config.NumberColumn("Jumlah", width="small", format="%d"),
+                },
+            )
+
+        top_device_frame = _entity_volume_frame(insight_base_frame, "device_name", "Device", top_n=6)
+        top_col1, top_col2 = st.columns(2)
+        top_col1.markdown("#### Device Paling Aktif")
+        top_col1.dataframe(
+            top_device_frame,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Device": st.column_config.TextColumn("Device", width="medium"),
+                "Jumlah": st.column_config.NumberColumn("Jumlah", width="small", format="%d"),
+            },
+        )
+        if selected_metric != "All Metrics":
+            top_status_frame = (
+                insight_base_frame["status"]
+                .map(_status_label_for_display)
+                .value_counts()
+                .head(6)
+                .rename_axis("Status")
+                .reset_index(name="Jumlah")
+                if not insight_base_frame.empty
+                else pd.DataFrame(columns=["Status", "Jumlah"])
+            )
+            top_col2.markdown("#### Status Terbanyak")
+            top_col2.dataframe(
+                top_status_frame,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Status": st.column_config.TextColumn("Status", width="medium"),
+                    "Jumlah": st.column_config.NumberColumn("Jumlah", width="small", format="%d"),
+                },
+            )
+        else:
+            top_metric_frame = _entity_volume_frame(insight_base_frame, "metric_label", "Metrik", top_n=6)
+            top_col2.markdown("#### Metrik Paling Sering Muncul")
+            top_col2.dataframe(
+                top_metric_frame,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Metrik": st.column_config.TextColumn("Metrik", width="medium"),
+                    "Jumlah": st.column_config.NumberColumn("Jumlah", width="small", format="%d"),
+                },
+            )
+
+        anomaly_frame = _recent_anomaly_frame(insight_base_frame)
+        st.markdown("#### Anomali Terbaru")
+        if anomaly_frame.empty:
+            st.info("Tidak ada status Warning/Down/Error pada rentang data ini.")
+        else:
+            anomaly_view = anomaly_frame[
+                ["checked_at_wib", "device_name", "metric_label", "display_value", "status"]
+            ].rename(
+                columns={
+                    "checked_at_wib": "Dicek (WIB)",
+                    "device_name": "Device",
+                    "metric_label": "Metrik",
+                    "display_value": "Nilai",
+                    "status": "Status",
+                }
+            )
+            anomaly_view["Status"] = anomaly_view["Status"].map(_status_label_for_display)
+            st.dataframe(
+                anomaly_view,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Dicek (WIB)": st.column_config.TextColumn("Dicek (WIB)", width="medium"),
+                    "Device": st.column_config.TextColumn("Device", width="medium"),
+                    "Metrik": st.column_config.TextColumn("Metrik", width="medium"),
+                    "Nilai": st.column_config.TextColumn("Nilai", width="small"),
+                    "Status": st.column_config.TextColumn("Status", width="small"),
+                },
+            )
 
     if selected_is_mikrotik:
         selected_device_snapshot_payload = history_context.get("selected_device_snapshot", {"items": [], "meta": {}})
@@ -1195,11 +1507,6 @@ def _render_history_body() -> None:
         st.info("Pilih satu device untuk menampilkan grafik tren.")
         return
 
-    numeric_frame = dataframe.dropna(subset=["metric_value_numeric"]).copy()
-    if numeric_frame.empty:
-        st.info("Tidak ada metrik numerik pada filter ini. Pilih metrik lain atau perluas rentang waktu.")
-        return
-
     device_history_frame = _prepare_history_frame_cached(full_device_history, sort_desc=False)
     if device_history_frame.empty:
         st.info("Belum ada history lengkap untuk device ini pada rentang waktu terpilih.")
@@ -1221,6 +1528,12 @@ def _render_history_body() -> None:
         metric_names_to_render = [
             metric_name for metric_name in metric_names_to_render if not _is_dynamic_mikrotik_metric(metric_name)
         ]
+    if selected_metric != "All Metrics":
+        selected_metric_frame = device_history_frame[
+            device_history_frame["metric_name"].astype(str) == str(selected_metric)
+        ].copy()
+    else:
+        selected_metric_frame = pd.DataFrame()
     rendered_metric_frames: list[pd.DataFrame] = []
     metric_frame_by_name = {
         str(metric_name): metric_frame
@@ -1236,8 +1549,57 @@ def _render_history_body() -> None:
         rendered_metric_frames.append(metric_series_frame)
 
     if not rendered_metric_frames:
+        if selected_metric != "All Metrics" and not selected_metric_frame.empty:
+            st.info("Metrik ini tidak punya nilai numerik. Menampilkan timeline status dan nilai terbaru.")
+            st.markdown("#### Timeline Nilai Non-Numerik")
+            non_numeric_timeline = _non_numeric_metric_timeline(selected_metric_frame)
+            st.dataframe(
+                non_numeric_timeline,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Dicek (WIB)": st.column_config.TextColumn("Dicek (WIB)", width="medium"),
+                    "Nilai": st.column_config.TextColumn("Nilai", width="medium"),
+                    "Status": st.column_config.TextColumn("Status", width="small"),
+                    "Device": st.column_config.TextColumn("Device", width="medium"),
+                    "Metrik": st.column_config.TextColumn("Metrik", width="medium"),
+                },
+            )
+            return
         st.info("Belum ada data numerik untuk kombinasi device dan metrik ini.")
         return
+
+    if selected_metric != "All Metrics" and rendered_metric_frames:
+        selected_metric_summary = _metric_kpi_summary(rendered_metric_frames[0])
+        if selected_metric_summary:
+            st.markdown("#### Ringkasan Metrik Terpilih")
+            st.caption(
+                f"{selected_metric_summary['metric_label']} pada {selected_metric_summary['device_name']} - "
+                f"{selected_metric_summary['count']} sampel pada rentang terpilih."
+            )
+            selected_col1, selected_col2, selected_col3, selected_col4, selected_col5, selected_col6 = st.columns(6)
+            _render_stat_card(selected_col1, "Nilai Terakhir", str(selected_metric_summary["latest_display"]))
+            _render_stat_card(
+                selected_col2,
+                "Arah Tren",
+                _trend_direction_text(selected_metric_summary.get("delta")),
+            )
+            _render_stat_card(
+                selected_col3,
+                "Rata-rata",
+                _format_metric_numeric(selected_metric_summary.get("avg"), selected_metric_summary.get("unit")),
+            )
+            _render_stat_card(
+                selected_col4,
+                "Minimum",
+                _format_metric_numeric(selected_metric_summary.get("min"), selected_metric_summary.get("unit")),
+            )
+            _render_stat_card(
+                selected_col5,
+                "Maksimum",
+                _format_metric_numeric(selected_metric_summary.get("max"), selected_metric_summary.get("unit")),
+            )
+            _render_stat_card(selected_col6, "Status Terakhir", str(selected_metric_summary["status"]))
 
     chart_rows = [rendered_metric_frames[i:i + 1] for i in range(0, len(rendered_metric_frames), 1)]
     for row_frames in chart_rows:
@@ -1249,24 +1611,16 @@ def _render_history_body() -> None:
                 target_column=chart_columns[col_index],
             )
 
-    st.markdown("### Raw History")
+    st.markdown("### Riwayat Detail")
     if selected_device_id is not None and selected_device_type == "printer":
         raw_history_frame = device_history_frame_desc if not device_history_frame.empty else dataframe_desc
     elif selected_is_mikrotik and selected_metric == "All Metrics":
         raw_history_frame = dataframe_desc
     else:
         raw_history_frame = pd.concat(rendered_metric_frames, ignore_index=True).sort_values("checked_at", ascending=False)
-    raw_view = raw_history_frame[
-        ["checked_at_wib", "device_name", "metric_label", "display_value", "status"]
-    ].rename(
-        columns={
-            "checked_at_wib": "Dicek (WIB)",
-            "device_name": "Device",
-            "metric_label": "Metrik",
-            "display_value": "Nilai",
-            "status": "Status",
-        }
-    )
+    raw_view = _raw_history_view(raw_history_frame, metric_selected=selected_metric != "All Metrics")
+    if "Status" in raw_view.columns:
+        raw_view["Status"] = raw_view["Status"].map(_status_label_for_display)
     paged_raw_view = _paginate_frame(raw_view, key_prefix="history_raw", page_size=10)
     st.dataframe(
         paged_raw_view,
@@ -1274,10 +1628,13 @@ def _render_history_body() -> None:
         hide_index=True,
         column_config={
             "Dicek (WIB)": st.column_config.TextColumn("Dicek (WIB)", width="medium"),
+            "Nilai": st.column_config.TextColumn("Nilai", width="small"),
+            "Nilai Numerik": st.column_config.TextColumn("Nilai Numerik", width="small"),
+            "Perubahan": st.column_config.TextColumn("Perubahan", width="small"),
+            "Status": st.column_config.TextColumn("Status", width="small"),
             "Device": st.column_config.TextColumn("Device", width="medium"),
             "Metrik": st.column_config.TextColumn("Metrik", width="medium"),
-            "Nilai": st.column_config.TextColumn("Nilai", width="small"),
-            "Status": st.column_config.TextColumn("Status", width="small"),
+            "Catatan": st.column_config.TextColumn("Catatan", width="small"),
         },
     )
 
