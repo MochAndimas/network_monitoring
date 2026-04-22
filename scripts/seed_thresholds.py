@@ -1,3 +1,5 @@
+"""Provide operator and maintenance scripts for the network monitoring project."""
+
 SEED_THRESHOLDS = {
     "cpu_warning": 90,
     "ram_warning": 90,
@@ -20,6 +22,11 @@ if __name__ == "__main__":
     from backend.app.repositories.threshold_repository import ThresholdRepository
 
     async def main() -> None:
+        """Handle main for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         await init_db()
         async with SessionLocal() as db:
             repository = ThresholdRepository(db)

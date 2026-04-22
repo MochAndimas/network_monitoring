@@ -1,3 +1,5 @@
+"""Provide shared Streamlit dashboard UI and API helpers for the network monitoring project."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -5,7 +7,6 @@ import os
 import uuid
 from zoneinfo import ZoneInfo
 
-import httpx
 import streamlit as st
 
 from .auth_bridge import auth_bridge
@@ -17,6 +18,11 @@ WIB = ZoneInfo("Asia/Jakarta")
 
 
 def _initialize_auth_state() -> None:
+    """Handle the internal initialize auth state helper logic for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     defaults = {
         "auth_token": None,
         "auth_role": None,
@@ -34,6 +40,11 @@ def _initialize_auth_state() -> None:
 
 
 def _hide_sidebar_navigation() -> None:
+    """Handle the internal hide sidebar navigation helper logic for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     st.markdown(
         """
         <style>
@@ -51,6 +62,14 @@ def _hide_sidebar_navigation() -> None:
 
 
 def _clear_auth_state(*, restore_completed: bool = False) -> None:
+    """Handle the internal clear auth state helper logic for shared Streamlit dashboard UI and API helpers.
+
+    Args:
+        restore_completed: restore completed keyword value used by this routine (type `bool`, optional).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     for key in (
         "auth_token",
         "auth_role",
@@ -67,6 +86,14 @@ def _clear_auth_state(*, restore_completed: bool = False) -> None:
 
 
 def _apply_auth_payload(payload: dict) -> None:
+    """Handle the internal apply auth payload helper logic for shared Streamlit dashboard UI and API helpers.
+
+    Args:
+        payload: payload value used by this routine (type `dict`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     user = payload.get("user", {})
     st.session_state["auth_token"] = payload.get("access_token")
     st.session_state["auth_role"] = user.get("role")
@@ -77,22 +104,25 @@ def _apply_auth_payload(payload: dict) -> None:
     st.session_state["auth_restore_completed"] = True
     st.session_state["auth_login_error"] = None
 
-
-def _login_request(username: str, password: str, remember: bool) -> dict:
-    with httpx.Client(base_url=API_BASE_URL, timeout=httpx.Timeout(10.0)) as client:
-        response = client.post(
-            "/auth/login",
-            json={"username": username, "password": password, "remember": remember},
-        )
-        response.raise_for_status()
-        return response.json()
-
-
 def _resolve_bridge_host() -> str:
+    """Resolve bridge host for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        `str` result produced by the routine.
+    """
     return PUBLIC_API_BASE_URL or API_BASE_URL
 
 
 def start_auth_bridge_request(action: str, payload: dict | None = None) -> str:
+    """Handle start auth bridge request for shared Streamlit dashboard UI and API helpers.
+
+    Args:
+        action: action value used by this routine (type `str`).
+        payload: payload value used by this routine (type `dict | None`, optional).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     request_id = str(uuid.uuid4())
     st.session_state["auth_bridge_request"] = {
         "id": request_id,
@@ -103,11 +133,27 @@ def start_auth_bridge_request(action: str, payload: dict | None = None) -> str:
 
 
 def _bridge_component_key(action: str) -> str:
+    """Handle the internal bridge component key helper logic for shared Streamlit dashboard UI and API helpers.
+
+    Args:
+        action: action value used by this routine (type `str`).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     normalized = str(action or "").strip().lower() or "unknown"
     return f"auth_bridge_{normalized}"
 
 
 def consume_auth_bridge_response(*, component_key: str) -> dict | None:
+    """Handle consume auth bridge response for shared Streamlit dashboard UI and API helpers.
+
+    Args:
+        component_key: component key keyword value used by this routine (type `str`).
+
+    Returns:
+        `dict | None` result produced by the routine.
+    """
     pending_request = st.session_state.get("auth_bridge_request")
     if not isinstance(pending_request, dict):
         return None
@@ -127,6 +173,11 @@ def consume_auth_bridge_response(*, component_key: str) -> dict | None:
 
 
 def _restore_not_needed() -> bool:
+    """Restore not needed for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        `bool` result produced by the routine.
+    """
     if st.session_state.get("auth_restore_completed") is True and not st.session_state.get("dashboard_authenticated"):
         return True
     if not st.session_state.get("dashboard_authenticated"):
@@ -142,6 +193,11 @@ def _restore_not_needed() -> bool:
 
 
 def _parsed_auth_expiry() -> datetime | None:
+    """Handle the internal parsed auth expiry helper logic for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        `datetime | None` result produced by the routine.
+    """
     raw_value = st.session_state.get("auth_expires_at")
     if not raw_value:
         return None
@@ -155,6 +211,14 @@ def _parsed_auth_expiry() -> datetime | None:
 
 
 def _login_error_message(bridge_response: dict) -> str:
+    """Authenticate error message for shared Streamlit dashboard UI and API helpers.
+
+    Args:
+        bridge_response: bridge response value used by this routine (type `dict`).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     status = int(bridge_response.get("status", 0) or 0)
     error = str(bridge_response.get("error") or "").strip()
     request_id = str(bridge_response.get("request_id") or "").strip()
@@ -176,28 +240,12 @@ def _login_error_message(bridge_response: dict) -> str:
         return f"Login gagal: {error}.{request_suffix}".rstrip()
     return f"Login gagal: HTTP {status}.{request_suffix}".rstrip()
 
-
-def _login_error_message_from_exception(exc: httpx.HTTPError, *, request_id: str = "") -> str:
-    response = getattr(exc, "response", None)
-    if response is None:
-        return "Backend auth tidak bisa dijangkau. Cek backend/container API dan `DASHBOARD_PUBLIC_API_URL`."
-    error_detail = response.text
-    try:
-        payload = response.json()
-    except ValueError:
-        payload = {}
-    if isinstance(payload, dict):
-        error_detail = str(payload.get("detail") or payload.get("message") or error_detail)
-    return _login_error_message(
-        {
-            "request_id": request_id,
-            "status": response.status_code,
-            "error": error_detail,
-        }
-    )
-
-
 def _restore_login_state() -> bool:
+    """Restore login state for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        `bool` result produced by the routine.
+    """
     if _restore_not_needed():
         return True
 
@@ -221,6 +269,11 @@ def _restore_login_state() -> bool:
 
 
 def _consume_logout_request() -> bool:
+    """Handle the internal consume logout request helper logic for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        `bool` result produced by the routine.
+    """
     pending_request = st.session_state.get("auth_bridge_request")
     if not isinstance(pending_request, dict) or pending_request.get("action") != "logout":
         return False
@@ -236,6 +289,11 @@ def _consume_logout_request() -> bool:
 
 
 def require_dashboard_login() -> None:
+    """Handle require dashboard login for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     _initialize_auth_state()
     _consume_logout_request()
 
@@ -308,14 +366,29 @@ def require_dashboard_login() -> None:
 
 
 def current_role() -> str | None:
+    """Handle current role for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        `str | None` result produced by the routine.
+    """
     return st.session_state.get("auth_role")
 
 
 def is_admin() -> bool:
+    """Handle is admin for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        `bool` result produced by the routine.
+    """
     return current_role() == "admin"
 
 
 def session_expiry_label() -> str:
+    """Handle session expiry label for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        `str` result produced by the routine.
+    """
     raw_value = st.session_state.get("auth_expires_at")
     if not raw_value:
         return "-"

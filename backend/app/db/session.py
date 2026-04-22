@@ -1,3 +1,5 @@
+"""Provide database engine, session, and initialization helpers for the network monitoring project."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -9,6 +11,14 @@ from ..core.config import settings
 
 
 def _async_database_url(database_url: str) -> str:
+    """Handle the internal async database url helper logic for database engine, session, and initialization helpers.
+
+    Args:
+        database_url: database url value used by this routine (type `str`).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     if database_url.startswith("sqlite:///") and not database_url.startswith("sqlite+aiosqlite:///"):
         return database_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
     if database_url.startswith("mysql+pymysql://"):
@@ -19,6 +29,14 @@ def _async_database_url(database_url: str) -> str:
 
 
 def _engine_options(database_url: str) -> dict:
+    """Handle the internal engine options helper logic for database engine, session, and initialization helpers.
+
+    Args:
+        database_url: database url value used by this routine (type `str`).
+
+    Returns:
+        `dict` result produced by the routine.
+    """
     options = {
         "future": True,
         "pool_pre_ping": True,
@@ -43,11 +61,21 @@ SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, autoflush=Fa
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
+    """Return db for database engine, session, and initialization helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        `AsyncIterator[AsyncSession]` result produced by the routine.
+    """
     async with SessionLocal() as db:
         yield db
 
 
 async def check_database_connection() -> bool:
+    """Check database connection for database engine, session, and initialization helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        `bool` result produced by the routine.
+    """
     try:
         async with engine.connect() as connection:
             await connection.execute(text("SELECT 1"))

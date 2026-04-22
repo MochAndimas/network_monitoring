@@ -18,6 +18,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Apply the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     bind = op.get_bind()
     dialect_name = bind.dialect.name
     inspector = inspect(bind)
@@ -121,6 +126,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Revert the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     bind = op.get_bind()
     inspector = inspect(bind)
     if inspector.has_table("latest_metrics"):

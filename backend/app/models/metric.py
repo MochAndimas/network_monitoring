@@ -1,3 +1,5 @@
+"""Provide SQLAlchemy ORM models for the network monitoring project."""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Index, String
@@ -8,6 +10,10 @@ from ..core.time import now
 
 
 class Metric(Base):
+    """Represent metric behavior and data for SQLAlchemy ORM models.
+
+    Inherits from `Base` to match the surrounding framework or persistence model.
+    """
     __tablename__ = "metrics"
     __table_args__ = (
         Index("ix_metrics_history_lookup", "device_id", "metric_name", "checked_at"),

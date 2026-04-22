@@ -1,3 +1,5 @@
+"""Provide SQLAlchemy ORM models for the network monitoring project."""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Index, String, UniqueConstraint
@@ -7,6 +9,10 @@ from ..db.base import Base
 
 
 class LatestMetric(Base):
+    """Represent latest metric behavior and data for SQLAlchemy ORM models.
+
+    Inherits from `Base` to match the surrounding framework or persistence model.
+    """
     __tablename__ = "latest_metrics"
     __table_args__ = (
         UniqueConstraint("device_id", "metric_name", name="uq_latest_metrics_device_metric"),

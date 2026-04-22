@@ -17,6 +17,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Apply the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.add_column("users", sa.Column("password_changed_at", sa.DateTime(), nullable=True))
     op.add_column("users", sa.Column("disabled_at", sa.DateTime(), nullable=True))
     op.add_column("users", sa.Column("disabled_reason", sa.String(length=255), nullable=True))
@@ -46,6 +51,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Revert the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.drop_index(op.f("ix_admin_audit_logs_target_type"), table_name="admin_audit_logs")
     op.drop_index(op.f("ix_admin_audit_logs_target_id"), table_name="admin_audit_logs")
     op.drop_index(op.f("ix_admin_audit_logs_id"), table_name="admin_audit_logs")

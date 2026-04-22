@@ -17,6 +17,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Apply the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.execute(
         sa.text(
             "UPDATE metrics SET metric_name = 'ping' WHERE metric_name = 'reachability'"
@@ -25,6 +30,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Revert the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.execute(
         sa.text(
             "UPDATE metrics SET metric_name = 'reachability' WHERE metric_name = 'ping'"

@@ -1,7 +1,14 @@
+"""Provide shared Streamlit dashboard UI and API helpers for the network monitoring project."""
+
 import streamlit.components.v1 as components
 
 
 def collapse_sidebar_on_page_load() -> None:
+    """Handle collapse sidebar on page load for shared Streamlit dashboard UI and API helpers.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     components.html(
         """
         <script>

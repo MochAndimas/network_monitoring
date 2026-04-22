@@ -1,3 +1,5 @@
+"""Provide SQLAlchemy ORM models for the network monitoring project."""
+
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String
@@ -8,6 +10,10 @@ from ..core.time import utcnow
 
 
 class User(Base):
+    """Represent user behavior and data for SQLAlchemy ORM models.
+
+    Inherits from `Base` to match the surrounding framework or persistence model.
+    """
     __tablename__ = "users"
     __table_args__ = (
         Index("ix_users_username_active", "username", "is_active"),
@@ -29,6 +35,10 @@ class User(Base):
 
 
 class AuthSession(Base):
+    """Represent auth session behavior and data for SQLAlchemy ORM models.
+
+    Inherits from `Base` to match the surrounding framework or persistence model.
+    """
     __tablename__ = "auth_sessions"
     __table_args__ = (
         Index("ix_auth_sessions_user_active", "user_id", "expires_at", "revoked_at"),
@@ -49,6 +59,10 @@ class AuthSession(Base):
 
 
 class AuthLoginAttempt(Base):
+    """Represent auth login attempt behavior and data for SQLAlchemy ORM models.
+
+    Inherits from `Base` to match the surrounding framework or persistence model.
+    """
     __tablename__ = "auth_login_attempts"
     __table_args__ = (
         Index("ix_auth_login_attempts_lookup", "username", "client_ip", "attempted_at"),

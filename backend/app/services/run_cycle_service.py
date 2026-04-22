@@ -1,3 +1,5 @@
+"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+
 import asyncio
 import logging
 from time import perf_counter
@@ -21,6 +23,14 @@ MonitorRunner = Callable[[AsyncSession], Awaitable[list[dict]]]
 
 
 async def run_monitoring_cycle(db: AsyncSession) -> dict:
+    """Run monitoring cycle for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+
+    Returns:
+        `dict` result produced by the routine.
+    """
     started_at = perf_counter()
     metrics = await collect_monitoring_metrics()
 
@@ -47,11 +57,24 @@ async def run_monitoring_cycle(db: AsyncSession) -> dict:
 
 
 async def collect_monitoring_metrics() -> list[dict]:
+    """Collect monitoring metrics for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        `list[dict]` result produced by the routine.
+    """
     runner_results = await asyncio.gather(*[_collect_runner_metrics(runner) for runner in _monitor_runners()])
     return [metric for metrics in runner_results for metric in metrics]
 
 
 async def _collect_runner_metrics(runner: MonitorRunner) -> list[dict]:
+    """Collect runner metrics for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        runner: runner value used by this routine (type `MonitorRunner`).
+
+    Returns:
+        `list[dict]` result produced by the routine.
+    """
     started_at = perf_counter()
     async with SessionLocal() as db:
         metrics = await runner(db)
@@ -65,6 +88,11 @@ async def _collect_runner_metrics(runner: MonitorRunner) -> list[dict]:
 
 
 def _monitor_runners() -> tuple[MonitorRunner, ...]:
+    """Handle the internal monitor runners helper logic for business services that coordinate repositories and domain workflows.
+
+    Returns:
+        `tuple[MonitorRunner, ...]` result produced by the routine.
+    """
     return (
         run_internet_checks,
         run_device_checks,

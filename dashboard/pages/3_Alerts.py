@@ -1,3 +1,5 @@
+"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -34,6 +36,11 @@ auto_refresh, interval_seconds = refresh_controls("alerts", default_enabled=True
 
 
 def _render_alerts_body() -> None:
+    """Render alerts body for Streamlit dashboard page rendering.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     alerts = get_json("/alerts/active", [])
     render_meta_row(
         [

@@ -1,3 +1,5 @@
+"""Provide background scheduler and worker jobs for the network monitoring project."""
+
 from __future__ import annotations
 
 import asyncio
@@ -16,6 +18,14 @@ logger = logging.getLogger("network_monitoring.scheduler.worker")
 
 
 def _install_signal_handlers(stop_event: asyncio.Event) -> None:
+    """Handle the internal install signal handlers helper logic for background scheduler and worker jobs.
+
+    Args:
+        stop_event: stop event value used by this routine (type `asyncio.Event`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
@@ -26,6 +36,11 @@ def _install_signal_handlers(stop_event: asyncio.Event) -> None:
 
 
 async def run_scheduler_worker() -> None:
+    """Run scheduler worker for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     configure_logging()
     validate_auth_configuration()
     if settings.app_env.lower() != "production":
@@ -51,6 +66,11 @@ async def run_scheduler_worker() -> None:
 
 
 def main() -> None:
+    """Handle main for background scheduler and worker jobs.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     asyncio.run(run_scheduler_worker())
 
 

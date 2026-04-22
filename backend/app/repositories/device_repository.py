@@ -1,3 +1,5 @@
+"""Provide database query and persistence repositories for the network monitoring project."""
+
 from sqlalchemy import Select, and_, case, delete, func, or_, select, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,11 +14,26 @@ from ..models.metric_daily_rollup import MetricDailyRollup
 
 
 class DeviceRepository:
+    """Represent device repository behavior and data for database query and persistence repositories.
+    """
     def __init__(self, db: AsyncSession):
+        """Handle the internal init helper logic for database query and persistence repositories.
+
+        Args:
+            db: db value used by this routine (type `AsyncSession`).
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         self.db = db
 
     @staticmethod
     def _latest_ping_metrics_subquery():
+        """Handle the internal latest ping metrics subquery helper logic for database query and persistence repositories.
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         mikrotik_device_filter = or_(
             func.lower(Device.device_type) == "mikrotik",
             func.lower(Device.name).like("%mikrotik%"),
@@ -70,6 +87,14 @@ class DeviceRepository:
 
     @staticmethod
     def _search_filter(search: str | None):
+        """Handle the internal search filter helper logic for database query and persistence repositories.
+
+        Args:
+            search: search value used by this routine (type `str | None`).
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         if not search:
             return None
         search_term = f"%{search.strip()}%"
@@ -88,6 +113,18 @@ class DeviceRepository:
         latest_status: str | list[str] | tuple[str, ...] | None = None,
         search: str | None = None,
     ):
+        """Handle the internal device status query helper logic for database query and persistence repositories.
+
+        Args:
+            active_only: active only keyword value used by this routine (type `bool`, optional).
+            device_id: device id keyword value used by this routine (type `int | None`, optional).
+            device_type: device type keyword value used by this routine (type `str | None`, optional).
+            latest_status: latest status keyword value used by this routine (type `str | list[str] | tuple[str, ...] | None`, optional).
+            search: search keyword value used by this routine (type `str | None`, optional).
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
         columns = [
@@ -128,6 +165,14 @@ class DeviceRepository:
         return query, latest_ping
 
     async def list_devices(self, active_only: bool = False) -> list[Device]:
+        """Return a list of devices for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            active_only: active only value used by this routine (type `bool`, optional).
+
+        Returns:
+            `list[Device]` result produced by the routine.
+        """
         query: Select[tuple[Device]] = select(Device).order_by(Device.name.asc())
         if active_only:
             query = query.where(Device.is_active.is_(True))
@@ -141,6 +186,17 @@ class DeviceRepository:
         limit: int = 300,
         offset: int = 0,
     ) -> list[dict]:
+        """Return a list of device options for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            active_only: active only keyword value used by this routine (type `bool`, optional).
+            search: search keyword value used by this routine (type `str | None`, optional).
+            limit: limit keyword value used by this routine (type `int`, optional).
+            offset: offset keyword value used by this routine (type `int`, optional).
+
+        Returns:
+            `list[dict]` result produced by the routine.
+        """
         query = select(
             Device.id,
             Device.name,
@@ -172,6 +228,14 @@ class DeviceRepository:
         ]
 
     async def count_devices(self, active_only: bool = False) -> int:
+        """Count devices for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            active_only: active only value used by this routine (type `bool`, optional).
+
+        Returns:
+            `int` result produced by the routine.
+        """
         query = select(func.count()).select_from(Device)
         if active_only:
             query = query.where(Device.is_active.is_(True))
@@ -187,6 +251,20 @@ class DeviceRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[dict]:
+        """Return a list of device status rows for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            active_only: active only value used by this routine (type `bool`, optional).
+            device_id: device id value used by this routine (type `int | None`, optional).
+            device_type: device type value used by this routine (type `str | None`, optional).
+            latest_status: latest status value used by this routine (type `str | list[str] | tuple[str, ...] | None`, optional).
+            search: search value used by this routine (type `str | None`, optional).
+            limit: limit value used by this routine (type `int | None`, optional).
+            offset: offset value used by this routine (type `int`, optional).
+
+        Returns:
+            `list[dict]` result produced by the routine.
+        """
         query, _latest_ping = self._device_status_query(
             active_only=active_only,
             device_id=device_id,
@@ -226,6 +304,19 @@ class DeviceRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[list[dict], int]:
+        """Return a list of device status rows paged for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            active_only: active only keyword value used by this routine (type `bool`, optional).
+            device_type: device type keyword value used by this routine (type `str | None`, optional).
+            latest_status: latest status keyword value used by this routine (type `str | list[str] | tuple[str, ...] | None`, optional).
+            search: search keyword value used by this routine (type `str | None`, optional).
+            limit: limit keyword value used by this routine (type `int`, optional).
+            offset: offset keyword value used by this routine (type `int`, optional).
+
+        Returns:
+            `tuple[list[dict], int]` result produced by the routine.
+        """
         query, _latest_ping = self._device_status_query(
             active_only=active_only,
             device_type=device_type,
@@ -262,6 +353,11 @@ class DeviceRepository:
         ], total
 
     async def summarize_active_device_statuses(self) -> dict[str, dict[str, int]]:
+        """Summarize active device statuses for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Returns:
+            `dict[str, dict[str, int]]` result produced by the routine.
+        """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
         latest_status = func.coalesce(latest_ping.status, "unknown").label("latest_status")
@@ -291,6 +387,11 @@ class DeviceRepository:
         return summary
 
     async def _summarize_active_mikrotik_named_statuses(self) -> dict[str, int]:
+        """Summarize active mikrotik named statuses for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Returns:
+            `dict[str, int]` result produced by the routine.
+        """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
         latest_status = func.coalesce(latest_ping.status, "unknown").label("latest_status")
@@ -318,6 +419,14 @@ class DeviceRepository:
         return {str(status or "unknown"): int(device_count) for status, device_count in rows}
 
     async def summarize_device_status_counts(self, *, active_only: bool = False) -> dict[str, int]:
+        """Summarize device status counts for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            active_only: active only keyword value used by this routine (type `bool`, optional).
+
+        Returns:
+            `dict[str, int]` result produced by the routine.
+        """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
         latest_status = func.coalesce(latest_ping.status, "unknown").label("latest_status")
@@ -340,6 +449,14 @@ class DeviceRepository:
         return {str(status or "unknown"): int(device_count) for status, device_count in rows}
 
     async def latest_device_check_at(self, *, active_only: bool = False) -> object | None:
+        """Handle latest device check at for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            active_only: active only keyword value used by this routine (type `bool`, optional).
+
+        Returns:
+            `object | None` result produced by the routine.
+        """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
         query = (
@@ -360,6 +477,17 @@ class DeviceRepository:
         latest_status: str | list[str] | tuple[str, ...] | None = None,
         search: str | None = None,
     ) -> int:
+        """Count device status rows for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            active_only: active only keyword value used by this routine (type `bool`, optional).
+            device_type: device type keyword value used by this routine (type `str | None`, optional).
+            latest_status: latest status keyword value used by this routine (type `str | list[str] | tuple[str, ...] | None`, optional).
+            search: search keyword value used by this routine (type `str | None`, optional).
+
+        Returns:
+            `int` result produced by the routine.
+        """
         query, _latest_ping = self._device_status_query(
             active_only=active_only,
             device_type=device_type,
@@ -370,6 +498,15 @@ class DeviceRepository:
         return int(await self.db.scalar(query) or 0)
 
     async def list_by_type(self, device_type: str, active_only: bool = True) -> list[Device]:
+        """Return a list of by type for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            device_type: device type value used by this routine (type `str`).
+            active_only: active only value used by this routine (type `bool`, optional).
+
+        Returns:
+            `list[Device]` result produced by the routine.
+        """
         query: Select[tuple[Device]] = select(Device).where(Device.device_type == device_type)
         if active_only:
             query = query.where(Device.is_active.is_(True))
@@ -377,6 +514,15 @@ class DeviceRepository:
         return list((await self.db.scalars(query)).all())
 
     async def list_by_types(self, device_types: list[str], active_only: bool = True) -> list[Device]:
+        """Return a list of by types for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            device_types: device types value used by this routine (type `list[str]`).
+            active_only: active only value used by this routine (type `bool`, optional).
+
+        Returns:
+            `list[Device]` result produced by the routine.
+        """
         query: Select[tuple[Device]] = select(Device).where(Device.device_type.in_(device_types))
         if active_only:
             query = query.where(Device.is_active.is_(True))
@@ -384,13 +530,37 @@ class DeviceRepository:
         return list((await self.db.scalars(query)).all())
 
     async def get_by_id(self, device_id: int) -> Device | None:
+        """Return by id for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            device_id: device id value used by this routine (type `int`).
+
+        Returns:
+            `Device | None` result produced by the routine.
+        """
         return await self.db.get(Device, device_id)
 
     async def get_by_ip_address(self, ip_address: str) -> Device | None:
+        """Return by ip address for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            ip_address: ip address value used by this routine (type `str`).
+
+        Returns:
+            `Device | None` result produced by the routine.
+        """
         query: Select[tuple[Device]] = select(Device).where(Device.ip_address == ip_address)
         return (await self.db.scalars(query)).first()
 
     async def upsert_devices(self, payloads: list[dict]) -> list[Device]:
+        """Handle upsert devices for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            payloads: payloads value used by this routine (type `list[dict]`).
+
+        Returns:
+            `list[Device]` result produced by the routine.
+        """
         if not payloads:
             return []
 
@@ -417,6 +587,14 @@ class DeviceRepository:
         return devices
 
     async def create_device(self, payload: dict) -> Device:
+        """Create device for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            payload: payload value used by this routine (type `dict`).
+
+        Returns:
+            `Device` result produced by the routine.
+        """
         device = Device(**payload)
         self.db.add(device)
         await self.db.flush()
@@ -424,6 +602,15 @@ class DeviceRepository:
         return device
 
     async def update_device(self, device: Device, payload: dict) -> Device:
+        """Update device for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            device: device value used by this routine (type `Device`).
+            payload: payload value used by this routine (type `dict`).
+
+        Returns:
+            `Device` result produced by the routine.
+        """
         for field, value in payload.items():
             setattr(device, field, value)
         await self.db.flush()
@@ -431,6 +618,14 @@ class DeviceRepository:
         return device
 
     async def delete_device(self, device: Device) -> None:
+        """Delete device for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Args:
+            device: device value used by this routine (type `Device`).
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         device_id = device.id
         await self.db.execute(update(Alert).where(Alert.device_id == device_id).values(device_id=None))
         await self.db.execute(update(Incident).where(Incident.device_id == device_id).values(device_id=None))

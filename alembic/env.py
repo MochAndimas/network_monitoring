@@ -1,3 +1,5 @@
+"""Provide Alembic migration environment for the network monitoring project."""
+
 from __future__ import annotations
 
 from logging.config import fileConfig
@@ -19,6 +21,11 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
+    """Run migrations offline for Alembic migration environment.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(url=url, target_metadata=target_metadata, literal_binds=True, compare_type=True)
     with context.begin_transaction():
@@ -26,6 +33,11 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    """Run migrations online for Alembic migration environment.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

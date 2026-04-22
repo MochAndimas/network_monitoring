@@ -1,3 +1,5 @@
+"""Provide alert evaluation and notification workflows for the network monitoring project."""
+
 ALERT_RULES = {
     "device_down": {"severity": "critical"},
     "internet_loss": {"severity": "critical"},

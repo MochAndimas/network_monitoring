@@ -17,6 +17,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Apply the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.create_table(
         "auth_login_attempts",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -42,6 +47,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Revert the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.drop_index("ix_auth_login_attempts_cleanup", table_name="auth_login_attempts")
     op.drop_index("ix_auth_login_attempts_lookup", table_name="auth_login_attempts")
     op.drop_index("ix_auth_login_attempts_attempted_at", table_name="auth_login_attempts")

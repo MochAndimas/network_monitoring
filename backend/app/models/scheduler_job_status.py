@@ -1,3 +1,5 @@
+"""Provide SQLAlchemy ORM models for the network monitoring project."""
+
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String
@@ -8,10 +10,19 @@ from ..db.base import Base
 
 
 def _utcnow() -> datetime:
+    """Handle the internal utcnow helper logic for SQLAlchemy ORM models.
+
+    Returns:
+        `datetime` result produced by the routine.
+    """
     return now()
 
 
 class SchedulerJobStatus(Base):
+    """Represent scheduler job status behavior and data for SQLAlchemy ORM models.
+
+    Inherits from `Base` to match the surrounding framework or persistence model.
+    """
     __tablename__ = "scheduler_job_statuses"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

@@ -1,3 +1,5 @@
+"""Provide operator and maintenance scripts for the network monitoring project."""
+
 import asyncio
 
 from backend.app.db.init_db import init_db
@@ -9,6 +11,11 @@ from scripts.seed_devices import SEED_DEVICES
 
 
 async def main() -> None:
+    """Handle main for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     await init_db()
     async with SessionLocal() as db:
         devices = await DeviceRepository(db).upsert_devices(SEED_DEVICES)

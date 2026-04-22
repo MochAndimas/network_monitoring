@@ -17,12 +17,22 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Apply the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.add_column("auth_sessions", sa.Column("jwt_id", sa.String(length=36), nullable=True))
     op.alter_column("auth_sessions", "token_hash", existing_type=sa.String(length=64), nullable=True)
     op.create_index("ix_auth_sessions_jwt_id", "auth_sessions", ["jwt_id"], unique=True)
 
 
 def downgrade() -> None:
+    """Revert the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.drop_index("ix_auth_sessions_jwt_id", table_name="auth_sessions")
     op.alter_column("auth_sessions", "token_hash", existing_type=sa.String(length=64), nullable=False)
     op.drop_column("auth_sessions", "jwt_id")

@@ -1,3 +1,5 @@
+"""Provide background scheduler and worker jobs for the network monitoring project."""
+
 import logging
 from time import perf_counter
 
@@ -24,6 +26,14 @@ logger = logging.getLogger("network_monitoring.scheduler")
 
 
 def register_jobs(scheduler) -> None:
+    """Handle register jobs for background scheduler and worker jobs.
+
+    Args:
+        scheduler: scheduler value used by this routine.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     scheduler.add_job(
         run_internet_job,
         "interval",
@@ -87,32 +97,71 @@ def register_jobs(scheduler) -> None:
 
 
 async def run_internet_job() -> None:
+    """Run internet job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     await _run_scheduler_job("internet_checks", lambda db: _persist_runner(run_internet_checks, db))
 
 
 async def run_device_job() -> None:
+    """Run device job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     await _run_scheduler_job("device_checks", lambda db: _persist_runner(run_device_checks, db))
 
 
 async def run_server_job() -> None:
+    """Run server job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     await _run_scheduler_job("server_checks", lambda db: _persist_runner(run_server_checks, db))
 
 
 async def run_mikrotik_job() -> None:
+    """Run mikrotik job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     await _run_scheduler_job("mikrotik_checks", lambda db: _persist_runner(run_mikrotik_checks, db))
 
 
 async def run_alert_job() -> None:
+    """Run alert job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     await _run_scheduler_job("alert_evaluation", _run_alert_job_inner)
 
 
 async def run_cleanup_job() -> None:
+    """Run cleanup job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     await _run_scheduler_job("retention_cleanup", _run_cleanup_job_inner)
 
 
 async def _persist_runner(runner, db) -> None:
     # Metric jobs share one pipeline lock so they don't trample each other,
     # but they should queue instead of being dropped when schedules overlap.
+    """Handle the internal persist runner helper logic for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        runner: runner value used by this routine.
+        db: db value used by this routine.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     async with monitoring_pipeline_guard(wait=True):
         await persist_metrics(db, await runner(db))
         # Re-evaluate alerts immediately after fresh metrics land so alerting
@@ -121,6 +170,14 @@ async def _persist_runner(runner, db) -> None:
 
 
 async def _run_alert_job_inner(db) -> None:
+    """Run alert job inner for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     async with monitoring_pipeline_guard(wait=False) as acquired:
         if not acquired:
             logger.info("Skipping alert evaluation because another monitoring pipeline run is active")
@@ -129,6 +186,14 @@ async def _run_alert_job_inner(db) -> None:
 
 
 async def _run_cleanup_job_inner(db) -> None:
+    """Run cleanup job inner for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     async with monitoring_pipeline_guard(wait=False) as acquired:
         if not acquired:
             logger.info("Skipping retention cleanup because another monitoring pipeline run is active")
@@ -138,6 +203,15 @@ async def _run_cleanup_job_inner(db) -> None:
 
 
 async def _run_scheduler_job(job_name: str, operation) -> None:
+    """Run scheduler job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        job_name: job name value used by this routine (type `str`).
+        operation: operation value used by this routine.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     started_at = perf_counter()
     async with SessionLocal() as db:
         with job_logging_context(job_name):
@@ -156,4 +230,12 @@ async def _run_scheduler_job(job_name: str, operation) -> None:
 
 
 def _misfire_grace_time(period_seconds: int) -> int:
+    """Handle the internal misfire grace time helper logic for background scheduler and worker jobs.
+
+    Args:
+        period_seconds: period seconds value used by this routine (type `int`).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     return max(period_seconds * 2, 30)

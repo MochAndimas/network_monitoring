@@ -1,3 +1,5 @@
+"""Provide alert evaluation and notification workflows for the network monitoring project."""
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +16,14 @@ logger = logging.getLogger("network_monitoring.telegram")
 
 
 async def send_telegram_alert(message: str) -> None:
+    """Handle send telegram alert for alert evaluation and notification workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        message: message value used by this routine (type `str`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     if not settings.telegram_bot_token or not settings.telegram_chat_id or Bot is None:
         logger.info("Telegram notifier is not configured; alert skipped: %s", message)
         return

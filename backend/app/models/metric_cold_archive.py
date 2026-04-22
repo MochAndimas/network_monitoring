@@ -1,3 +1,5 @@
+"""Provide SQLAlchemy ORM models for the network monitoring project."""
+
 from datetime import date, datetime
 
 from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
@@ -8,10 +10,19 @@ from ..db.base import Base
 
 
 def _utcnow() -> datetime:
+    """Handle the internal utcnow helper logic for SQLAlchemy ORM models.
+
+    Returns:
+        `datetime` result produced by the routine.
+    """
     return now()
 
 
 class MetricColdArchive(Base):
+    """Represent metric cold archive behavior and data for SQLAlchemy ORM models.
+
+    Inherits from `Base` to match the surrounding framework or persistence model.
+    """
     __tablename__ = "metric_cold_archives"
     __table_args__ = (
         UniqueConstraint(

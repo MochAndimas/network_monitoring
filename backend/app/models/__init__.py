@@ -1,3 +1,5 @@
+"""Provide SQLAlchemy ORM models for the network monitoring project."""
+
 from .admin_audit_log import AdminAuditLog
 from .alert import Alert
 from .device import Device

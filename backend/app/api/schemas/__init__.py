@@ -1,3 +1,5 @@
+"""Provide API response and request schemas for the network monitoring project."""
+
 from .auth import (
     AdminAuditLogItem,
     AuthAdminSessionItem,

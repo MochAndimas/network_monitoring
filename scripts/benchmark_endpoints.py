@@ -1,3 +1,5 @@
+"""Provide operator and maintenance scripts for the network monitoring project."""
+
 from __future__ import annotations
 
 import argparse
@@ -24,6 +26,16 @@ DEFAULT_PATHS = [
 
 
 async def _measure_path(client: httpx.AsyncClient, path: str, runs: int) -> dict:
+    """Handle the internal measure path helper logic for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        client: client value used by this routine (type `httpx.AsyncClient`).
+        path: path value used by this routine (type `str`).
+        runs: runs value used by this routine (type `int`).
+
+    Returns:
+        `dict` result produced by the routine.
+    """
     samples_ms: list[float] = []
     for _ in range(runs):
         started_at = time.perf_counter()
@@ -42,6 +54,11 @@ async def _measure_path(client: httpx.AsyncClient, path: str, runs: int) -> dict
 
 
 async def main() -> None:
+    """Handle main for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     parser = argparse.ArgumentParser(description="Benchmark a set of backend endpoints.")
     parser.add_argument("--base-url", default="http://localhost:8000", help="Base backend URL.")
     parser.add_argument("--runs", type=int, default=5, help="Number of runs per endpoint.")

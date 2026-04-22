@@ -1,3 +1,5 @@
+"""Provide project functionality for the network monitoring project."""
+
 import secrets
 
 from fastapi import Cookie, Depends, Header, HTTPException, status
@@ -9,6 +11,14 @@ from ..services.auth_service import AuthenticatedActor, actor_has_permission, ge
 
 
 def _validate_internal_api_key(x_api_key: str | None) -> AuthenticatedActor | None:
+    """Validate internal api key for project functionality.
+
+    Args:
+        x_api_key: x api key value used by this routine (type `str | None`).
+
+    Returns:
+        `AuthenticatedActor | None` result produced by the routine.
+    """
     api_keys = internal_api_key_map()
     if not api_keys:
         if settings.allow_insecure_no_auth:
@@ -33,6 +43,17 @@ async def _authenticate_api_access(
     session_cookie: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> AuthenticatedActor:
+    """Handle the internal authenticate api access helper logic for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        authorization: authorization value used by this routine (type `str | None`, optional).
+        x_api_key: x api key value used by this routine (type `str | None`, optional).
+        session_cookie: session cookie value used by this routine (type `str | None`, optional).
+        db: db value used by this routine (type `AsyncSession`, optional).
+
+    Returns:
+        `AuthenticatedActor` result produced by the routine.
+    """
     api_key_actor = _validate_internal_api_key(x_api_key)
     if api_key_actor is not None:
         return api_key_actor
@@ -53,6 +74,16 @@ async def require_api_access(
     x_api_key: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> AuthenticatedActor:
+    """Handle require api access for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        authorization: authorization value used by this routine (type `str | None`, optional).
+        x_api_key: x api key value used by this routine (type `str | None`, optional).
+        db: db value used by this routine (type `AsyncSession`, optional).
+
+    Returns:
+        `AuthenticatedActor` result produced by the routine.
+    """
     return await _authenticate_api_access(authorization=authorization, x_api_key=x_api_key, db=db)
 
 
@@ -62,6 +93,17 @@ async def require_api_access_with_session_cookie(
     session_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
     db: AsyncSession = Depends(get_db),
 ) -> AuthenticatedActor:
+    """Handle require api access with session cookie for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        authorization: authorization value used by this routine (type `str | None`, optional).
+        x_api_key: x api key value used by this routine (type `str | None`, optional).
+        session_cookie: session cookie value used by this routine (type `str | None`, optional).
+        db: db value used by this routine (type `AsyncSession`, optional).
+
+    Returns:
+        `AuthenticatedActor` result produced by the routine.
+    """
     return await _authenticate_api_access(
         authorization=authorization,
         x_api_key=x_api_key,
@@ -71,12 +113,28 @@ async def require_api_access_with_session_cookie(
 
 
 async def require_admin_access(actor: AuthenticatedActor = Depends(require_api_access)) -> AuthenticatedActor:
+    """Handle require admin access for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        actor: actor value used by this routine (type `AuthenticatedActor`, optional).
+
+    Returns:
+        `AuthenticatedActor` result produced by the routine.
+    """
     if actor.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return actor
 
 
 async def require_write_access(actor: AuthenticatedActor = Depends(require_api_access)) -> AuthenticatedActor:
+    """Handle require write access for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        actor: actor value used by this routine (type `AuthenticatedActor`, optional).
+
+    Returns:
+        `AuthenticatedActor` result produced by the routine.
+    """
     if actor.user is not None and actor.role == "admin":
         return actor
     if actor_has_permission(actor, "write"):
@@ -85,6 +143,14 @@ async def require_write_access(actor: AuthenticatedActor = Depends(require_api_a
 
 
 async def require_ops_access(actor: AuthenticatedActor = Depends(require_api_access)) -> AuthenticatedActor:
+    """Handle require ops access for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        actor: actor value used by this routine (type `AuthenticatedActor`, optional).
+
+    Returns:
+        `AuthenticatedActor` result produced by the routine.
+    """
     if actor.user is not None and actor.role == "admin":
         return actor
     if actor_has_permission(actor, "ops"):

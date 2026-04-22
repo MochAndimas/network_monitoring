@@ -1,3 +1,5 @@
+"""Provide automated regression tests for the network monitoring project."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -9,15 +11,33 @@ import dashboard.components.auth as auth_module
 
 
 class RerunTriggered(RuntimeError):
+    """Represent rerun triggered behavior and data for automated regression tests.
+
+    Inherits from `RuntimeError` to match the surrounding framework or persistence model.
+    """
     pass
 
 
 class StopTriggered(RuntimeError):
+    """Represent stop triggered behavior and data for automated regression tests.
+
+    Inherits from `RuntimeError` to match the surrounding framework or persistence model.
+    """
     pass
 
 
 class FakeStreamlit:
+    """Represent fake streamlit behavior and data for automated regression tests.
+    """
     def __init__(self, session_state: dict | None = None):
+        """Handle the internal init helper logic for automated regression tests.
+
+        Args:
+            session_state: session state value used by this routine (type `dict | None`, optional).
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         self.session_state = session_state or {}
         self.warnings: list[str] = []
         self.captions: list[str] = []
@@ -25,61 +45,194 @@ class FakeStreamlit:
         self.form_submit_value = False
 
     def warning(self, message: str) -> None:
+        """Handle warning for automated regression tests.
+
+        Args:
+            message: message value used by this routine (type `str`).
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         self.warnings.append(message)
 
     def caption(self, message: str) -> None:
+        """Handle caption for automated regression tests.
+
+        Args:
+            message: message value used by this routine (type `str`).
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         self.captions.append(message)
 
     def error(self, message: str) -> None:
+        """Handle error for automated regression tests.
+
+        Args:
+            message: message value used by this routine (type `str`).
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         self.errors.append(message)
 
     def markdown(self, *_args, **_kwargs) -> None:
+        """Handle markdown for automated regression tests.
+
+        Args:
+            *_args: Additional positional values accepted by this routine.
+            **_kwargs: Additional keyword values accepted by this routine.
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         return None
 
     def title(self, *_args, **_kwargs) -> None:
+        """Handle title for automated regression tests.
+
+        Args:
+            *_args: Additional positional values accepted by this routine.
+            **_kwargs: Additional keyword values accepted by this routine.
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         return None
 
     def text_input(self, _label: str, value: str = "", **_kwargs) -> str:
+        """Handle text input for automated regression tests.
+
+        Args:
+            _label: label value used by this routine (type `str`).
+            value: value value used by this routine (type `str`, optional).
+            **_kwargs: Additional keyword values accepted by this routine.
+
+        Returns:
+            `str` result produced by the routine.
+        """
         return value
 
     def checkbox(self, _label: str, **_kwargs) -> bool:
+        """Handle checkbox for automated regression tests.
+
+        Args:
+            _label: label value used by this routine (type `str`).
+            **_kwargs: Additional keyword values accepted by this routine.
+
+        Returns:
+            `bool` result produced by the routine.
+        """
         return False
 
     def form_submit_button(self, *_args, **_kwargs) -> bool:
+        """Handle form submit button for automated regression tests.
+
+        Args:
+            *_args: Additional positional values accepted by this routine.
+            **_kwargs: Additional keyword values accepted by this routine.
+
+        Returns:
+            `bool` result produced by the routine.
+        """
         return self.form_submit_value
 
     def form(self, *_args, **_kwargs):
+        """Handle form for automated regression tests.
+
+        Args:
+            *_args: Additional positional values accepted by this routine.
+            **_kwargs: Additional keyword values accepted by this routine.
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         return _NullContext()
 
     @property
     def sidebar(self):
+        """Handle sidebar for automated regression tests.
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         return _NullContext()
 
     def button(self, *_args, **_kwargs) -> bool:
+        """Handle button for automated regression tests.
+
+        Args:
+            *_args: Additional positional values accepted by this routine.
+            **_kwargs: Additional keyword values accepted by this routine.
+
+        Returns:
+            `bool` result produced by the routine.
+        """
         return False
 
     def rerun(self) -> None:
+        """Handle rerun for automated regression tests.
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         raise RerunTriggered()
 
     def stop(self) -> None:
+        """Handle stop for automated regression tests.
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         raise StopTriggered()
 
 
 class _NullContext:
+    """Represent null context behavior and data for automated regression tests.
+    """
     def __enter__(self):
+        """Handle the internal enter helper logic for automated regression tests.
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         return self
 
     def __exit__(self, exc_type, exc, tb):
+        """Handle the internal exit helper logic for automated regression tests.
+
+        Args:
+            exc_type: exc type value used by this routine.
+            exc: exc value used by this routine.
+            tb: tb value used by this routine.
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         return False
 
 
 def _http_401() -> httpx.HTTPStatusError:
+    """Handle the internal http 401 helper logic for automated regression tests.
+
+    Returns:
+        `httpx.HTTPStatusError` result produced by the routine.
+    """
     request = httpx.Request("POST", "http://testserver/devices")
     response = httpx.Response(401, request=request)
     return httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
 
 def test_restore_login_state_applies_bridge_payload(monkeypatch):
+    """Handle test restore login state applies bridge payload for automated regression tests.
+
+    Args:
+        monkeypatch: monkeypatch value used by this routine.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": False,
@@ -119,6 +272,14 @@ def test_restore_login_state_applies_bridge_payload(monkeypatch):
 
 
 def test_restore_login_state_marks_failed_restore_completed(monkeypatch):
+    """Handle test restore login state marks failed restore completed for automated regression tests.
+
+    Args:
+        monkeypatch: monkeypatch value used by this routine.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": False,
@@ -150,6 +311,14 @@ def test_restore_login_state_marks_failed_restore_completed(monkeypatch):
 
 
 def test_restore_not_needed_after_failed_restore_for_logged_out_user(monkeypatch):
+    """Handle test restore not needed after failed restore for logged out user for automated regression tests.
+
+    Args:
+        monkeypatch: monkeypatch value used by this routine.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": False,
@@ -164,6 +333,11 @@ def test_restore_not_needed_after_failed_restore_for_logged_out_user(monkeypatch
 
 
 def test_login_error_message_surfaces_unauthorized_message():
+    """Handle test login error message surfaces unauthorized message for automated regression tests.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     error = auth_module._login_error_message(
         {
             "request_id": "req-123",
@@ -176,6 +350,14 @@ def test_login_error_message_surfaces_unauthorized_message():
 
 
 def test_require_dashboard_login_does_not_overwrite_pending_login_with_restore(monkeypatch):
+    """Handle test require dashboard login does not overwrite pending login with restore for automated regression tests.
+
+    Args:
+        monkeypatch: monkeypatch value used by this routine.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     fake_st = FakeStreamlit(
         {
             "auth_token": None,
@@ -225,6 +407,14 @@ def test_require_dashboard_login_does_not_overwrite_pending_login_with_restore(m
 
 
 def test_require_dashboard_login_submits_bridge_login_request(monkeypatch):
+    """Handle test require dashboard login submits bridge login request for automated regression tests.
+
+    Args:
+        monkeypatch: monkeypatch value used by this routine.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     fake_st = FakeStreamlit(
         {
             "auth_token": None,
@@ -242,6 +432,16 @@ def test_require_dashboard_login_submits_bridge_login_request(monkeypatch):
     submitted_values = iter(["admin", "secret"])
 
     def fake_text_input(_label: str, value: str = "", **_kwargs) -> str:
+        """Handle fake text input for automated regression tests.
+
+        Args:
+            _label: label value used by this routine (type `str`).
+            value: value value used by this routine (type `str`, optional).
+            **_kwargs: Additional keyword values accepted by this routine.
+
+        Returns:
+            `str` result produced by the routine.
+        """
         return next(submitted_values)
 
     monkeypatch.setattr(auth_module, "st", fake_st)
@@ -263,6 +463,14 @@ def test_require_dashboard_login_submits_bridge_login_request(monkeypatch):
 
 
 def test_require_dashboard_login_applies_bridge_login_response(monkeypatch):
+    """Handle test require dashboard login applies bridge login response for automated regression tests.
+
+    Args:
+        monkeypatch: monkeypatch value used by this routine.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     fake_st = FakeStreamlit(
         {
             "auth_token": None,
@@ -313,6 +521,14 @@ def test_require_dashboard_login_applies_bridge_login_response(monkeypatch):
 
 
 def test_require_dashboard_login_surfaces_bridge_login_error(monkeypatch):
+    """Handle test require dashboard login surfaces bridge login error for automated regression tests.
+
+    Args:
+        monkeypatch: monkeypatch value used by this routine.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     fake_st = FakeStreamlit(
         {
             "auth_token": None,
@@ -353,6 +569,14 @@ def test_require_dashboard_login_surfaces_bridge_login_error(monkeypatch):
 
 
 def test_post_json_queues_pending_request_on_401_and_replays_after_restore(monkeypatch):
+    """Handle test post json queues pending request on 401 and replays after restore for automated regression tests.
+
+    Args:
+        monkeypatch: monkeypatch value used by this routine.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": True,
@@ -374,6 +598,19 @@ def test_post_json_queues_pending_request_on_401_and_replays_after_restore(monke
         api_base_url: str = api_module.API_BASE_URL,
         auth_token: str = "",
     ):
+        """Handle fake request json for automated regression tests.
+
+        Args:
+            method: method value used by this routine (type `str`).
+            path: path value used by this routine (type `str`).
+            payload: payload keyword value used by this routine (type `dict | None`, optional).
+            timeout: timeout keyword value used by this routine (type `float`, optional).
+            api_base_url: api base url keyword value used by this routine (type `str`, optional).
+            auth_token: auth token keyword value used by this routine (type `str`, optional).
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         calls.append((auth_token, payload))
         if auth_token == "expired-token":
             raise _http_401()
@@ -410,10 +647,23 @@ def test_post_json_queues_pending_request_on_401_and_replays_after_restore(monke
 
 
 def test_dashboard_api_does_not_fallback_to_service_key_without_auth_token():
+    """Handle test dashboard api does not fallback to service key without auth token for automated regression tests.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     assert api_module._request_headers("") == {}
 
 
 def test_get_json_uses_cached_get_reader(monkeypatch):
+    """Handle test get json uses cached get reader for automated regression tests.
+
+    Args:
+        monkeypatch: monkeypatch value used by this routine.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": True,
@@ -426,10 +676,30 @@ def test_get_json_uses_cached_get_reader(monkeypatch):
     cached_calls: list[tuple[str, float, str, str]] = []
 
     def fake_cached_get_json(path: str, timeout: float, api_base_url: str, auth_token: str):
+        """Handle fake cached get json for automated regression tests.
+
+        Args:
+            path: path value used by this routine (type `str`).
+            timeout: timeout value used by this routine (type `float`).
+            api_base_url: api base url value used by this routine (type `str`).
+            auth_token: auth token value used by this routine (type `str`).
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         cached_calls.append((path, timeout, api_base_url, auth_token))
         return {"ok": True}
 
     def fail_request_json(*_args, **_kwargs):
+        """Handle fail request json for automated regression tests.
+
+        Args:
+            *_args: Additional positional values accepted by this routine.
+            **_kwargs: Additional keyword values accepted by this routine.
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         raise AssertionError("_request_json should not be called for get_json GET path")
 
     monkeypatch.setattr(api_module, "_cached_get_json", fake_cached_get_json)
@@ -442,6 +712,14 @@ def test_get_json_uses_cached_get_reader(monkeypatch):
 
 
 def test_get_json_keeps_401_recovery_with_cached_get_reader(monkeypatch):
+    """Handle test get json keeps 401 recovery with cached get reader for automated regression tests.
+
+    Args:
+        monkeypatch: monkeypatch value used by this routine.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": True,
@@ -453,6 +731,17 @@ def test_get_json_keeps_401_recovery_with_cached_get_reader(monkeypatch):
     monkeypatch.setattr(api_module, "st", fake_st)
 
     def fake_cached_get_json(path: str, timeout: float, api_base_url: str, auth_token: str):
+        """Handle fake cached get json for automated regression tests.
+
+        Args:
+            path: path value used by this routine (type `str`).
+            timeout: timeout value used by this routine (type `float`).
+            api_base_url: api base url value used by this routine (type `str`).
+            auth_token: auth token value used by this routine (type `str`).
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         _ = (path, timeout, api_base_url)
         if auth_token == "expired-token":
             raise _http_401()
@@ -471,6 +760,11 @@ def test_get_json_keeps_401_recovery_with_cached_get_reader(monkeypatch):
 
 
 def test_auth_bridge_frontend_restricts_parent_origin():
+    """Handle test auth bridge frontend restricts parent origin for automated regression tests.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     html = (auth_module.__file__)
     from pathlib import Path
 

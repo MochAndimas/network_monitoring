@@ -16,6 +16,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Apply the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.create_index("ix_alerts_status_created_at", "alerts", ["status", "created_at"], unique=False)
     op.create_index("ix_alerts_device_status_type", "alerts", ["device_id", "status", "alert_type"], unique=False)
     op.create_index("ix_incidents_status_started_at", "incidents", ["status", "started_at"], unique=False)
@@ -23,6 +28,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Revert the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.drop_index("ix_incidents_device_status", table_name="incidents")
     op.drop_index("ix_incidents_status_started_at", table_name="incidents")
     op.drop_index("ix_alerts_device_status_type", table_name="alerts")

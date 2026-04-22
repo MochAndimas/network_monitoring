@@ -17,6 +17,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Apply the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.create_table(
         "scheduler_job_statuses",
         sa.Column("id", sa.Integer(), nullable=False),

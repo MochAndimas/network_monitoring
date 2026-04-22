@@ -1,3 +1,5 @@
+"""Provide SQLAlchemy ORM models for the network monitoring project."""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Index, String
@@ -8,6 +10,10 @@ from ..core.time import now
 
 
 class Incident(Base):
+    """Represent incident behavior and data for SQLAlchemy ORM models.
+
+    Inherits from `Base` to match the surrounding framework or persistence model.
+    """
     __tablename__ = "incidents"
     __table_args__ = (
         Index("ix_incidents_status_started_at", "status", "started_at"),

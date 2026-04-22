@@ -1,3 +1,5 @@
+"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+
 from urllib.parse import urlencode
 
 import pandas as pd
@@ -30,14 +32,35 @@ type_label_by_value = {value: label for label, value in type_labels.items()}
 
 
 def _clear_cached_gets() -> None:
+    """Handle the internal clear cached gets helper logic for Streamlit dashboard page rendering.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     st.cache_data.clear()
 
 
 def _device_type_label(device_type: str) -> str:
+    """Handle the internal device type label helper logic for Streamlit dashboard page rendering.
+
+    Args:
+        device_type: device type value used by this routine (type `str`).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     return type_label_by_value.get(device_type, device_type.replace("_", " ").title())
 
 
 def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
+    """Handle the internal prepare manage frame helper logic for Streamlit dashboard page rendering.
+
+    Args:
+        rows: rows value used by this routine (type `list[dict]`).
+
+    Returns:
+        `pd.DataFrame` result produced by the routine.
+    """
     dataframe = pd.DataFrame(rows)
     if dataframe.empty:
         return dataframe
@@ -57,6 +80,14 @@ def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
 
 @st.dialog("Ubah Device")
 def _render_edit_device_dialog(device: dict) -> None:
+    """Render edit device dialog for Streamlit dashboard page rendering.
+
+    Args:
+        device: device value used by this routine (type `dict`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     edit_key_prefix = f"edit_device_{device['id']}"
     type_options = list(type_labels.keys())
     existing_type_label = _device_type_label(str(device.get("device_type") or ""))
@@ -99,6 +130,14 @@ def _render_edit_device_dialog(device: dict) -> None:
 
 @st.dialog("Hapus Device")
 def _render_delete_device_dialog(device: dict) -> None:
+    """Render delete device dialog for Streamlit dashboard page rendering.
+
+    Args:
+        device: device value used by this routine (type `dict`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     st.warning(f"Hapus device `{device['name']}` ({device['ip_address']})?")
     st.caption("Metric device ini akan ikut dihapus. Alert dan incident lama tetap disimpan tanpa relasi device.")
     confirm = st.text_input("Ketik DELETE untuk konfirmasi", key=f"delete_device_{device['id']}_confirm")

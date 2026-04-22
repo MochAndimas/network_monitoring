@@ -17,10 +17,20 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Apply the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.add_column("auth_sessions", sa.Column("client_ip", sa.String(length=64), nullable=False, server_default=""))
     op.add_column("auth_sessions", sa.Column("user_agent", sa.String(length=255), nullable=False, server_default=""))
 
 
 def downgrade() -> None:
+    """Revert the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.drop_column("auth_sessions", "user_agent")
     op.drop_column("auth_sessions", "client_ip")

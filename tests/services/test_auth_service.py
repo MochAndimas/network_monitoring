@@ -1,3 +1,5 @@
+"""Provide automated regression tests for the network monitoring project."""
+
 import asyncio
 from datetime import timedelta
 
@@ -13,10 +15,23 @@ from backend.app.services.auth_service import cleanup_auth_data
 
 
 def run(coro):
+    """Run the requested operation for automated regression tests.
+
+    Args:
+        coro: coro value used by this routine.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     return asyncio.run(coro)
 
 
 def test_cleanup_auth_data_removes_old_sessions_and_attempts():
+    """Handle test cleanup auth data removes old sessions and attempts for automated regression tests.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     original_password_secret = settings.auth_password_secret
     original_jwt_secret = settings.auth_jwt_secret
     settings.auth_password_secret = "test-password-secret"
@@ -30,6 +45,11 @@ def test_cleanup_auth_data_removes_old_sessions_and_attempts():
     session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
     async def scenario():
+        """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+        Returns:
+            The computed result, response payload, or side-effect outcome for the caller.
+        """
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
 

@@ -1,3 +1,5 @@
+"""Provide monitoring collectors for network, device, server, and Mikrotik metrics for the network monitoring project."""
+
 from __future__ import annotations
 
 import asyncio
@@ -11,7 +13,7 @@ from ...core.config import settings
 from ...models.metric import Metric
 from ...repositories.device_repository import DeviceRepository
 from ...repositories.metric_repository import MetricRepository
-from ...services.monitoring_service import utcnow
+from ...core.time import utcnow
 from ..helpers import bounded_gather, build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping
 
 try:
@@ -28,6 +30,14 @@ FIREWALL_SPIKE_MBPS_WARNING = 50.0
 
 
 async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
+    """Run mikrotik checks for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+
+    Returns:
+        `list[dict]` result produced by the routine.
+    """
     devices = await _list_mikrotik_devices(db)
     metrics: list[dict] = [
         metric
@@ -222,6 +232,14 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
 
 
 async def _list_mikrotik_devices(db: AsyncSession) -> list:
+    """Return a list of mikrotik devices for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+
+    Returns:
+        `list` result produced by the routine.
+    """
     devices = await DeviceRepository(db).list_devices(active_only=True)
     return [
         device
@@ -231,10 +249,27 @@ async def _list_mikrotik_devices(db: AsyncSession) -> list:
 
 
 def _should_collect_ping(device) -> bool:
+    """Handle the internal should collect ping helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        device: device value used by this routine.
+
+    Returns:
+        `bool` result produced by the routine.
+    """
     return str(device.device_type or "").lower() == "mikrotik"
 
 
 async def _build_ping_metrics(device_id: int, ip_address: str) -> list[dict]:
+    """Build ping metrics for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        device_id: device id value used by this routine (type `int`).
+        ip_address: ip address value used by this routine (type `str`).
+
+    Returns:
+        `list[dict]` result produced by the routine.
+    """
     samples = await collect_ping_samples(ip_address)
     return [
         build_ping_metric(device_id, latest_successful_ping(samples)),
@@ -243,6 +278,14 @@ async def _build_ping_metrics(device_id: int, ip_address: str) -> list[dict]:
 
 
 def _mikrotik_memory_percent(resource: dict) -> str:
+    """Handle the internal mikrotik memory percent helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        resource: resource value used by this routine (type `dict`).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     total = int(resource.get("total-memory", 0) or 0)
     free = int(resource.get("free-memory", 0) or 0)
     if total <= 0:
@@ -252,6 +295,15 @@ def _mikrotik_memory_percent(resource: dict) -> str:
 
 
 async def _latest_metric_map(db: AsyncSession, device_id: int) -> dict[str, Metric]:
+    """Handle the internal latest metric map helper logic for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        device_id: device id value used by this routine (type `int`).
+
+    Returns:
+        `dict[str, Metric]` result produced by the routine.
+    """
     repository = MetricRepository(db)
     return await repository.latest_metric_map_for_device(device_id)
 
@@ -265,6 +317,19 @@ def _interface_metrics(
     allowlist: set[str] | None = None,
     max_items: int | None = None,
 ) -> list[dict]:
+    """Handle the internal interface metrics helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        device_id: device id value used by this routine (type `int`).
+        interfaces: interfaces value used by this routine (type `list[dict]`).
+        previous_metrics: previous metrics value used by this routine (type `dict[str, Metric]`).
+        checked_at: checked at value used by this routine (type `datetime`).
+        allowlist: allowlist keyword value used by this routine (type `set[str] | None`, optional).
+        max_items: max items keyword value used by this routine (type `int | None`, optional).
+
+    Returns:
+        `list[dict]` result produced by the routine.
+    """
     metrics: list[dict] = []
     candidate_interfaces = list(_limit_items(interfaces, max_items))
     for interface in candidate_interfaces:
@@ -312,6 +377,19 @@ def _firewall_metrics(
     *,
     max_items: int | None = None,
 ) -> list[dict]:
+    """Handle the internal firewall metrics helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        device_id: device id value used by this routine (type `int`).
+        section: section value used by this routine (type `str`).
+        rules: rules value used by this routine (type `list[dict]`).
+        previous_metrics: previous metrics value used by this routine (type `dict[str, Metric]`).
+        checked_at: checked at value used by this routine (type `datetime`).
+        max_items: max items keyword value used by this routine (type `int | None`, optional).
+
+    Returns:
+        `list[dict]` result produced by the routine.
+    """
     metrics: list[dict] = []
     candidate_rules = list(_limit_items(rules, max_items))
     for index, rule in enumerate(candidate_rules, start=1):
@@ -348,6 +426,19 @@ def _queue_metrics(
     allowlist: set[str] | None = None,
     max_items: int | None = None,
 ) -> list[dict]:
+    """Handle the internal queue metrics helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        device_id: device id value used by this routine (type `int`).
+        queues: queues value used by this routine (type `list[dict]`).
+        previous_metrics: previous metrics value used by this routine (type `dict[str, Metric]`).
+        checked_at: checked at value used by this routine (type `datetime`).
+        allowlist: allowlist keyword value used by this routine (type `set[str] | None`, optional).
+        max_items: max items keyword value used by this routine (type `int | None`, optional).
+
+    Returns:
+        `list[dict]` result produced by the routine.
+    """
     metrics: list[dict] = []
     candidate_queues = list(_limit_items(queues, max_items))
     for queue in candidate_queues:
@@ -373,6 +464,19 @@ def _queue_metrics(
 
 
 def _metric(device_id: int, metric_name: str, value: int | float | str, status: str, unit: str | None, checked_at: datetime) -> dict:
+    """Handle the internal metric helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        device_id: device id value used by this routine (type `int`).
+        metric_name: metric name value used by this routine (type `str`).
+        value: value value used by this routine (type `int | float | str`).
+        status: status value used by this routine (type `str`).
+        unit: unit value used by this routine (type `str | None`).
+        checked_at: checked at value used by this routine (type `datetime`).
+
+    Returns:
+        `dict` result produced by the routine.
+    """
     if isinstance(value, float):
         metric_value = f"{value:.2f}"
     else:
@@ -388,6 +492,14 @@ def _metric(device_id: int, metric_name: str, value: int | float | str, status: 
 
 
 def _mikrotik_disk_percent(resource: dict) -> str:
+    """Handle the internal mikrotik disk percent helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        resource: resource value used by this routine (type `dict`).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     total = _safe_int(resource.get("total-hdd-space"))
     free = _safe_int(resource.get("free-hdd-space"))
     if total <= 0:
@@ -396,18 +508,51 @@ def _mikrotik_disk_percent(resource: dict) -> str:
 
 
 def _memory_used_bytes(resource: dict) -> int:
+    """Handle the internal memory used bytes helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        resource: resource value used by this routine (type `dict`).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     return max(_safe_int(resource.get("total-memory")) - _safe_int(resource.get("free-memory")), 0)
 
 
 def _disk_used_bytes(resource: dict) -> int:
+    """Handle the internal disk used bytes helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        resource: resource value used by this routine (type `dict`).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     return max(_safe_int(resource.get("total-hdd-space")) - _safe_int(resource.get("free-hdd-space")), 0)
 
 
 def _active_dhcp_lease_count(leases: list[dict]) -> int:
+    """Handle the internal active dhcp lease count helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        leases: leases value used by this routine (type `list[dict]`).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     return sum(1 for lease in leases if _is_active_dhcp_lease(lease))
 
 
 def _connected_client_count(leases: list[dict], arp_entries: list[dict]) -> int:
+    """Handle the internal connected client count helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        leases: leases value used by this routine (type `list[dict]`).
+        arp_entries: arp entries value used by this routine (type `list[dict]`).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     mac_addresses = {
         str(lease.get("mac-address") or "").strip().lower()
         for lease in leases
@@ -422,15 +567,43 @@ def _connected_client_count(leases: list[dict], arp_entries: list[dict]) -> int:
 
 
 def _is_active_dhcp_lease(lease: dict) -> bool:
+    """Handle the internal is active dhcp lease helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        lease: lease value used by this routine (type `dict`).
+
+    Returns:
+        `bool` result produced by the routine.
+    """
     status = str(lease.get("status") or "").strip().lower()
     return status == "bound" or bool(str(lease.get("active-address") or "").strip())
 
 
 def _counter_rate(current_value: int, previous_metric: Metric | None, checked_at: datetime) -> float:
+    """Handle the internal counter rate helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        current_value: current value value used by this routine (type `int`).
+        previous_metric: previous metric value used by this routine (type `Metric | None`).
+        checked_at: checked at value used by this routine (type `datetime`).
+
+    Returns:
+        `float` result produced by the routine.
+    """
     return (_counter_per_second(current_value, previous_metric, checked_at) * 8) / 1_000_000
 
 
 def _counter_per_second(current_value: int, previous_metric: Metric | None, checked_at: datetime) -> float:
+    """Handle the internal counter per second helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        current_value: current value value used by this routine (type `int`).
+        previous_metric: previous metric value used by this routine (type `Metric | None`).
+        checked_at: checked at value used by this routine (type `datetime`).
+
+    Returns:
+        `float` result produced by the routine.
+    """
     if previous_metric is None:
         return 0.0
     previous_value = _safe_int(previous_metric.metric_value)
@@ -441,6 +614,14 @@ def _counter_per_second(current_value: int, previous_metric: Metric | None, chec
 
 
 def _split_counter_pair(raw_value) -> tuple[int, int]:
+    """Handle the internal split counter pair helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        raw_value: raw value value used by this routine.
+
+    Returns:
+        `tuple[int, int]` result produced by the routine.
+    """
     if raw_value is None:
         return 0, 0
     if isinstance(raw_value, (tuple, list)) and len(raw_value) >= 2:
@@ -455,10 +636,27 @@ def _split_counter_pair(raw_value) -> tuple[int, int]:
 
 
 def _bits_to_mbps(bits_per_second: int) -> float:
+    """Handle the internal bits to mbps helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        bits_per_second: bits per second value used by this routine (type `int`).
+
+    Returns:
+        `float` result produced by the routine.
+    """
     return bits_per_second / 1_000_000
 
 
 def _firewall_rule_name(rule: dict, index: int) -> str:
+    """Handle the internal firewall rule name helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        rule: rule value used by this routine (type `dict`).
+        index: index value used by this routine (type `int`).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     chain = str(rule.get("chain") or "rule").strip()
     action = str(rule.get("action") or "").strip()
     comment = str(rule.get("comment") or "").strip()
@@ -467,10 +665,27 @@ def _firewall_rule_name(rule: dict, index: int) -> str:
 
 
 def _object_name(item: dict, *, fallback_prefix: str) -> str:
+    """Handle the internal object name helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        item: item value used by this routine (type `dict`).
+        fallback_prefix: fallback prefix keyword value used by this routine (type `str`).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     return str(item.get("name") or item.get("comment") or item.get(".id") or fallback_prefix).strip()
 
 
 def _dynamic_metric_name(*parts: str) -> str:
+    """Handle the internal dynamic metric name helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        *parts: Additional positional values accepted by this routine (type `str`).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     normalized_parts = [_slugify(part) for part in parts if str(part or "").strip()]
     metric_name = ":".join(normalized_parts)
     if len(metric_name) <= MAX_DYNAMIC_METRIC_NAME_LENGTH - 12:
@@ -481,17 +696,42 @@ def _dynamic_metric_name(*parts: str) -> str:
 
 
 def _slugify(value: str) -> str:
+    """Handle the internal slugify helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        value: value value used by this routine (type `str`).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     normalized = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(value).strip().lower()).strip("_")
     return normalized or "unknown"
 
 
 def _truthy(value) -> bool:
+    """Handle the internal truthy helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        value: value value used by this routine.
+
+    Returns:
+        `bool` result produced by the routine.
+    """
     if isinstance(value, bool):
         return value
     return str(value or "").strip().lower() in {"true", "yes", "1", "enabled", "running"}
 
 
 def _is_allowed_dynamic_name(name: str, allowlist: set[str] | None) -> bool:
+    """Handle the internal is allowed dynamic name helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        name: name value used by this routine (type `str`).
+        allowlist: allowlist value used by this routine (type `set[str] | None`).
+
+    Returns:
+        `bool` result produced by the routine.
+    """
     if not allowlist:
         return True
     normalized_name = str(name or "").strip().lower()
@@ -501,12 +741,29 @@ def _is_allowed_dynamic_name(name: str, allowlist: set[str] | None) -> bool:
 
 
 def _limit_items(items: list[dict], max_items: int | None):
+    """Handle the internal limit items helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        items: items value used by this routine (type `list[dict]`).
+        max_items: max items value used by this routine (type `int | None`).
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     if max_items is None or max_items < 1:
         return items
     return items[:max_items]
 
 
 def _safe_int(value) -> int:
+    """Handle the internal safe int helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+
+    Args:
+        value: value value used by this routine.
+
+    Returns:
+        `int` result produced by the routine.
+    """
     try:
         return int(float(str(value).strip()))
     except (TypeError, ValueError):

@@ -1,3 +1,5 @@
+"""Provide FastAPI route handlers and HTTP helpers for the network monitoring project."""
+
 from fastapi import APIRouter, Response, status
 
 from ...db.session import check_database_connection
@@ -11,6 +13,15 @@ router = APIRouter()
 
 @router.get("")
 async def health(response: Response, db: AsyncSession = Depends(get_db)) -> dict:
+    """Report health for the requested operation for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        response: response value used by this routine (type `Response`).
+        db: db value used by this routine (type `AsyncSession`, optional).
+
+    Returns:
+        `dict` result produced by the routine.
+    """
     database_ok = await check_database_connection()
     scheduler_alerts = build_scheduler_operational_alerts(await list_scheduler_job_statuses(db))
     if not database_ok or scheduler_alerts:
@@ -24,11 +35,25 @@ async def health(response: Response, db: AsyncSession = Depends(get_db)) -> dict
 
 @router.get("/live")
 async def health_live() -> dict:
+    """Report health for live for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Returns:
+        `dict` result produced by the routine.
+    """
     return {"status": "ok"}
 
 
 @router.get("/dependencies")
 async def health_dependencies(response: Response, db: AsyncSession = Depends(get_db)) -> dict:
+    """Report health for dependencies for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        response: response value used by this routine (type `Response`).
+        db: db value used by this routine (type `AsyncSession`, optional).
+
+    Returns:
+        `dict` result produced by the routine.
+    """
     database_ok = await check_database_connection()
     scheduler_statuses = await list_scheduler_job_statuses(db)
     scheduler_alerts = build_scheduler_operational_alerts(scheduler_statuses)
@@ -52,6 +77,15 @@ async def health_dependencies(response: Response, db: AsyncSession = Depends(get
 
 @router.get("/ready")
 async def health_ready(response: Response, db: AsyncSession = Depends(get_db)) -> dict:
+    """Report health for ready for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        response: response value used by this routine (type `Response`).
+        db: db value used by this routine (type `AsyncSession`, optional).
+
+    Returns:
+        `dict` result produced by the routine.
+    """
     database_ok = await check_database_connection()
     scheduler_statuses = await list_scheduler_job_statuses(db)
     scheduler_alerts = build_scheduler_operational_alerts(scheduler_statuses)

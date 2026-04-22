@@ -1,7 +1,7 @@
 """initial schema
 
 Revision ID: 20260409_0001
-Revises: 
+Revises:
 Create Date: 2026-04-09 11:35:00
 """
 from __future__ import annotations
@@ -17,6 +17,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Apply the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.create_table(
         "devices",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -86,6 +91,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Revert the requested operation for Alembic database migrations.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     op.drop_index(op.f("ix_metrics_id"), table_name="metrics")
     op.drop_index(op.f("ix_metrics_device_id"), table_name="metrics")
     op.drop_table("metrics")

@@ -1,3 +1,5 @@
+"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -33,6 +35,14 @@ auto_refresh, interval_seconds = refresh_controls("incidents", default_enabled=T
 
 
 def _duration_label(minutes_value: float | None) -> str:
+    """Handle the internal duration label helper logic for Streamlit dashboard page rendering.
+
+    Args:
+        minutes_value: minutes value value used by this routine (type `float | None`).
+
+    Returns:
+        `str` result produced by the routine.
+    """
     if minutes_value is None or pd.isna(minutes_value):
         return "-"
     minutes = int(minutes_value)
@@ -41,6 +51,11 @@ def _duration_label(minutes_value: float | None) -> str:
 
 
 def _render_incidents_body() -> None:
+    """Render incidents body for Streamlit dashboard page rendering.
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     path = "/incidents" if status_filter == "All" else f"/incidents?status={status_filter}"
     incidents = get_json(path, [])
 

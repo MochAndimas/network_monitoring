@@ -1,3 +1,5 @@
+"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
@@ -12,13 +14,21 @@ from ..models.incident import Incident
 from ..models.metric import Metric
 from ..models.metric_cold_archive import MetricColdArchive
 from ..models.metric_daily_rollup import MetricDailyRollup
-from .monitoring_service import utcnow
+from ..core.time import utcnow
 
 
 UP_STATUSES = {"up", "ok"}
 
 
 async def cleanup_monitoring_data(db: AsyncSession) -> dict[str, int]:
+    """Handle cleanup monitoring data for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+
+    Returns:
+        `dict[str, int]` result produced by the routine.
+    """
     rolled_up_days = await rollup_completed_raw_metrics(db, commit=False)
     archived_metric_groups = await archive_expired_raw_metrics(db, commit=False)
     deleted_metrics = await delete_expired_raw_metrics(db, commit=False)
@@ -35,6 +45,15 @@ async def cleanup_monitoring_data(db: AsyncSession) -> dict[str, int]:
 
 
 async def rollup_completed_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:
+    """Handle rollup completed raw metrics for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        commit: commit keyword value used by this routine (type `bool`, optional).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     cutoff = _today_start()
     processed = 0
     batch_size = max(int(settings.retention_rollup_batch_size), 1)
@@ -60,6 +79,15 @@ async def rollup_completed_raw_metrics(db: AsyncSession, *, commit: bool = True)
 
 
 async def delete_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:
+    """Delete expired raw metrics for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        commit: commit keyword value used by this routine (type `bool`, optional).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     result = await db.execute(delete(Metric).where(Metric.checked_at < _raw_metric_cutoff()))
     if commit:
         await db.commit()
@@ -69,6 +97,15 @@ async def delete_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -
 
 
 async def archive_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:
+    """Handle archive expired raw metrics for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        commit: commit keyword value used by this routine (type `bool`, optional).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     cutoff = _raw_metric_cutoff()
     processed = 0
     batch_size = max(int(settings.retention_archive_batch_size), 1)
@@ -94,6 +131,15 @@ async def archive_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) 
 
 
 async def delete_expired_alerts(db: AsyncSession, *, commit: bool = True) -> int:
+    """Delete expired alerts for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        commit: commit keyword value used by this routine (type `bool`, optional).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     cutoff = utcnow() - timedelta(days=settings.alert_retention_days)
     result = await db.execute(
         delete(Alert).where(
@@ -112,6 +158,15 @@ async def delete_expired_alerts(db: AsyncSession, *, commit: bool = True) -> int
 
 
 async def delete_expired_incidents(db: AsyncSession, *, commit: bool = True) -> int:
+    """Delete expired incidents for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        commit: commit keyword value used by this routine (type `bool`, optional).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     cutoff = utcnow() - timedelta(days=settings.incident_retention_days)
     result = await db.execute(
         delete(Incident).where(
@@ -130,15 +185,34 @@ async def delete_expired_incidents(db: AsyncSession, *, commit: bool = True) -> 
 
 
 def _raw_metric_cutoff() -> datetime:
+    """Handle the internal raw metric cutoff helper logic for business services that coordinate repositories and domain workflows.
+
+    Returns:
+        `datetime` result produced by the routine.
+    """
     cutoff_date = (utcnow() - timedelta(days=settings.raw_metric_retention_days)).date()
     return datetime.combine(cutoff_date, time.min)
 
 
 def _today_start() -> datetime:
+    """Handle the internal today start helper logic for business services that coordinate repositories and domain workflows.
+
+    Returns:
+        `datetime` result produced by the routine.
+    """
     return datetime.combine(utcnow().date(), time.min)
 
 
 async def _iter_rollup_payloads(db: AsyncSession, cutoff: datetime):
+    """Handle the internal iter rollup payloads helper logic for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        cutoff: cutoff value used by this routine (type `datetime`).
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     query = (
         select(
             Metric.device_id,
@@ -167,6 +241,15 @@ async def _iter_rollup_payloads(db: AsyncSession, cutoff: datetime):
 
 
 async def _iter_archive_payloads(db: AsyncSession, cutoff: datetime):
+    """Handle the internal iter archive payloads helper logic for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        cutoff: cutoff value used by this routine (type `datetime`).
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     query = (
         select(
             Metric.device_id,
@@ -213,6 +296,15 @@ async def _iter_archive_payloads(db: AsyncSession, cutoff: datetime):
 
 
 async def _upsert_rollup_payloads(db: AsyncSession, payloads: dict[tuple[int, object], dict]) -> None:
+    """Handle the internal upsert rollup payloads helper logic for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        payloads: payloads value used by this routine (type `dict[tuple[int, object], dict]`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     existing_rollups = await _load_existing_rollups(db, payloads.keys())
     now = utcnow()
     for key, payload in payloads.items():
@@ -227,6 +319,15 @@ async def _upsert_rollup_payloads(db: AsyncSession, payloads: dict[tuple[int, ob
 
 
 async def _upsert_archive_payloads(db: AsyncSession, payloads: dict[tuple[int, object, str, str, str], dict]) -> None:
+    """Handle the internal upsert archive payloads helper logic for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        payloads: payloads value used by this routine (type `dict[tuple[int, object, str, str, str], dict]`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     existing_archives = await _load_existing_archives(db, payloads.keys())
     now = utcnow()
     for key, payload in payloads.items():
@@ -241,6 +342,15 @@ async def _upsert_archive_payloads(db: AsyncSession, payloads: dict[tuple[int, o
 
 
 async def _load_existing_rollups(db: AsyncSession, keys) -> dict[tuple[int, object], MetricDailyRollup]:
+    """Handle the internal load existing rollups helper logic for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        keys: keys value used by this routine.
+
+    Returns:
+        `dict[tuple[int, object], MetricDailyRollup]` result produced by the routine.
+    """
     key_list = list(keys)
     if not key_list:
         return {}
@@ -256,6 +366,15 @@ async def _load_existing_rollups(db: AsyncSession, keys) -> dict[tuple[int, obje
 
 
 async def _load_existing_archives(db: AsyncSession, keys) -> dict[tuple[int, object, str, str, str], MetricColdArchive]:
+    """Handle the internal load existing archives helper logic for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        keys: keys value used by this routine.
+
+    Returns:
+        `dict[tuple[int, object, str, str, str], MetricColdArchive]` result produced by the routine.
+    """
     key_list = list(keys)
     if not key_list:
         return {}
@@ -285,11 +404,28 @@ async def _load_existing_archives(db: AsyncSession, keys) -> dict[tuple[int, obj
 
 
 def _chunked(items: list[tuple], size: int):
+    """Handle the internal chunked helper logic for business services that coordinate repositories and domain workflows.
+
+    Args:
+        items: items value used by this routine (type `list[tuple]`).
+        size: size value used by this routine (type `int`).
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
     for index in range(0, len(items), size):
         yield items[index : index + size]
 
 
 def _safe_float(value: str) -> float | None:
+    """Handle the internal safe float helper logic for business services that coordinate repositories and domain workflows.
+
+    Args:
+        value: value value used by this routine (type `str`).
+
+    Returns:
+        `float | None` result produced by the routine.
+    """
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -297,7 +433,18 @@ def _safe_float(value: str) -> float | None:
 
 
 class _RollupAccumulator:
+    """Represent rollup accumulator behavior and data for business services that coordinate repositories and domain workflows.
+    """
     def __init__(self, *, device_id: int, rollup_date) -> None:
+        """Handle the internal init helper logic for business services that coordinate repositories and domain workflows.
+
+        Args:
+            device_id: device id keyword value used by this routine (type `int`).
+            rollup_date: rollup date keyword value used by this routine.
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         self.device_id = device_id
         self.rollup_date = rollup_date
         self.total_samples = 0
@@ -315,6 +462,16 @@ class _RollupAccumulator:
         self.max_jitter_ms = float("-inf")
 
     def add(self, metric_name: str, metric_value: str, status: str | None) -> None:
+        """Handle add for business services that coordinate repositories and domain workflows.
+
+        Args:
+            metric_name: metric name value used by this routine (type `str`).
+            metric_value: metric value value used by this routine (type `str`).
+            status: status value used by this routine (type `str | None`).
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         self.total_samples += 1
         normalized_status = str(status or "").lower()
 
@@ -335,6 +492,11 @@ class _RollupAccumulator:
             self._track_jitter(metric_value)
 
     def to_payload(self) -> dict:
+        """Handle to payload for business services that coordinate repositories and domain workflows.
+
+        Returns:
+            `dict` result produced by the routine.
+        """
         return {
             "device_id": self.device_id,
             "rollup_date": self.rollup_date,
@@ -351,6 +513,14 @@ class _RollupAccumulator:
         }
 
     def _track_ping(self, metric_value: str) -> None:
+        """Handle the internal track ping helper logic for business services that coordinate repositories and domain workflows.
+
+        Args:
+            metric_value: metric value value used by this routine (type `str`).
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         value = _safe_float(metric_value)
         if value is None:
             return
@@ -360,6 +530,14 @@ class _RollupAccumulator:
         self.max_ping_ms = max(self.max_ping_ms, value)
 
     def _track_packet_loss(self, metric_value: str) -> None:
+        """Handle the internal track packet loss helper logic for business services that coordinate repositories and domain workflows.
+
+        Args:
+            metric_value: metric value value used by this routine (type `str`).
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         value = _safe_float(metric_value)
         if value is None:
             return
@@ -367,6 +545,14 @@ class _RollupAccumulator:
         self.packet_loss_count += 1
 
     def _track_jitter(self, metric_value: str) -> None:
+        """Handle the internal track jitter helper logic for business services that coordinate repositories and domain workflows.
+
+        Args:
+            metric_value: metric value value used by this routine (type `str`).
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         value = _safe_float(metric_value)
         if value is None:
             return
@@ -376,6 +562,8 @@ class _RollupAccumulator:
 
 
 class _ArchiveAccumulator:
+    """Represent archive accumulator behavior and data for business services that coordinate repositories and domain workflows.
+    """
     def __init__(
         self,
         *,
@@ -385,6 +573,18 @@ class _ArchiveAccumulator:
         status: str,
         unit: str,
     ) -> None:
+        """Handle the internal init helper logic for business services that coordinate repositories and domain workflows.
+
+        Args:
+            device_id: device id keyword value used by this routine (type `int`).
+            archive_date: archive date keyword value used by this routine.
+            metric_name: metric name keyword value used by this routine (type `str`).
+            status: status keyword value used by this routine (type `str`).
+            unit: unit keyword value used by this routine (type `str`).
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         self.device_id = device_id
         self.archive_date = archive_date
         self.metric_name = metric_name
@@ -400,6 +600,15 @@ class _ArchiveAccumulator:
         self.last_metric_value = ""
 
     def add(self, *, metric_value: str, checked_at: datetime) -> None:
+        """Handle add for business services that coordinate repositories and domain workflows.
+
+        Args:
+            metric_value: metric value keyword value used by this routine (type `str`).
+            checked_at: checked at keyword value used by this routine (type `datetime`).
+
+        Returns:
+            None. The routine is executed for its side effects.
+        """
         self.sample_count += 1
         if self.first_checked_at is None:
             self.first_checked_at = checked_at
@@ -414,6 +623,11 @@ class _ArchiveAccumulator:
         self.max_numeric_value = max(self.max_numeric_value, value)
 
     def to_payload(self) -> dict:
+        """Handle to payload for business services that coordinate repositories and domain workflows.
+
+        Returns:
+            `dict` result produced by the routine.
+        """
         archive_month = self.archive_date.replace(day=1)
         return {
             "device_id": self.device_id,

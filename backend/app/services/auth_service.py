@@ -1,3 +1,5 @@
+"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -27,6 +29,8 @@ from ..models.user import AuthLoginAttempt, AuthSession, User
 
 @dataclass(slots=True)
 class AuthenticatedActor:
+    """Represent authenticated actor behavior and data for business services that coordinate repositories and domain workflows.
+    """
     kind: str
     role: str
     user: User | None = None
@@ -37,6 +41,8 @@ class AuthenticatedActor:
 
 @dataclass(slots=True)
 class SessionTokens:
+    """Represent session tokens behavior and data for business services that coordinate repositories and domain workflows.
+    """
     access_token: str
     refresh_token: str
     access_expires_at: datetime
@@ -44,6 +50,14 @@ class SessionTokens:
 
 
 async def ensure_bootstrap_admin(db: AsyncSession) -> bool:
+    """Ensure bootstrap admin for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+
+    Returns:
+        `bool` result produced by the routine.
+    """
     if not settings.bootstrap_admin_password:
         return False
 
@@ -66,6 +80,16 @@ async def ensure_bootstrap_admin(db: AsyncSession) -> bool:
 
 
 async def authenticate_user(db: AsyncSession, username: str, password: str) -> tuple[User, str, datetime]:
+    """Handle authenticate user for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        username: username value used by this routine (type `str`).
+        password: password value used by this routine (type `str`).
+
+    Returns:
+        `tuple[User, str, datetime]` result produced by the routine.
+    """
     user, tokens = await authenticate_user_with_options(db, username, password, remember=False)
     return user, tokens.access_token, tokens.access_expires_at
 
@@ -79,6 +103,19 @@ async def authenticate_user_with_options(
     client_ip: str = "",
     user_agent: str = "",
 ) -> tuple[User, SessionTokens]:
+    """Handle authenticate user with options for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        username: username value used by this routine (type `str`).
+        password: password value used by this routine (type `str`).
+        remember: remember keyword value used by this routine (type `bool`).
+        client_ip: client ip keyword value used by this routine (type `str`, optional).
+        user_agent: user agent keyword value used by this routine (type `str`, optional).
+
+    Returns:
+        `tuple[User, SessionTokens]` result produced by the routine.
+    """
     normalized_username = username.strip().lower()
     await ensure_login_not_rate_limited(db, username=normalized_username, client_ip=client_ip)
     user = await db.scalar(select(User).where(User.username == normalized_username))
@@ -109,6 +146,15 @@ async def authenticate_user_with_options(
 
 
 async def authenticate_token(db: AsyncSession, token: str) -> tuple[User, AuthSession]:
+    """Handle authenticate token for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        token: token value used by this routine (type `str`).
+
+    Returns:
+        `tuple[User, AuthSession]` result produced by the routine.
+    """
     actor = await get_user_from_access_token(db, token)
     if actor.user is None or actor.session is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
@@ -116,6 +162,15 @@ async def authenticate_token(db: AsyncSession, token: str) -> tuple[User, AuthSe
 
 
 async def refresh_user_session(db: AsyncSession, refresh_token: str) -> tuple[User, SessionTokens]:
+    """Refresh user session for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        refresh_token: refresh token value used by this routine (type `str`).
+
+    Returns:
+        `tuple[User, SessionTokens]` result produced by the routine.
+    """
     actor, payload = await _authenticate_session_for_refresh(db, refresh_token)
     if actor.user is None or actor.session is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
@@ -139,12 +194,30 @@ async def refresh_user_session(db: AsyncSession, refresh_token: str) -> tuple[Us
 
 
 def actor_has_permission(actor: AuthenticatedActor, permission: str) -> bool:
+    """Handle actor has permission for business services that coordinate repositories and domain workflows.
+
+    Args:
+        actor: actor value used by this routine (type `AuthenticatedActor`).
+        permission: permission value used by this routine (type `str`).
+
+    Returns:
+        `bool` result produced by the routine.
+    """
     if actor.user is not None:
         return actor.role == "admin"
     return permission in actor.permissions
 
 
 async def get_user_from_access_token(db: AsyncSession, token: str) -> AuthenticatedActor:
+    """Return user from access token for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        token: token value used by this routine (type `str`).
+
+    Returns:
+        `AuthenticatedActor` result produced by the routine.
+    """
     try:
         payload = decode_access_token(token)
     except JWTValidationError:
@@ -158,6 +231,15 @@ async def get_user_from_access_token(db: AsyncSession, token: str) -> Authentica
 
 
 async def get_user_from_refresh_token(db: AsyncSession, token: str) -> AuthenticatedActor:
+    """Return user from refresh token for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        token: token value used by this routine (type `str`).
+
+    Returns:
+        `AuthenticatedActor` result produced by the routine.
+    """
     try:
         actor, _payload = await _authenticate_refresh_token(db, token)
     except JWTValidationError as exc:
@@ -166,6 +248,15 @@ async def get_user_from_refresh_token(db: AsyncSession, token: str) -> Authentic
 
 
 async def get_user_from_token(db: AsyncSession, token: str) -> AuthenticatedActor:
+    """Return user from token for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        token: token value used by this routine (type `str`).
+
+    Returns:
+        `AuthenticatedActor` result produced by the routine.
+    """
     try:
         payload = decode_access_token(token)
     except JWTValidationError:
@@ -176,6 +267,15 @@ async def get_user_from_token(db: AsyncSession, token: str) -> AuthenticatedActo
 
 
 async def revoke_token(db: AsyncSession, token: str) -> None:
+    """Handle revoke token for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        token: token value used by this routine (type `str`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     session = None
     try:
         payload = decode_access_token(token)
@@ -191,6 +291,16 @@ async def revoke_token(db: AsyncSession, token: str) -> None:
 
 
 async def list_active_sessions_for_user(db: AsyncSession, *, user_id: int, current_jwt_id: str | None) -> list[AuthSession]:
+    """Return a list of active sessions for user for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        user_id: user id keyword value used by this routine (type `int`).
+        current_jwt_id: current jwt id keyword value used by this routine (type `str | None`).
+
+    Returns:
+        `list[AuthSession]` result produced by the routine.
+    """
     rows = await db.scalars(
         select(AuthSession)
         .where(
@@ -205,6 +315,16 @@ async def list_active_sessions_for_user(db: AsyncSession, *, user_id: int, curre
 
 
 async def revoke_other_sessions_for_user(db: AsyncSession, *, user_id: int, current_jwt_id: str | None) -> int:
+    """Handle revoke other sessions for user for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        user_id: user id keyword value used by this routine (type `int`).
+        current_jwt_id: current jwt id keyword value used by this routine (type `str | None`).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     current_time = utcnow()
     result = await db.execute(
         select(AuthSession).where(
@@ -224,6 +344,16 @@ async def revoke_other_sessions_for_user(db: AsyncSession, *, user_id: int, curr
 
 
 async def ensure_login_not_rate_limited(db: AsyncSession, *, username: str, client_ip: str) -> None:
+    """Ensure login not rate limited for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        username: username keyword value used by this routine (type `str`).
+        client_ip: client ip keyword value used by this routine (type `str`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     window_start = utcnow() - timedelta(minutes=settings.auth_login_rate_limit_window_minutes)
     failed_attempts = await db.scalar(
         select(func.count(AuthLoginAttempt.id)).where(
@@ -249,6 +379,18 @@ async def record_login_attempt(
     was_successful: bool,
     was_rate_limited: bool = False,
 ) -> None:
+    """Record login attempt for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        username: username keyword value used by this routine (type `str`).
+        client_ip: client ip keyword value used by this routine (type `str`).
+        was_successful: was successful keyword value used by this routine (type `bool`).
+        was_rate_limited: was rate limited keyword value used by this routine (type `bool`, optional).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     db.add(
         AuthLoginAttempt(
             username=username,
@@ -262,6 +404,16 @@ async def record_login_attempt(
 
 
 async def clear_failed_login_attempts(db: AsyncSession, *, username: str, client_ip: str) -> None:
+    """Handle clear failed login attempts for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        username: username keyword value used by this routine (type `str`).
+        client_ip: client ip keyword value used by this routine (type `str`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     await db.execute(
         delete(AuthLoginAttempt).where(
             AuthLoginAttempt.username == username,
@@ -272,6 +424,14 @@ async def clear_failed_login_attempts(db: AsyncSession, *, username: str, client
 
 
 async def cleanup_auth_data(db: AsyncSession) -> dict[str, int]:
+    """Handle cleanup auth data for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+
+    Returns:
+        `dict[str, int]` result produced by the routine.
+    """
     now = utcnow()
     session_cutoff = now - timedelta(days=settings.auth_session_retention_days)
     attempt_cutoff = now - timedelta(days=settings.auth_login_attempt_retention_days)
@@ -298,6 +458,16 @@ async def list_sessions_for_admin(
     username: str | None = None,
     include_revoked: bool = False,
 ) -> list[tuple[AuthSession, User]]:
+    """Return a list of sessions for admin for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        username: username keyword value used by this routine (type `str | None`, optional).
+        include_revoked: include revoked keyword value used by this routine (type `bool`, optional).
+
+    Returns:
+        `list[tuple[AuthSession, User]]` result produced by the routine.
+    """
     query = (
         select(AuthSession, User)
         .join(User, User.id == AuthSession.user_id)
@@ -312,6 +482,15 @@ async def list_sessions_for_admin(
 
 
 async def revoke_all_sessions_for_user(db: AsyncSession, *, user_id: int) -> int:
+    """Handle revoke all sessions for user for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        user_id: user id keyword value used by this routine (type `int`).
+
+    Returns:
+        `int` result produced by the routine.
+    """
     current_time = utcnow()
     result = await db.execute(
         select(AuthSession).where(
@@ -328,6 +507,14 @@ async def revoke_all_sessions_for_user(db: AsyncSession, *, user_id: int) -> int
 
 
 async def list_users_for_admin(db: AsyncSession) -> list[User]:
+    """Return a list of users for admin for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+
+    Returns:
+        `list[User]` result produced by the routine.
+    """
     rows = await db.scalars(select(User).order_by(User.username.asc()))
     return list(rows.all())
 
@@ -340,6 +527,18 @@ async def create_user_for_admin(
     password: str,
     role: str,
 ) -> User:
+    """Create user for admin for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        username: username keyword value used by this routine (type `str`).
+        full_name: full name keyword value used by this routine (type `str`).
+        password: password keyword value used by this routine (type `str`).
+        role: role keyword value used by this routine (type `str`).
+
+    Returns:
+        `User` result produced by the routine.
+    """
     normalized_username = username.strip().lower()
     existing = await db.scalar(select(User).where(User.username == normalized_username))
     if existing is not None:
@@ -368,6 +567,19 @@ async def update_user_for_admin(
     is_active: bool | None = None,
     disabled_reason: str | None = None,
 ) -> User:
+    """Update user for admin for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        user_id: user id keyword value used by this routine (type `int`).
+        full_name: full name keyword value used by this routine (type `str | None`, optional).
+        role: role keyword value used by this routine (type `str | None`, optional).
+        is_active: is active keyword value used by this routine (type `bool | None`, optional).
+        disabled_reason: disabled reason keyword value used by this routine (type `str | None`, optional).
+
+    Returns:
+        `User` result produced by the routine.
+    """
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -392,6 +604,16 @@ async def update_user_for_admin(
 
 
 async def reset_user_password_for_admin(db: AsyncSession, *, user_id: int, new_password: str) -> User:
+    """Handle reset user password for admin for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        user_id: user id keyword value used by this routine (type `int`).
+        new_password: new password keyword value used by this routine (type `str`).
+
+    Returns:
+        `User` result produced by the routine.
+    """
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -412,6 +634,18 @@ async def change_password_for_user(
     new_password: str,
     current_jwt_id: str | None,
 ) -> User:
+    """Handle change password for user for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        user_id: user id keyword value used by this routine (type `int`).
+        current_password: current password keyword value used by this routine (type `str`).
+        new_password: new password keyword value used by this routine (type `str`).
+        current_jwt_id: current jwt id keyword value used by this routine (type `str | None`).
+
+    Returns:
+        `User` result produced by the routine.
+    """
     user = await db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -427,6 +661,14 @@ async def change_password_for_user(
 
 
 async def build_auth_observability_summary(db: AsyncSession) -> dict[str, int]:
+    """Build auth observability summary for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+
+    Returns:
+        `dict[str, int]` result produced by the routine.
+    """
     window_start = utcnow() - timedelta(minutes=settings.auth_login_rate_limit_window_minutes)
     now = utcnow()
     active_sessions = await db.scalar(
@@ -463,6 +705,15 @@ async def build_auth_observability_summary(db: AsyncSession) -> dict[str, int]:
 
 
 async def _touch_session_if_due(db: AsyncSession, session: AuthSession) -> None:
+    """Handle the internal touch session if due helper logic for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        session: session value used by this routine (type `AuthSession`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
     now = utcnow()
     if session.last_seen_at >= now - timedelta(seconds=settings.auth_session_touch_interval_seconds):
         return
@@ -478,6 +729,18 @@ def _build_session_tokens(
     refresh_expires_at: datetime,
     access_expires_at: datetime,
 ) -> SessionTokens:
+    """Build session tokens for business services that coordinate repositories and domain workflows.
+
+    Args:
+        user: user value used by this routine (type `User`).
+        session_jti: session jti keyword value used by this routine (type `str`).
+        refresh_nonce: refresh nonce keyword value used by this routine (type `str`).
+        refresh_expires_at: refresh expires at keyword value used by this routine (type `datetime`).
+        access_expires_at: access expires at keyword value used by this routine (type `datetime`).
+
+    Returns:
+        `SessionTokens` result produced by the routine.
+    """
     return SessionTokens(
         access_token=create_access_token(
             subject=user.id,
@@ -501,6 +764,15 @@ def _build_session_tokens(
 
 
 async def _authenticate_session_for_refresh(db: AsyncSession, token: str) -> tuple[AuthenticatedActor, TokenPayload]:
+    """Handle the internal authenticate session for refresh helper logic for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        token: token value used by this routine (type `str`).
+
+    Returns:
+        `tuple[AuthenticatedActor, TokenPayload]` result produced by the routine.
+    """
     try:
         payload = decode_access_token(token)
     except JWTValidationError:
@@ -511,6 +783,15 @@ async def _authenticate_session_for_refresh(db: AsyncSession, token: str) -> tup
 
 
 async def _authenticate_refresh_token(db: AsyncSession, token: str) -> tuple[AuthenticatedActor, TokenPayload]:
+    """Handle the internal authenticate refresh token helper logic for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        token: token value used by this routine (type `str`).
+
+    Returns:
+        `tuple[AuthenticatedActor, TokenPayload]` result produced by the routine.
+    """
     payload = decode_access_token(token)
     if payload.token_type != "refresh" or not payload.refresh_nonce:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
@@ -527,6 +808,15 @@ async def _authenticate_refresh_token(db: AsyncSession, token: str) -> tuple[Aut
 
 
 async def _get_active_session_by_jwt_id(db: AsyncSession, jwt_id: str) -> AuthSession:
+    """Return active session by jwt id for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        jwt_id: jwt id value used by this routine (type `str`).
+
+    Returns:
+        `AuthSession` result produced by the routine.
+    """
     session = await db.scalar(select(AuthSession).where(AuthSession.jwt_id == jwt_id))
     if session is None or session.revoked_at is not None or session.expires_at <= utcnow():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
@@ -534,6 +824,16 @@ async def _get_active_session_by_jwt_id(db: AsyncSession, jwt_id: str) -> AuthSe
 
 
 async def _get_active_user_for_session(db: AsyncSession, session: AuthSession, *, subject: int) -> User:
+    """Return active user for session for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        session: session value used by this routine (type `AuthSession`).
+        subject: subject keyword value used by this routine (type `int`).
+
+    Returns:
+        `User` result produced by the routine.
+    """
     user = await db.get(User, subject)
     if user is None or user.id != session.user_id or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive")
@@ -541,6 +841,11 @@ async def _get_active_user_for_session(db: AsyncSession, session: AuthSession, *
 
 
 def _legacy_payload() -> TokenPayload:
+    """Handle the internal legacy payload helper logic for business services that coordinate repositories and domain workflows.
+
+    Returns:
+        `TokenPayload` result produced by the routine.
+    """
     return TokenPayload(
         token_type="refresh",
         subject=0,
@@ -555,6 +860,15 @@ def _legacy_payload() -> TokenPayload:
 
 
 async def _get_user_from_legacy_token(db: AsyncSession, token: str) -> AuthenticatedActor:
+    """Return user from legacy token for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        token: token value used by this routine (type `str`).
+
+    Returns:
+        `AuthenticatedActor` result produced by the routine.
+    """
     token_hash = hash_session_token(token)
     session = await db.scalar(select(AuthSession).where(AuthSession.token_hash == token_hash))
     if session is None or session.revoked_at is not None or session.expires_at <= utcnow():

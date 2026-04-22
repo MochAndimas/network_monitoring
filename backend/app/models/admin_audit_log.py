@@ -1,3 +1,5 @@
+"""Provide SQLAlchemy ORM models for the network monitoring project."""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, Integer, String, Text
@@ -8,6 +10,10 @@ from ..core.time import utcnow
 
 
 class AdminAuditLog(Base):
+    """Represent admin audit log behavior and data for SQLAlchemy ORM models.
+
+    Inherits from `Base` to match the surrounding framework or persistence model.
+    """
     __tablename__ = "admin_audit_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

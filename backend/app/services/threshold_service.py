@@ -1,3 +1,5 @@
+"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +29,14 @@ DEFAULT_THRESHOLDS = {
 
 
 async def ensure_default_thresholds(db: AsyncSession) -> list:
+    """Ensure default thresholds for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+
+    Returns:
+        `list` result produced by the routine.
+    """
     repository = ThresholdRepository(db)
     existing_thresholds = {threshold.key: threshold for threshold in await repository.list_thresholds()}
     thresholds = list(existing_thresholds.values())
@@ -48,6 +58,14 @@ async def ensure_default_thresholds(db: AsyncSession) -> list:
 
 
 async def list_threshold_rows(db: AsyncSession) -> list[dict]:
+    """Return a list of threshold rows for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+
+    Returns:
+        `list[dict]` result produced by the routine.
+    """
     await ensure_default_thresholds(db)
     return [
         {"id": threshold.id, "key": threshold.key, "value": threshold.value, "description": threshold.description}
@@ -56,11 +74,29 @@ async def list_threshold_rows(db: AsyncSession) -> list[dict]:
 
 
 async def get_threshold_map(db: AsyncSession) -> dict[str, float]:
+    """Return threshold map for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+
+    Returns:
+        `dict[str, float]` result produced by the routine.
+    """
     await ensure_default_thresholds(db)
     return {threshold.key: threshold.value for threshold in await ThresholdRepository(db).list_thresholds()}
 
 
 async def update_threshold_value(db: AsyncSession, key: str, value: float) -> dict:
+    """Update threshold value for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+    Args:
+        db: db value used by this routine (type `AsyncSession`).
+        key: key value used by this routine (type `str`).
+        value: value value used by this routine (type `float`).
+
+    Returns:
+        `dict` result produced by the routine.
+    """
     if key not in DEFAULT_THRESHOLDS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Threshold not found")
     _, description = DEFAULT_THRESHOLDS[key]
