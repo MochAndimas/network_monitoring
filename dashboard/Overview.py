@@ -1,3 +1,4 @@
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -6,112 +7,7 @@ from components.api import get_json, has_pending_action, post_json
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
-
-
-STATUS_EMOJI = {
-    "up": "UP",
-    "ok": "OK",
-    "warning": "WARNING",
-    "down": "DOWN",
-    "error": "ERROR",
-    "unknown": "UNKNOWN",
-}
-
-
-def _hex_to_rgba(color: str | None, alpha: float, fallback_rgb: tuple[int, int, int]) -> str:
-    normalized = str(color or "").strip().lstrip("#")
-    if len(normalized) == 3:
-        normalized = "".join(ch * 2 for ch in normalized)
-    if len(normalized) == 6:
-        try:
-            red = int(normalized[0:2], 16)
-            green = int(normalized[2:4], 16)
-            blue = int(normalized[4:6], 16)
-            return f"rgba({red}, {green}, {blue}, {alpha})"
-        except ValueError:
-            pass
-    red, green, blue = fallback_rgb
-    return f"rgba({red}, {green}, {blue}, {alpha})"
-
-
-def _overview_css() -> str:
-    return """
-<style>
-.stMainBlockContainer,
-[data-testid="stAppViewContainer"] .main .block-container {
-    max-width: 100%;
-    padding-left: 2rem;
-    padding-right: 2rem;
-}
-.overview-meta,
-.history-card-content {
-    color: var(--text-color);
-}
-.overview-meta {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    margin: 0.3rem 0 1.1rem 0;
-}
-.overview-pill {
-    border: 1px solid color-mix(in srgb, var(--text-color) 18%, transparent);
-    background: transparent;
-    border-radius: 999px;
-    padding: 0.45rem 0.8rem;
-    font-size: 0.9rem;
-    color: color-mix(in srgb, var(--text-color) 58%, transparent);
-}
-.history-card-label {
-    font-size: 0.9rem;
-    line-height: 1.35;
-    color: color-mix(in srgb, var(--text-color) 72%, transparent);
-    margin-bottom: 0.6rem;
-}
-.history-card-content {
-    display: flex;
-    min-height: 92px;
-    flex-direction: column;
-    justify-content: flex-start;
-}
-.history-card-content p {
-    margin: 0;
-}
-.history-card-value {
-    font-size: clamp(1.35rem, 2vw, 2.5rem);
-    line-height: 1.08;
-    font-weight: 700;
-    color: var(--text-color);
-    white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-}
-.history-card-value.compact {
-    font-size: clamp(1rem, 1.35vw, 1.4rem);
-    line-height: 1.25;
-}
-</style>
-"""
-
-
-
-def _status_label(value: str | None) -> str:
-    if not value:
-        return STATUS_EMOJI["unknown"]
-    return STATUS_EMOJI.get(str(value).lower(), str(value).upper())
-
-
-def _render_stat_card(column, label: str, value: str | int, *, compact: bool = False) -> None:
-    value_class = "history-card-value compact" if compact else "history-card-value"
-    with column.container(border=True):
-        st.markdown(
-            f"""
-            <div class="history-card-content">
-                <div class="history-card-label">{label}</div>
-                <div class="{value_class}">{value}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+from components.ui import normalize_status_label, render_kpi_cards, render_meta_row, render_page_header, status_priority
 
 
 def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
@@ -125,6 +21,7 @@ def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
         dataframe["latest_checked_at_wib"] = "-"
     dataframe["site"] = dataframe["site"].fillna("-")
     dataframe["latest_status"] = dataframe["latest_status"].fillna("unknown")
+    dataframe["latest_status_label"] = dataframe["latest_status"].map(normalize_status_label)
     return dataframe
 
 
@@ -134,6 +31,7 @@ def _prepare_alerts_frame(alerts: list[dict]) -> pd.DataFrame:
         return dataframe
     dataframe["created_at"] = to_wib_timestamp(dataframe["created_at"])
     dataframe["created_at_wib"] = dataframe["created_at"].apply(format_wib_timestamp)
+    dataframe["severity"] = dataframe["severity"].map(normalize_status_label)
     return dataframe
 
 
@@ -143,6 +41,7 @@ def _prepare_incidents_frame(incidents: list[dict]) -> pd.DataFrame:
         return dataframe
     dataframe["started_at"] = to_wib_timestamp(dataframe["started_at"])
     dataframe["started_at_wib"] = dataframe["started_at"].apply(format_wib_timestamp)
+    dataframe["status"] = dataframe["status"].map(normalize_status_label)
     return dataframe
 
 
@@ -154,6 +53,7 @@ def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
     dataframe["checked_at_wib"] = dataframe["checked_at"].apply(format_wib_timestamp)
     unit_series = dataframe["unit"].fillna("").astype(str)
     dataframe["value"] = dataframe["metric_value"].astype(str) + unit_series.map(lambda unit: f" {unit}" if unit else "")
+    dataframe["status"] = dataframe["status"].map(normalize_status_label)
     return dataframe
 
 
@@ -205,71 +105,110 @@ def _render_overview_body() -> None:
         else "-"
     )
     severity_counts = pd.DataFrame(
-        [{"severity": severity, "count": count} for severity, count in payload.get("alert_severity_summary", {}).items()]
+        [{"severity": normalize_status_label(severity), "count": count} for severity, count in payload.get("alert_severity_summary", {}).items()]
+    )
+    if not severity_counts.empty:
+        severity_counts["priority"] = severity_counts["severity"].map(status_priority)
+        severity_counts = severity_counts.sort_values(["priority", "count", "severity"], ascending=[True, False, True])
+
+    render_meta_row(
+        [
+            ("Refresh Otomatis", live_status_text(auto_refresh, interval_seconds)),
+            ("Terakhir Diperbarui", rendered_at_label()),
+            ("Pemeriksaan Terakhir (WIB)", latest_check),
+        ]
     )
 
-    st.markdown(
-        f"""
-        <div class="overview-meta">
-            <div class="overview-pill">{live_status_text(auto_refresh, interval_seconds)}</div>
-            <div class="overview-pill">Render terakhir: {rendered_at_label()}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.subheader("Status Global")
+    render_kpi_cards(
+        [
+            ("Internet", normalize_status_label(summary["internet_status"]), None),
+            ("Mikrotik", normalize_status_label(summary["mikrotik_status"]), None),
+            ("Server", normalize_status_label(summary["server_status"]), None),
+            ("Alert Aktif", int(summary["active_alerts"]), None),
+        ],
+        columns_per_row=4,
     )
 
-    st.markdown("### Global Status")
-    status_col1, status_col2, status_col3, status_col4 = st.columns(4)
-    _render_stat_card(status_col1, "Internet", _status_label(summary["internet_status"]))
-    _render_stat_card(status_col2, "Mikrotik", _status_label(summary["mikrotik_status"]))
-    _render_stat_card(status_col3, "Server", _status_label(summary["server_status"]))
-    _render_stat_card(status_col4, "Active Alerts", int(summary["active_alerts"]))
-
-    st.markdown("### Operational Snapshot")
-    ops_col1, ops_col2, ops_col3, ops_col4, ops_col5 = st.columns(5)
-    _render_stat_card(ops_col1, "Total Devices", total_devices)
-    _render_stat_card(ops_col2, "Active Devices", active_devices)
-    _render_stat_card(ops_col3, "Devices Down", devices_down)
-    _render_stat_card(ops_col4, "Devices Warning", devices_warning)
-    _render_stat_card(ops_col5, "Last Check (WIB)", latest_check, compact=True)
+    st.subheader("Snapshot Operasional")
+    render_kpi_cards(
+        [
+            ("Total Device", total_devices, None),
+            ("Device Aktif", active_devices, None),
+            ("Device Down", devices_down, None),
+            ("Device Warning", devices_warning, None),
+            ("Insiden Aktif", active_incidents, None),
+        ],
+        columns_per_row=5,
+    )
 
     ops_left, ops_right = st.columns([2, 1])
 
     with ops_left:
-        st.markdown("### Devices Needing Attention")
+        st.markdown("### Device Perlu Perhatian")
         if devices_frame.empty:
             st.info("Belum ada device yang tersedia.")
         else:
-            problem_devices = devices_frame[devices_frame["latest_status"].isin(["down", "warning", "error"])].copy()
-            if problem_devices.empty:
+            filtered_devices = devices_frame[devices_frame["latest_status"].isin(["down", "warning", "error"])].copy()
+            if filtered_devices.empty:
                 st.success("Semua device aktif saat ini terlihat sehat dari snapshot terbaru.")
             else:
-                problem_view = problem_devices[
-                    ["name", "ip_address", "device_type", "site", "latest_status", "latest_checked_at_wib"]
+                problem_view = filtered_devices[
+                    ["name", "ip_address", "device_type", "site", "latest_status_label", "latest_checked_at_wib"]
                 ].rename(
                     columns={
                         "name": "Device",
                         "ip_address": "IP Address",
                         "device_type": "Type",
                         "site": "Site",
-                        "latest_status": "Status",
-                        "latest_checked_at_wib": "Last Check (WIB)",
+                        "latest_status_label": "Status",
+                        "latest_checked_at_wib": "Pemeriksaan Terakhir (WIB)",
                     }
                 )
-                st.dataframe(problem_view, width="stretch", hide_index=True)
+                st.dataframe(
+                    problem_view,
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "Device": st.column_config.TextColumn("Device", width="medium"),
+                        "IP Address": st.column_config.TextColumn("IP Address", width="small"),
+                        "Type": st.column_config.TextColumn("Type", width="small"),
+                        "Site": st.column_config.TextColumn("Site", width="small"),
+                        "Status": st.column_config.TextColumn("Status", width="small"),
+                        "Pemeriksaan Terakhir (WIB)": st.column_config.TextColumn("Pemeriksaan Terakhir (WIB)", width="medium"),
+                    },
+                )
 
     with ops_right:
-        st.markdown("### Alert Severity")
+        st.markdown("### Distribusi Severity Alert")
         if severity_counts.empty:
             st.success("Tidak ada alert aktif.")
         else:
-            st.bar_chart(severity_counts.set_index("severity"))
-            st.metric("Active Incidents", active_incidents)
+            severity_chart = (
+                alt.Chart(severity_counts)
+                .mark_bar()
+                .encode(
+                    x=alt.X("count:Q", title="Jumlah"),
+                    y=alt.Y("severity:N", sort="-x", title="Severity"),
+                    tooltip=[alt.Tooltip("severity:N", title="Severity"), alt.Tooltip("count:Q", title="Jumlah")],
+                )
+                .properties(height=220)
+            )
+            st.altair_chart(severity_chart, width="stretch")
+            st.dataframe(
+                severity_counts[["severity", "count"]].rename(columns={"severity": "Severity", "count": "Jumlah"}),
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Severity": st.column_config.TextColumn("Severity", width="small"),
+                    "Jumlah": st.column_config.NumberColumn("Jumlah", width="small", format="%d"),
+                },
+            )
 
     insight_left, insight_right = st.columns(2)
 
     with insight_left:
-        st.markdown("### Latest Active Alerts")
+        st.markdown("### Alert Aktif Terbaru")
         if alerts_frame.empty:
             st.info("Belum ada alert aktif.")
         else:
@@ -283,10 +222,20 @@ def _render_overview_body() -> None:
                     "message": "Message",
                 }
             )
-            st.dataframe(latest_alerts_view.head(5), width="stretch", hide_index=True)
+            st.dataframe(
+                latest_alerts_view.head(8),
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Created At (WIB)": st.column_config.TextColumn("Created At (WIB)", width="medium"),
+                    "Device": st.column_config.TextColumn("Device", width="medium"),
+                    "Severity": st.column_config.TextColumn("Severity", width="small"),
+                    "Message": st.column_config.TextColumn("Message", width="large"),
+                },
+            )
 
     with insight_right:
-        st.markdown("### Active Incidents")
+        st.markdown("### Insiden Aktif")
         if incidents_frame.empty:
             st.info("Belum ada incident aktif.")
         else:
@@ -300,9 +249,19 @@ def _render_overview_body() -> None:
                     "status": "Status",
                 }
             )
-            st.dataframe(incident_view.head(5), width="stretch", hide_index=True)
+            st.dataframe(
+                incident_view.head(8),
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Started At (WIB)": st.column_config.TextColumn("Started At (WIB)", width="medium"),
+                    "Device": st.column_config.TextColumn("Device", width="medium"),
+                    "Summary": st.column_config.TextColumn("Summary", width="large"),
+                    "Status": st.column_config.TextColumn("Status", width="small"),
+                },
+            )
 
-    st.markdown("### Recent Metric Snapshot")
+    st.markdown("### Snapshot Metric Terbaru")
     if history_frame.empty:
         st.info("Belum ada metric history yang bisa ditampilkan.")
     else:
@@ -317,15 +276,27 @@ def _render_overview_body() -> None:
                 "status": "Status",
             }
         )
-        st.dataframe(metric_view.head(12), width="stretch", hide_index=True)
+        st.dataframe(
+            metric_view.head(12),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Checked At (WIB)": st.column_config.TextColumn("Checked At (WIB)", width="medium"),
+                "Device": st.column_config.TextColumn("Device", width="medium"),
+                "Metric": st.column_config.TextColumn("Metric", width="medium"),
+                "Value": st.column_config.TextColumn("Value", width="small"),
+                "Status": st.column_config.TextColumn("Status", width="small"),
+            },
+        )
 
 
 st.set_page_config(page_title="Overview", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
 require_dashboard_login()
-st.markdown(_overview_css(), unsafe_allow_html=True)
-st.title("Overview")
-st.caption("Overview ini dipakai buat lihat kondisi umum sistem, gangguan aktif, dan snapshot device terbaru tanpa pindah-pindah halaman.")
+render_page_header(
+    "Overview",
+    "Ringkasan kondisi jaringan, gangguan aktif, dan snapshot telemetry terkini.",
+)
 
 action_col, info_col = st.columns([1, 3])
 with action_col:
@@ -356,8 +327,8 @@ with action_col:
         )
 with info_col:
     st.info(
-        "Gunakan halaman ini untuk quick check. "
-        "Kalau butuh detail histori, inventory, atau threshold, lanjut lewat menu sidebar."
+        "Gunakan halaman ini untuk quick check operasional. "
+        "Detail histori, inventory, dan threshold tetap tersedia di halaman masing-masing."
     )
 
 auto_refresh, interval_seconds = refresh_controls("overview", default_enabled=True, default_interval=15)

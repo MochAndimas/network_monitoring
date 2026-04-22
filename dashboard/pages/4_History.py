@@ -10,6 +10,7 @@ from components.api import get_json, paged_items, paged_meta
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp, wib_date_boundary_to_utc_iso
+from components.ui import normalize_status_label, render_meta_row, render_page_header, status_priority
 
 st.set_page_config(page_title="History", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
@@ -398,6 +399,7 @@ def _prepare_history_frame(history: list[dict], *, sort_desc: bool = True) -> pd
     dataframe["metric_label"] = dataframe["metric_name"].astype(str).map(metric_label_map)
     dataframe["checked_at_wib"] = dataframe["checked_at"].map(format_wib_timestamp)
     dataframe["display_value"] = _format_metric_values(dataframe)
+    dataframe["status"] = dataframe["status"].map(normalize_status_label)
     return dataframe
 
 
@@ -722,17 +724,8 @@ def _render_metric_trend_section(
 
 
 def _render_stat_card(column, label: str, value: str | int, *, compact: bool = False) -> None:
-    value_class = "history-card-value compact" if compact else "history-card-value"
     with column.container(border=True):
-        st.markdown(
-            f"""
-            <div class="history-card-content">
-                <div class="history-card-label">{label}</div>
-                <div class="{value_class}">{value}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.metric(label, value)
 
 
 def _latest_metric_snapshot_map(dataframe: pd.DataFrame) -> dict[str, pd.Series]:
@@ -900,15 +893,60 @@ def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> No
         chart_frame["TX Mbps"] = pd.to_numeric(chart_frame["TX Mbps"], errors="coerce").fillna(0)
         traffic_chart_col, traffic_table_col = st.columns([1, 2])
         with traffic_chart_col:
-            st.bar_chart(chart_frame.set_index("Interface")[["RX Mbps", "TX Mbps"]])
+            melted = chart_frame.melt(
+                id_vars=["Interface"],
+                value_vars=["RX Mbps", "TX Mbps"],
+                var_name="Direction",
+                value_name="Mbps",
+            )
+            traffic_chart = (
+                alt.Chart(melted)
+                .mark_bar()
+                .encode(
+                    x=alt.X("Mbps:Q", title="Mbps"),
+                    y=alt.Y("Interface:N", sort="-x", title="Interface"),
+                    color=alt.Color("Direction:N", title="Direction"),
+                    tooltip=[
+                        alt.Tooltip("Interface:N", title="Interface"),
+                        alt.Tooltip("Direction:N", title="Direction"),
+                        alt.Tooltip("Mbps:Q", title="Mbps", format=".2f"),
+                    ],
+                )
+                .properties(height=260)
+            )
+            st.altair_chart(traffic_chart, width="stretch")
         with traffic_table_col:
-            st.dataframe(interface_frame, width="stretch", hide_index=True)
+            st.dataframe(
+                interface_frame,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Interface": st.column_config.TextColumn("Interface", width="medium"),
+                    "RX Bytes": st.column_config.TextColumn("RX Bytes", width="small"),
+                    "TX Bytes": st.column_config.TextColumn("TX Bytes", width="small"),
+                    "RX Mbps": st.column_config.TextColumn("RX Mbps", width="small"),
+                    "TX Mbps": st.column_config.TextColumn("TX Mbps", width="small"),
+                    "Status": st.column_config.TextColumn("Status", width="small"),
+                },
+            )
 
     st.markdown("### Firewall / NAT Counters")
     if firewall_frame.empty:
         st.info("Belum ada counter firewall/NAT dari Mikrotik API.")
     else:
-        st.dataframe(firewall_frame, width="stretch", hide_index=True)
+        st.dataframe(
+            firewall_frame,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Rule": st.column_config.TextColumn("Rule", width="large"),
+                "Packets": st.column_config.TextColumn("Packets", width="small"),
+                "Bytes": st.column_config.TextColumn("Bytes", width="small"),
+                "PPS": st.column_config.TextColumn("PPS", width="small"),
+                "Mbps": st.column_config.TextColumn("Mbps", width="small"),
+                "Spike": st.column_config.TextColumn("Spike", width="small"),
+            },
+        )
 
 
 def _is_dynamic_mikrotik_metric(metric_name: str) -> bool:
@@ -926,17 +964,6 @@ def _default_mikrotik_trend_metrics(metric_names: list[str]) -> list[str]:
     return [metric_name for metric_name in preferred_metrics if metric_name in available]
 
 
-def _printer_chip(label: str, value: str, meta: str = "") -> str:
-    meta_markup = f'<div class="printer-status-chip-meta">{meta}</div>' if meta else ""
-    return f"""
-    <div class="printer-status-chip-content">
-        <div class="printer-status-chip-label">{label}</div>
-        <div class="printer-status-chip-value">{value}</div>
-        {meta_markup}
-    </div>
-    """
-
-
 def _render_printer_history_section(
     printer_history_frame: pd.DataFrame,
 ) -> None:
@@ -951,17 +978,8 @@ def _render_printer_history_section(
     paper_row = latest_map.get("printer_paper_status")
     uptime_row = latest_map.get("printer_uptime_seconds")
     pages_row = latest_map.get("printer_total_pages")
-    st.markdown(
-        """
-        <div class="printer-panel">
-            <div class="printer-panel-title">Printer Health</div>
-            <div class="printer-panel-subtitle">
-                Ringkasan cepat untuk status printer, deteksi gangguan, uptime sejak reboot, dan counter halaman.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("### Printer Health")
+    st.caption("Ringkasan status printer, deteksi gangguan, uptime, dan counter halaman.")
     status_columns = st.columns(6)
     status_cards = [
         (
@@ -997,11 +1015,14 @@ def _render_printer_history_section(
     ]
     for column, (label, value, meta) in zip(status_columns, status_cards, strict=False):
         with column.container(border=True):
-            st.markdown(_printer_chip(label, value, meta), unsafe_allow_html=True)
+            st.metric(label, value)
+            if meta:
+                st.caption(meta)
 
-st.markdown(_history_css(), unsafe_allow_html=True)
-st.title("History")
-st.caption("Halaman ini menampilkan histori pengecekan metric. Pilih device dan metric supaya grafik lebih jelas dibaca.")
+render_page_header(
+    "History",
+    "Histori pengecekan metrik untuk analisis tren, snapshot terbaru, dan investigasi insiden.",
+)
 
 devices = get_json("/devices/options?active_only=false&limit=300&offset=0", [])
 device_type_by_id = {
@@ -1047,7 +1068,7 @@ def _render_history_body() -> None:
     if "history_chart_window" not in st.session_state:
         st.session_state["history_chart_window"] = "1 jam"
     device_option_labels = list(device_options.keys())
-    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+    filter_col1, filter_col2, filter_col3 = st.columns(3)
     selected_device = filter_col1.selectbox(
         "Device",
         options=device_option_labels,
@@ -1059,17 +1080,18 @@ def _render_history_body() -> None:
     selected_device_type = str(selected_device_record.get("device_type")) if selected_device_record else None
     current_selected_metric = str(st.session_state.get("history_selected_metric", "All Metrics"))
     status_value = filter_col3.selectbox("Status", options=STATUS_OPTIONS, index=0)
-    limit_value = filter_col4.selectbox("Rows", options=[50, 100, 200, 300, 500], index=2)
-    chart_window_label = st.selectbox(
-        "Chart Window",
-        options=list(CHART_WINDOW_OPTIONS.keys()),
-        index=list(CHART_WINDOW_OPTIONS.keys()).index("1 jam"),
-        help="Pilih rentang waktu yang dipakai untuk chart trend.",
-        key="history_chart_window",
-    )
-    date_filter_col1, date_filter_col2 = st.columns(2)
-    checked_from_date = date_filter_col1.date_input("Checked From", value=default_start_date)
-    checked_to_date = date_filter_col2.date_input("Checked To", value=today)
+    with st.expander("Filter Lanjutan"):
+        advanced_col1, advanced_col2, advanced_col3, advanced_col4 = st.columns(4)
+        limit_value = advanced_col1.selectbox("Rows", options=[50, 100, 200, 300, 500], index=2)
+        chart_window_label = advanced_col2.selectbox(
+            "Chart Window",
+            options=list(CHART_WINDOW_OPTIONS.keys()),
+            index=list(CHART_WINDOW_OPTIONS.keys()).index("1 jam"),
+            help="Pilih rentang waktu yang dipakai untuk chart trend.",
+            key="history_chart_window",
+        )
+        checked_from_date = advanced_col3.date_input("Checked From", value=default_start_date)
+        checked_to_date = advanced_col4.date_input("Checked To", value=today)
 
     snapshot_page_size = int(st.session_state.get("history_snapshot_page_size", 10))
     snapshot_page = int(st.session_state.get("history_snapshot_page", 1))
@@ -1183,18 +1205,15 @@ def _render_history_body() -> None:
     snapshot_uptime_map = history_context.get("snapshot_uptime_map", {})
     latest_snapshot_status_summary = history_context.get("latest_snapshot_status_summary", {})
     with meta_container:
-        st.markdown(
-            f"""
-            <div class="history-meta">
-                <div class="history-pill">{live_status_text(auto_refresh, interval_seconds)}</div>
-                <div class="history-pill">Render terakhir: {rendered_at_label()}</div>
-                <div class="history-pill">Filter aktif: {selected_device}</div>
-                <div class="history-pill">Rentang: {checked_from_date} s/d {checked_to_date}</div>
-                <div class="history-pill">Window chart: {chart_window_label}</div>
-                <div class="history-pill">Total match: {history_meta.get("total", 0)}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        render_meta_row(
+            [
+                ("Refresh Otomatis", live_status_text(auto_refresh, interval_seconds)),
+                ("Terakhir Diperbarui", rendered_at_label()),
+                ("Filter Device", selected_device),
+                ("Rentang", f"{checked_from_date} s/d {checked_to_date}"),
+                ("Chart Window", chart_window_label),
+                ("Total Match", int(history_meta.get("total", 0) or 0)),
+            ]
         )
 
     if not history:
@@ -1238,24 +1257,57 @@ def _render_history_body() -> None:
                 "checked_at_wib": "Checked At (WIB)",
             }
         )
-        st.dataframe(snapshot_view, width="stretch")
+        st.dataframe(
+            snapshot_view,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Device": st.column_config.TextColumn("Device", width="medium"),
+                "Metric": st.column_config.TextColumn("Metric", width="medium"),
+                "Latest Value": st.column_config.TextColumn("Latest Value", width="small"),
+                "Uptime": st.column_config.TextColumn("Uptime", width="small"),
+                "Status": st.column_config.TextColumn("Status", width="small"),
+                "Checked At (WIB)": st.column_config.TextColumn("Checked At (WIB)", width="medium"),
+            },
+        )
         _snapshot_pagination_controls(int(snapshot_meta.get("total", len(latest_per_series))))
 
     with status_container:
         st.markdown("### Status Summary")
         status_counts = (
             pd.DataFrame(
-                [{"status": status, "count": count} for status, count in latest_snapshot_status_summary.items()]
+                [{"status": normalize_status_label(status), "count": count} for status, count in latest_snapshot_status_summary.items()]
             ).sort_values(["count", "status"], ascending=[False, True])
             if latest_snapshot_status_summary
             else pd.DataFrame(columns=["status", "count"])
         )
         status_left, status_right = st.columns([1, 2])
-        status_left.dataframe(status_counts, width="stretch", hide_index=True)
+        if not status_counts.empty:
+            status_counts["priority"] = status_counts["status"].map(status_priority)
+            status_counts = status_counts.sort_values(["priority", "count", "status"], ascending=[True, False, True])
+        status_left.dataframe(
+            status_counts[["status", "count"]] if not status_counts.empty else status_counts,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "status": st.column_config.TextColumn("Status", width="small"),
+                "count": st.column_config.NumberColumn("Count", width="small", format="%d"),
+            },
+        )
         if status_counts.empty:
             status_right.info("Belum ada status device untuk diringkas.")
         else:
-            status_right.bar_chart(status_counts.set_index("status"))
+            status_chart = (
+                alt.Chart(status_counts)
+                .mark_bar()
+                .encode(
+                    x=alt.X("count:Q", title="Count"),
+                    y=alt.Y("status:N", sort="-x", title="Status"),
+                    tooltip=[alt.Tooltip("status:N", title="Status"), alt.Tooltip("count:Q", title="Count")],
+                )
+                .properties(height=220)
+            )
+            status_right.altair_chart(status_chart, width="stretch")
 
     if selected_is_mikrotik:
         selected_device_snapshot_payload = history_context.get("selected_device_snapshot", {"items": [], "meta": {}})
@@ -1358,7 +1410,18 @@ def _render_history_body() -> None:
         }
     )
     paged_raw_view = _paginate_frame(raw_view, key_prefix="history_raw", page_size=10)
-    st.dataframe(paged_raw_view, width="stretch", hide_index=True)
+    st.dataframe(
+        paged_raw_view,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Checked At (WIB)": st.column_config.TextColumn("Checked At (WIB)", width="medium"),
+            "Device": st.column_config.TextColumn("Device", width="medium"),
+            "Metric": st.column_config.TextColumn("Metric", width="medium"),
+            "Value": st.column_config.TextColumn("Value", width="small"),
+            "Status": st.column_config.TextColumn("Status", width="small"),
+        },
+    )
 
 
 render_live_section(auto_refresh, interval_seconds, _render_history_body)
