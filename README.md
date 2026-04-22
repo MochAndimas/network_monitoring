@@ -1,334 +1,979 @@
 # Network Monitoring
 
-Project monitoring internal untuk:
-- target internet
-- Mikrotik
-- server
-- device penting
+Network Monitoring adalah aplikasi monitoring internal untuk memantau koneksi internet, Mikrotik, server, printer, dan device penting di jaringan kantor. Project ini memisahkan backend API, scheduler worker, database, dan dashboard agar proses monitoring tidak bergantung pada proses web API.
+
+Project ini cocok untuk:
+- monitoring internal tim IT/ops
+- inventory device sederhana
+- pengecekan ping, DNS, HTTP, public IP, SNMP printer, resource server, dan RouterOS Mikrotik
 - alert dan incident dasar
-- dashboard internal
+- dashboard operasional berbasis Streamlit
 
-## Stack
-- FastAPI
-- MySQL
-- SQLAlchemy
-- APScheduler
-- Streamlit
-- psutil
-- ping3
-- librouteros
+## Ringkasan Stack
 
-## Struktur Utama
-- `backend/app/main.py`: boot FastAPI API-only, init DB bootstrap
-- `backend/app/scheduler/worker.py`: proses scheduler terpisah untuk monitoring jobs
-- `backend/app/monitors/*`: internet, device, server, Mikrotik checks
-- `backend/app/alerting/*`: evaluasi alert, notifier, incident lifecycle
-- `backend/app/api/routes/*`: endpoint dashboard, devices, metrics, alerts, incidents, system
-- `dashboard/*`: Streamlit UI
-- `scripts/bootstrap_demo.py`: seed device + jalankan satu monitoring cycle
-- `scripts/run_monitor_cycle.py`: trigger satu monitoring cycle manual
-- `scripts/test_snmp.py`: test SNMP v2c ke printer dari host lokal
+- Python 3.12
+- FastAPI untuk backend API
+- Streamlit untuk dashboard internal
+- MySQL 8.4 untuk database utama
+- SQLAlchemy async + Alembic untuk persistence dan migration
+- APScheduler untuk worker monitoring periodik
+- `ping3`, `httpx`, `psutil`, `librouteros`, dan `pysnmp` untuk collector
+- Ruff, pytest, pip-audit, dan GitHub Actions untuk quality gate
 
-## Persiapan
+## Arsitektur Singkat
 
-1. Buat dan aktifkan virtual environment
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
+```mermaid
+flowchart LR
+    Browser["Browser user"] --> Dashboard["Streamlit dashboard"]
+    Dashboard --> API["FastAPI backend"]
+    API --> DB["MySQL"]
+    Scheduler["Scheduler worker"] --> DB
+    Scheduler --> Collectors["Monitoring collectors"]
+    Collectors --> Internet["Internet targets"]
+    Collectors --> Devices["Network devices"]
+    Collectors --> Printer["Printer SNMP"]
+    Collectors --> Server["Local server metrics"]
+    Collectors --> Mikrotik["Mikrotik RouterOS API"]
+    Scheduler --> Alerts["Alert engine"]
+    Alerts --> DB
+    Alerts --> Telegram["Telegram notifier optional"]
 ```
 
-2. Install dependency development
+Runtime utama:
+- `backend/app/main.py`: FastAPI API-only process.
+- `backend/app/scheduler/worker.py`: worker APScheduler terpisah.
+- `dashboard/Overview.py`: entry point Streamlit dashboard.
+- `alembic/versions/*`: migration database.
+- `scripts/*`: bootstrap, maintenance, benchmark, smoke test, dan utilitas ops.
 
-```bash
-python -m pip install -r requirements.txt
+## Struktur Project
+
+```text
+backend/
+  app/
+    api/             FastAPI dependencies, schemas, routes
+    alerting/        rule alert, evaluasi alert, Telegram notifier
+    core/            config, security, constants, time helper
+    db/              engine, session, init DB
+    models/          SQLAlchemy ORM models
+    monitors/        internet, device, printer SNMP, server, Mikrotik collectors
+    repositories/    query dan persistence per domain
+    scheduler/       APScheduler job registration dan worker
+    services/        business workflow, auth, retention, observability
+dashboard/
+  Overview.py        halaman utama Streamlit
+  pages/             Devices, Alerts, History, Incidents, Thresholds
+  components/        auth, API client, UI, refresh, time utility
+alembic/             migration environment dan revision files
+scripts/             bootstrap, seed, backfill, benchmark, smoke, SNMP test
+tests/               API, service, dashboard component, monitor tests
+requirements/        dependency per service dan dev tooling
 ```
 
-Untuk install yang lebih lean per service:
+Semua module, class, function, helper function, dan method Python sudah diberi docstring agar orang baru lebih gampang membaca kode.
 
-```bash
-python -m pip install -r requirements/backend.txt
-python -m pip install -r requirements/dashboard.txt
-```
+## Quick Start Dengan Docker Compose
 
-3. Siapkan environment file
+Cara ini paling dekat dengan runtime production-like lokal.
+
+1. Copy environment file.
 
 ```bash
 copy .env.example .env
 ```
 
-Untuk printer SNMP, isi `PRINTER_SNMP_COMMUNITIES` dengan JSON map IP ke community, misalnya:
+2. Edit `.env`, minimal isi nilai berikut dengan secret kuat.
 
-```bash
-PRINTER_SNMP_COMMUNITIES={"192.168.88.38":"community-printer-1","192.168.88.145":"community-printer-2"}
+```env
+APP_ENV=production
+MYSQL_PASSWORD=replace-with-a-strong-password
+MYSQL_ROOT_PASSWORD=replace-with-a-separate-strong-root-password
+AUTH_PASSWORD_SECRET=replace-with-a-long-random-password-secret
+AUTH_JWT_SECRET=replace-with-a-long-random-jwt-secret
+BOOTSTRAP_ADMIN_USERNAME=admin
+BOOTSTRAP_ADMIN_FULL_NAME=Monitoring Admin
+BOOTSTRAP_ADMIN_PASSWORD=replace-with-a-strong-admin-password
+INTERNAL_API_KEYS=operator:replace-with-ops-key:read,write,ops
+CORS_ORIGINS=http://localhost:8501,http://127.0.0.1:8501
+TRUSTED_HOSTS=localhost,127.0.0.1,backend
+DASHBOARD_PUBLIC_API_URL=http://localhost:8000
+AUTH_COOKIE_SECURE=false
 ```
 
-4. Jalankan MySQL
+Untuk deployment HTTPS sungguhan, `AUTH_COOKIE_SECURE` harus `true`, `CORS_ORIGINS` sebaiknya HTTPS, dan `TRUSTED_HOSTS` harus berisi hostname asli.
+
+3. Jalankan MySQL.
 
 ```bash
 docker compose up -d mysql
 ```
 
-5. Jalankan migration database untuk setup lokal tanpa Docker Compose
+4. Jalankan migration.
 
 ```bash
-alembic upgrade head
+docker compose --profile ops run --rm migrate
 ```
 
-## Bootstrap Awal
-
-Inisialisasi tabel, seed device awal, lalu jalankan satu siklus monitoring:
-
-```bash
-python scripts/bootstrap_demo.py
-```
-
-Kalau ingin seed threshold saja:
-
-```bash
-python scripts/seed_thresholds.py
-```
-
-Kalau hanya ingin menjalankan satu siklus monitoring manual:
-
-```bash
-python scripts/run_monitor_cycle.py
-```
-
-Kalau ingin benchmark endpoint backend lokal:
-
-```bash
-python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --runs 5
-```
-
-## Menjalankan Backend API
-
-```bash
-uvicorn backend.app.main:app --reload
-```
-
-## Menjalankan Scheduler Worker
-
-```bash
-python -m backend.app.scheduler.worker
-```
-
-Semua endpoint API operasional selain `GET /health` sekarang membutuhkan salah satu:
-- header `Authorization: Bearer <token>` dari login user backend
-- atau header `x-api-key` untuk automation/internal integration
-
-API key internal sekarang mendukung scope terpisah:
-- `read` untuk endpoint baca
-- `write` untuk mutasi inventory/threshold
-- `ops` untuk aksi operasional seperti `POST /system/run-cycle`
-
-Format `INTERNAL_API_KEYS`:
-
-```bash
-reader:reader-secret:read
-writer:writer-secret:read,write
-operator:ops-secret:read,ops
-```
-
-Endpoint mutasi seperti `POST /devices`, `PUT /devices/{id}`, `PUT /thresholds/{key}`, dan
-`POST /system/run-cycle` membutuhkan user role `admin` bila memakai bearer token. Bila memakai API key,
-scope yang dibutuhkan sekarang eksplisit (`write` atau `ops`), bukan full admin generik.
-
-API utama:
-- `GET /dashboard/summary`
-- `GET /dashboard/overview-panels`
-- `GET /dashboard/problem-devices`
-- `GET /devices`
-- `GET /devices/paged`
-- `POST /devices`
-- `PUT /devices/{device_id}`
-- `GET /metrics/history`
-- `GET /metrics/history/paged`
-- `GET /alerts/active`
-- `GET /incidents`
-- `GET /thresholds`
-- `GET /observability/summary`
-- `GET /observability/metrics`
-- `GET /auth/admin/users`
-- `POST /auth/admin/users`
-- `PUT /auth/admin/users/{user_id}`
-- `POST /auth/admin/users/{user_id}/reset-password`
-- `GET /auth/admin/audit-logs`
-- `POST /auth/change-password`
-- `PUT /thresholds/{key}`
-- `POST /system/run-cycle`
-
-## Menjalankan Dashboard
-
-```bash
-streamlit run dashboard/Overview.py
-```
-
-Dashboard sekarang login ke backend memakai akun user monitoring.
-Admin awal bisa dibootstrap lewat environment:
-- `BOOTSTRAP_ADMIN_USERNAME`
-- `BOOTSTRAP_ADMIN_FULL_NAME`
-- `BOOTSTRAP_ADMIN_PASSWORD`
-- `AUTH_JWT_SECRET` untuk secret signing JWT yang dedicated
-
-Setelah backend hidup, login dashboard menggunakan akun tersebut.
-
-## Menjalankan Dengan Docker Compose
-
-Jalankan migration sebagai release/init step dulu:
-
-```bash
-docker compose run --rm migrate
-```
-
-Build dan jalankan seluruh stack:
+5. Build dan jalankan backend, scheduler, dan dashboard.
 
 ```bash
 docker compose up --build
 ```
 
 Service default:
-- MySQL di `localhost:3306`
-- FastAPI backend API-only di `http://localhost:8000`
-- scheduler worker terpisah di service `scheduler`
-- migration dijalankan explicit lewat service one-shot `migrate`
-- Streamlit dashboard di `http://localhost:8501`
+- MySQL: `127.0.0.1:3306`
+- Backend API: `http://localhost:8000`
+- Dashboard: `http://localhost:8501`
+- Scheduler: service `scheduler`, tidak expose port
 
-Catatan auth dashboard:
-- `DASHBOARD_API_URL` boleh tetap mengarah ke host internal container seperti `http://backend:8000`.
-- Untuk login dashboard berbasis browser cookie, set `DASHBOARD_PUBLIC_API_URL` ke URL backend yang bisa diakses browser user, default Docker Compose sekarang `http://localhost:8000`.
-- Dashboard tidak lagi menyimpan `INTERNAL_API_KEY` sendiri untuk fallback request user-facing; setelah login semua request dashboard memakai bearer token session user.
+Login dashboard memakai akun bootstrap admin dari `BOOTSTRAP_ADMIN_USERNAME` dan `BOOTSTRAP_ADMIN_PASSWORD`.
 
-Container backend dan scheduler sekarang tidak menjalankan migration otomatis saat startup.
-Migration dipindahkan ke explicit release/init step lewat `docker compose run --rm migrate`.
-Compose juga memakai healthcheck: backend menunggu MySQL sehat, dashboard menunggu backend sehat,
-dan probe backend sekarang memakai `/health/ready` agar readiness API tidak ikut jatuh hanya karena scheduler worker sedang degraded.
-Di `APP_ENV=production`, backend tidak menjalankan `create_all()` saat startup; schema database
-dikelola lewat Alembic migration.
+## Quick Start Lokal Tanpa Compose Full Stack
 
-Dashboard utama sekarang bisa:
-- melihat summary status internet, server, Mikrotik, dan alert aktif
-- trigger manual monitoring cycle
-- melihat daftar device dengan filter server-side dan pagination
-- melihat alert aktif
-- melihat incident aktif/resolved
-- melihat histori metric dengan filter waktu dan chart untuk metric numerik
-- melihat dan mengubah threshold alert
+Gunakan ini kalau mau development langsung dari host.
 
-## Security
-
-- Jangan pakai password database default di production. `.env` lokal sudah memakai kredensial random yang digenerate untuk mesin ini.
-- Set `APP_ENV=production`, isi `BOOTSTRAP_ADMIN_PASSWORD`, dan gunakan password admin yang kuat.
-- Isi `AUTH_JWT_SECRET` dengan secret acak yang panjang agar signing JWT tidak bergantung pada fallback internal.
-- `INTERNAL_API_KEY` tetap didukung untuk script/internal integration, tapi dashboard normal sekarang memakai login user + bearer token.
-- Untuk deployment baru, lebih baik pakai `INTERNAL_API_KEYS` dengan scope spesifik daripada satu `INTERNAL_API_KEY` global.
-- Auth bridge dashboard sekarang membatasi `postMessage` ke origin parent Streamlit yang valid dan menolak event lintas-origin yang tidak cocok.
-- Password user disimpan sebagai hash PBKDF2, access token memakai JWT HS256, session di database menyimpan `jti` untuk revocation, dan endpoint write memerlukan role `admin`.
-- Password policy sekarang enforce minimum length (`AUTH_PASSWORD_MIN_LENGTH`) plus uppercase, lowercase, digit, dan simbol.
-- Login sekarang memakai rate limit berbasis database per kombinasi username dan client IP untuk menahan brute-force dasar di deployment multi-instance.
-- Jika backend berada di balik reverse proxy, isi `TRUSTED_PROXY_IPS` agar `X-Forwarded-For` hanya dipercaya dari proxy yang memang kamu kontrol.
-- Production sekarang fail-fast saat boot jika security default masih longgar, termasuk `AUTH_COOKIE_SECURE=false`, `ALLOW_INSECURE_NO_AUTH=true`, tidak ada `INTERNAL_API_KEY` maupun `INTERNAL_API_KEYS`, `TRUSTED_HOSTS` masih localhost-only, atau `CORS_ORIGINS` non-HTTPS untuk origin non-local.
-- Cleanup scheduler juga merapikan `auth_sessions` kadaluarsa/revoked dan riwayat `auth_login_attempts` lama agar tabel auth tidak tumbuh tanpa batas.
-- Backend juga menyediakan inventory session aktif lewat `GET /auth/sessions` dan revoke semua session lain lewat `POST /auth/logout-all` untuk kebutuhan operasional/account recovery.
-- Touch `last_seen_at` session sekarang ditahan per interval (`AUTH_SESSION_TOUCH_INTERVAL_SECONDS`) agar request API yang sering tidak memicu write database di setiap hit.
-- Session bootstrap admin dijalankan saat startup jika `BOOTSTRAP_ADMIN_PASSWORD` disediakan dan username tersebut belum ada.
-- Admin sekarang punya audit trail terstruktur di `admin_audit_logs` untuk mutasi penting seperti create/update device, update threshold, run-cycle manual, create/update user, reset password, dan revoke session massal.
-- Backend membatasi `Host` header, menambahkan security headers dasar, dan mematikan `/docs`, `/redoc`, `/openapi.json` di production.
-- Docker Compose default sekarang publish MySQL, backend, dan dashboard ke `127.0.0.1` saja agar tidak terbuka ke LAN secara tidak sengaja.
-- Container backend dan dashboard sekarang jalan sebagai user non-root; backend juga bisa diskalakan lewat `WEB_CONCURRENCY` untuk multi-worker Uvicorn dasar.
-- `.env` masuk `.gitignore`; simpan secret production di secret manager atau environment deployment.
-- Overlap guard monitoring sekarang pakai named database lock (`MONITORING_LOCK_NAME`) di MySQL, jadi aman lintas process/container untuk scheduler worker dan manual run-cycle.
-
-## Testing
+1. Buat virtual environment.
 
 ```bash
-python -m pytest
+python -m venv venv
+venv\Scripts\activate
 ```
 
-Lint baseline:
+2. Install dependency.
 
 ```bash
-ruff check backend dashboard scripts tests
+python -m pip install -r requirements/dev.txt
 ```
 
-## Benchmark
-
-Script benchmark sederhana tersedia untuk mengukur latency endpoint yang sering dipakai dashboard:
+Untuk install lebih ringan:
 
 ```bash
-python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --runs 10
+python -m pip install -r requirements/backend.txt
+python -m pip install -r requirements/dashboard.txt
 ```
 
-Opsional:
-- `--path /dashboard/summary`
-- `--path /devices/paged?limit=100&offset=0`
-- `--path /metrics/history/paged?limit=100&offset=0`
-- `--api-key your-internal-key`
-- `--max-p95-ms 1500`
-- `--max-max-ms 2500`
-
-Smoke concurrency sederhana:
+3. Siapkan `.env`.
 
 ```bash
-python scripts/concurrency_smoke.py --base-url http://localhost:8000 --path /health/live --requests 20 --concurrency 5 --max-p95-ms 1000
+copy .env.example .env
 ```
 
-## CI
+Untuk development lokal, set minimal:
 
-Repository sekarang punya GitHub Actions pipeline di `.github/workflows/ci.yml` untuk:
-- lint baseline dengan Ruff
-- unit/API test dengan pytest
-- migration smoke test ke MySQL
-- benchmark regression gate dan concurrency smoke test
-- build image backend dan dashboard
-- dependency security audit dengan `pip-audit`
+```env
+APP_ENV=development
+DATABASE_URL=mysql+pymysql://network_monitoring:your-password@localhost:3306/network_monitoring
+AUTH_PASSWORD_SECRET=dev-password-secret-change-me
+AUTH_JWT_SECRET=dev-jwt-secret-change-me
+BOOTSTRAP_ADMIN_USERNAME=admin
+BOOTSTRAP_ADMIN_FULL_NAME=Monitoring Admin
+BOOTSTRAP_ADMIN_PASSWORD=AdminPassword123!
+INTERNAL_API_KEY=dev-internal-key
+CORS_ORIGINS=http://localhost:8501,http://127.0.0.1:8501
+TRUSTED_HOSTS=localhost,127.0.0.1
+AUTH_COOKIE_SECURE=false
+DASHBOARD_API_URL=http://localhost:8000
+DASHBOARD_PUBLIC_API_URL=http://localhost:8000
+```
 
-## Migration
-
-Generate migration baru setelah schema berubah:
+4. Jalankan MySQL.
 
 ```bash
-alembic revision --autogenerate -m "describe change"
+docker compose up -d mysql
 ```
 
-Apply migration terbaru:
+5. Apply migration.
 
 ```bash
 alembic upgrade head
 ```
 
-Untuk Docker Compose production-like, jalankan:
+6. Jalankan backend API.
 
 ```bash
-docker compose run --rm migrate
+uvicorn backend.app.main:app --reload
 ```
 
-## Catatan Implementasi
-- Scheduler tidak lagi ikut hidup di proses API; jalankan worker terpisah atau service `scheduler`
-- Monitor internet/device memakai `ping3`
-- Monitor printer sekarang memakai kombinasi ping + SNMP v2c untuk uptime, status printer, error state, paper status, counter halaman, dan ink level jika printer mengeksposnya
-- Monitor server memakai `psutil` untuk CPU, memory, disk, dan boot time
-- Monitor Mikrotik mencoba akses RouterOS API jika kredensial di `.env` tersedia
-- Alert aktif akan menghasilkan incident aktif per device
-- Threshold alert disimpan di database dan otomatis dibuat saat belum ada
-- Endpoint mutasi seperti `POST /devices`, `PUT /devices/{device_id}`, `PUT /thresholds/{key}`, dan `POST /system/run-cycle` memakai header `x-api-key`
-- Endpoint `GET /health` dan `GET /observability/summary` bisa dipakai untuk readiness check dan ringkasan operasional
-- Overview dashboard sekarang tidak lagi bergantung ke satu endpoint besar; panel agregat, daftar problem devices, dan history/snapshot dipecah supaya auto-refresh lebih ringan saat data tumbuh.
-- Connection pool database sekarang bisa dituning lewat `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT_SECONDS`, dan `DB_POOL_RECYCLE_SECONDS`.
-- Retention raw metrics sekarang tidak hanya delete: data yang melewati cutoff juga diarsipkan ke `metric_cold_archives` sebagai agregat cold-storage per device/hari/metric/status sebelum raw rows dipruning.
-- Concurrency runner monitor sekarang dibatasi lewat `MONITOR_TASK_CONCURRENCY_LIMIT` supaya inventory besar tidak memicu `asyncio.gather` tak terbatas di satu tick scheduler.
-- Health endpoint sekarang dipisah jadi `/health/live`, `/health/ready`, dan `/health/dependencies`, sementara `/health` tetap jadi ringkasan cepat.
-- Logging backend sekarang siap ingestion dengan JSON structured logging, `X-Request-ID`, slow request logging, dan correlation field lintas HTTP/scheduler.
-- Observability backend sekarang punya metrics scrape endpoint Prometheus-style di `/observability/metrics` dan status job scheduler disimpan di DB untuk deteksi stale/failure lintas process.
+7. Jalankan scheduler worker di terminal lain.
 
-## Checklist Arsitektur
-- Backend API, DB session, dan HTTP outbound utama sudah async-friendly.
-- Library blocking seperti `ping3`, `psutil`, dan `librouteros` diisolasi lewat `asyncio.to_thread`.
-- Monitoring cycle berjalan paralel dengan session terpisah per runner, lalu persist dan evaluasi alert di fase akhir.
-- Scheduler worker dan manual run-cycle sudah punya distributed guard berbasis DB lock supaya tidak overlap lintas replica/container.
-- Endpoint list besar yang dipakai dashboard sudah punya versi paged untuk menjaga performa saat data tumbuh.
-- Retention rollup sudah diproses secara streaming agar tidak memuat semua raw metric lama ke memory sekaligus.
-- Dashboard Streamlit tetap model sinkron, jadi optimasi difokuskan ke query server-side, pagination, dan pengurangan kerja dataframe di client.
+```bash
+python -m backend.app.scheduler.worker
+```
+
+8. Jalankan dashboard di terminal lain.
+
+```bash
+streamlit run dashboard/Overview.py
+```
+
+Catatan: di `APP_ENV=development`, backend juga memanggil `create_all()` saat startup untuk memudahkan lokal, tapi tetap disarankan memakai Alembic agar schema konsisten.
+
+## Alur Data Monitoring
+
+1. Scheduler menjalankan job periodik untuk internet, device, server, Mikrotik, alert evaluation, dan cleanup.
+2. Collector menghasilkan payload metric dengan `device_id`, `metric_name`, `metric_value`, `metric_value_numeric`, `status`, `unit`, dan `checked_at`.
+3. `MetricRepository.create_metrics()` menyimpan metric raw dan meng-update tabel `latest_metrics` sebagai snapshot terbaru per device/metric.
+4. Alert engine membaca latest metric, threshold, active alert, dan active incident.
+5. Alert baru dibuat kalau kondisi masih buruk; alert diselesaikan kalau kondisi membaik.
+6. Incident aktif dibuat per device saat alert pertama muncul, lalu resolved saat alert untuk device tersebut sudah clear.
+7. Dashboard membaca summary, overview panels, problem devices, latest snapshot, history, alerts, incidents, thresholds, dan auth/admin data dari API.
+
+Monitoring pipeline dilindungi `MONITORING_LOCK_NAME` memakai MySQL named lock, sehingga scheduler dan manual `run-cycle` tidak saling overlap lintas process/container.
+
+## Collector Yang Tersedia
+
+### Internet Target
+
+Device type: `internet_target`
+
+Metric:
+- `ping`
+- `packet_loss`
+- `jitter`
+- `dns_resolution_time`
+- `http_response_time`
+- `public_ip`
+
+DNS, HTTP, dan public IP memakai satu anchor internet target. Pemilihan anchor memprioritaskan nama yang mengandung `myrepublic`, lalu `isp`, lalu device lain, lalu `mikrotik`.
+
+### Device Umum
+
+Device type:
+- `nvr`
+- `switch`
+- `access_point`
+- `voip`
+- `printer`
+
+Metric:
+- `ping`
+- `packet_loss` dan `jitter` untuk `access_point`, `voip`, dan `printer`
+- ping sederhana untuk `nvr` dan `switch`
+
+### Printer SNMP
+
+Device type: `printer`
+
+Selain ping quality, printer dapat mengumpulkan SNMP v2c jika `PRINTER_SNMP_COMMUNITIES` diisi.
+
+Metric:
+- `printer_uptime_seconds`
+- `printer_status`
+- `printer_error_state`
+- `printer_ink_status`
+- `printer_paper_status`
+- `printer_total_pages`
+
+Format `PRINTER_SNMP_COMMUNITIES` bisa JSON map:
+
+```env
+PRINTER_SNMP_COMMUNITIES={"192.168.88.38":"community-printer-1","192.168.88.145":"community-printer-2"}
+```
+
+Atau format baris `ip=community` yang dipisah newline/koma.
+
+### Server
+
+Device type: `server`
+
+Metric:
+- `ping`
+- `cpu_percent`
+- `memory_percent`
+- `disk_percent`
+- `boot_time_epoch`
+
+Resource server memakai `psutil` dari host/container tempat scheduler berjalan. Jika scheduler berjalan di container, resource yang terbaca adalah environment container/host sesuai akses container.
+
+### Mikrotik
+
+Device type: `mikrotik`, atau nama device mengandung `mikrotik`.
+
+Metric dasar:
+- `ping`
+- `packet_loss`
+- `jitter`
+- `mikrotik_api`
+- `cpu_percent`
+- `memory_percent`
+- `memory_used_bytes`
+- `memory_free_bytes`
+- `disk_percent`
+- `disk_used_bytes`
+- `disk_free_bytes`
+- `interfaces_running`
+- `dhcp_active_leases`
+- `connected_clients`
+
+Metric dinamis RouterOS:
+- `interface:<name>:rx_mbps`
+- `interface:<name>:tx_mbps`
+- `interface:<name>:rx_pps`
+- `interface:<name>:tx_pps`
+- `firewall:<section>:<rule>:pps`
+- `firewall:<section>:<rule>:mbps`
+- `queue:<name>:download_mbps`
+- `queue:<name>:upload_mbps`
+
+Konfigurasi Mikrotik utama:
+- `MIKROTIK_HOST`
+- `MIKROTIK_PORT`
+- `MIKROTIK_USERNAME`
+- `MIKROTIK_PASSWORD`
+- `MIKROTIK_DYNAMIC_SECTIONS`
+- `MIKROTIK_DYNAMIC_FIREWALL_SECTION_ALLOWLIST`
+- `MIKROTIK_DYNAMIC_INTERFACE_ALLOWLIST`
+- `MIKROTIK_DYNAMIC_QUEUE_ALLOWLIST`
+- `MIKROTIK_DYNAMIC_MAX_INTERFACES`
+- `MIKROTIK_DYNAMIC_MAX_FIREWALL_RULES`
+- `MIKROTIK_DYNAMIC_MAX_QUEUES`
+
+## Device Type
+
+Device type yang valid:
+- `internet_target`
+- `mikrotik`
+- `server`
+- `nvr`
+- `switch`
+- `access_point`
+- `voip`
+- `printer`
+
+Device memiliki field utama:
+- `name`
+- `ip_address`
+- `device_type`
+- `site`
+- `description`
+- `is_active`
+
+Device inactive tetap ada di inventory, tapi tidak ikut collector bila query memakai `active_only=True`.
+
+## Alert, Incident, Dan Threshold
+
+Threshold default otomatis dibuat ketika threshold dibaca pertama kali.
+
+Threshold yang tersedia:
+- `ping_latency_warning`
+- `ping_latency_critical`
+- `cpu_warning`
+- `ram_warning`
+- `disk_warning`
+- `packet_loss_warning`
+- `packet_loss_critical`
+- `jitter_warning`
+- `jitter_critical`
+- `dns_resolution_warning`
+- `http_response_warning`
+- `mikrotik_connected_clients_warning`
+- `mikrotik_interface_mbps_warning`
+- `mikrotik_firewall_spike_pps_warning`
+- `mikrotik_firewall_spike_mbps_warning`
+- `printer_ink_warning`
+- `printer_ink_critical`
+
+Alert rule utama:
+- device down atau internet loss
+- high ping latency
+- high packet loss
+- high jitter
+- DNS failed atau slow DNS
+- HTTP failed atau slow HTTP
+- public IP changed
+- high CPU/RAM/disk
+- Mikrotik API failed
+- connected clients tinggi
+- interface traffic tinggi
+- firewall spike
+- printer reboot/status/error/paper/ink issue
+
+Alert aktif dikaitkan ke incident aktif per device. Incident resolved otomatis setelah semua alert aktif untuk device tersebut clear.
+
+Telegram notification optional memakai:
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+
+## Auth Dan Security
+
+Backend menjalankan `validate_auth_configuration()` saat startup. `AUTH_PASSWORD_SECRET` dan `AUTH_JWT_SECRET` wajib ada.
+
+Auth user:
+- password disimpan dengan PBKDF2 SHA-256
+- access token memakai JWT HS256
+- refresh/session state disimpan di tabel `auth_sessions`
+- session punya `jti` untuk revocation
+- login attempt dicatat di `auth_login_attempts`
+- password policy mewajibkan minimum length, uppercase, lowercase, digit, dan symbol
+
+Role user:
+- `admin`: bisa read, write, ops, admin endpoints
+- `viewer`: read-only dashboard/API
+
+API key internal:
+- legacy `INTERNAL_API_KEY` tetap didukung dan mendapat scope `read`, `write`, `ops`
+- rekomendasi baru adalah `INTERNAL_API_KEYS` dengan scope eksplisit
+
+Format `INTERNAL_API_KEYS`:
+
+```env
+reader:reader-secret:read
+writer:writer-secret:read,write
+operator:ops-secret:read,ops
+```
+
+Atau JSON:
+
+```json
+{
+  "operator": {
+    "key": "ops-secret",
+    "scopes": ["read", "write", "ops"]
+  }
+}
+```
+
+Permission endpoint:
+- endpoint read membutuhkan bearer token valid atau API key scope `read`
+- endpoint write seperti device/threshold mutation membutuhkan user `admin` atau API key scope `write`
+- endpoint ops seperti `POST /system/run-cycle` membutuhkan user `admin` atau API key scope `ops`
+- endpoint admin auth management membutuhkan user `admin`
+
+Production fail-fast jika:
+- `ALLOW_INSECURE_NO_AUTH=true`
+- `AUTH_COOKIE_SECURE=false`
+- tidak ada `INTERNAL_API_KEY` atau `INTERNAL_API_KEYS`
+- `TRUSTED_HOSTS` hanya localhost
+- `CORS_ORIGINS` kosong atau non-HTTPS untuk origin non-local
+
+Security header yang dipasang:
+- `X-Content-Type-Options`
+- `X-Frame-Options`
+- `Referrer-Policy`
+- `Permissions-Policy`
+- `Content-Security-Policy`
+- `Strict-Transport-Security` saat request HTTPS
+
+Docs API (`/docs`, `/redoc`, `/openapi.json`) mati otomatis di production.
+
+## Environment Variables Penting
+
+### App Dan Database
+
+| Variable | Fungsi |
+| --- | --- |
+| `APP_NAME` | Nama aplikasi |
+| `APP_ENV` | `development` atau `production` |
+| `DATABASE_URL` | URL database SQLAlchemy, contoh MySQL `mysql+pymysql://...` |
+| `MYSQL_DATABASE` | Nama database untuk Compose |
+| `MYSQL_USER` | User MySQL untuk Compose |
+| `MYSQL_PASSWORD` | Password MySQL untuk Compose |
+| `MYSQL_ROOT_PASSWORD` | Root password MySQL untuk Compose |
+| `DB_POOL_SIZE` | Pool size SQLAlchemy untuk non-SQLite |
+| `DB_MAX_OVERFLOW` | Max overflow connection |
+| `DB_POOL_TIMEOUT_SECONDS` | Timeout menunggu connection |
+| `DB_POOL_RECYCLE_SECONDS` | Recycle connection pool |
+
+### Auth
+
+| Variable | Fungsi |
+| --- | --- |
+| `AUTH_PASSWORD_SECRET` | Pepper/secret untuk password hash |
+| `AUTH_JWT_SECRET` | Secret signing JWT |
+| `AUTH_TOKEN_TTL_MINUTES` | TTL access token |
+| `AUTH_REMEMBER_TTL_MINUTES` | TTL refresh/session saat remember login |
+| `AUTH_COOKIE_SECURE` | Cookie secure flag, wajib true di production HTTPS |
+| `AUTH_COOKIE_SAMESITE` | SameSite cookie |
+| `AUTH_LOGIN_RATE_LIMIT_MAX_ATTEMPTS` | Maksimal gagal login per window |
+| `AUTH_LOGIN_RATE_LIMIT_WINDOW_MINUTES` | Window rate limit login |
+| `AUTH_SESSION_TOUCH_INTERVAL_SECONDS` | Interval update `last_seen_at` |
+| `AUTH_SESSION_RETENTION_DAYS` | Retention session lama |
+| `AUTH_LOGIN_ATTEMPT_RETENTION_DAYS` | Retention login attempt lama |
+| `AUTH_PASSWORD_MIN_LENGTH` | Minimum panjang password |
+| `BOOTSTRAP_ADMIN_USERNAME` | Username admin pertama |
+| `BOOTSTRAP_ADMIN_FULL_NAME` | Nama admin pertama |
+| `BOOTSTRAP_ADMIN_PASSWORD` | Password admin pertama |
+
+### API Access Dan Browser
+
+| Variable | Fungsi |
+| --- | --- |
+| `INTERNAL_API_KEY` | API key legacy |
+| `INTERNAL_API_KEYS` | API keys dengan scope |
+| `ALLOW_INSECURE_NO_AUTH` | Fallback tanpa auth, jangan pakai production |
+| `CORS_ORIGINS` | Origin dashboard/browser yang boleh akses backend |
+| `TRUSTED_HOSTS` | Host header yang diterima FastAPI |
+| `TRUSTED_PROXY_IPS` | Proxy yang dipercaya untuk `X-Forwarded-For` |
+| `DASHBOARD_API_URL` | URL backend dari sisi server Streamlit |
+| `DASHBOARD_PUBLIC_API_URL` | URL backend dari browser user untuk auth bridge |
+
+### Monitoring
+
+| Variable | Fungsi |
+| --- | --- |
+| `PING_TIMEOUT_SECONDS` | Timeout ping |
+| `PING_SAMPLE_COUNT` | Jumlah sample ping untuk quality metric |
+| `PING_CONCURRENCY_LIMIT` | Limit concurrent ping |
+| `MONITOR_TASK_CONCURRENCY_LIMIT` | Limit concurrent task collector |
+| `DNS_CHECK_HOST` | Host DNS check |
+| `HTTP_CHECK_URL` | URL HTTP check |
+| `PUBLIC_IP_CHECK_URL` | URL public IP check |
+| `CPU_WARNING_THRESHOLD` | Default threshold CPU |
+| `RAM_WARNING_THRESHOLD` | Default threshold RAM |
+| `DISK_WARNING_THRESHOLD` | Default threshold disk |
+| `PRINTER_SNMP_COMMUNITIES` | Map IP printer ke SNMP community |
+
+### Scheduler Dan Retention
+
+| Variable | Fungsi |
+| --- | --- |
+| `SCHEDULER_ENABLED` | Enable scheduler worker |
+| `SCHEDULER_INTERVAL_INTERNET_SECONDS` | Interval internet checks |
+| `SCHEDULER_INTERVAL_DEVICE_SECONDS` | Interval device checks |
+| `SCHEDULER_INTERVAL_SERVER_SECONDS` | Interval server checks |
+| `SCHEDULER_INTERVAL_MIKROTIK_SECONDS` | Interval Mikrotik checks |
+| `SCHEDULER_INTERVAL_ALERT_SECONDS` | Interval alert evaluation |
+| `SCHEDULER_CLEANUP_INTERVAL_HOURS` | Interval cleanup/retention |
+| `SCHEDULER_JOB_STALE_FACTOR` | Faktor stale job untuk operational alert |
+| `MONITORING_LOCK_NAME` | Nama MySQL lock monitoring pipeline |
+| `MONITORING_LOCK_TIMEOUT_SECONDS` | Timeout lock monitoring |
+| `RAW_METRIC_RETENTION_DAYS` | Retention raw metrics |
+| `RETENTION_ROLLUP_BATCH_SIZE` | Batch rollup harian |
+| `RETENTION_ARCHIVE_BATCH_SIZE` | Batch archive cold metrics |
+| `ALERT_RETENTION_DAYS` | Retention alert resolved |
+| `INCIDENT_RETENTION_DAYS` | Retention incident resolved |
+
+### Logging Dan Observability
+
+| Variable | Fungsi |
+| --- | --- |
+| `LOG_LEVEL` | Level log |
+| `LOG_AS_JSON` | Output log structured JSON |
+| `OBSERVABILITY_ENABLE_METRICS` | Enable metrics observability |
+| `REQUEST_SLOW_LOG_THRESHOLD_MS` | Threshold slow request log |
+
+### File-Backed Secret
+
+Settings juga mendukung secret dari file:
+- `TELEGRAM_BOT_TOKEN_FILE`
+- `TELEGRAM_CHAT_ID_FILE`
+- `MIKROTIK_PASSWORD_FILE`
+- `INTERNAL_API_KEY_FILE`
+- `AUTH_PASSWORD_SECRET_FILE`
+- `PRINTER_SNMP_COMMUNITIES_FILE`
+- `BOOTSTRAP_ADMIN_PASSWORD_FILE`
+- `AUTH_JWT_SECRET_FILE`
+
+## API Utama
+
+Semua endpoint operasional selain `/health/*` membutuhkan bearer token atau API key.
+
+### Health
+
+- `GET /health`
+- `GET /health/live`
+- `GET /health/ready`
+- `GET /health/dependencies`
+
+`/health/ready` hanya gagal jika database tidak siap. Scheduler degraded tetap dilaporkan di payload agar backend tidak dianggap down hanya karena job monitoring bermasalah.
+
+### Auth
+
+- `POST /auth/login`
+- `POST /auth/restore`
+- `GET /auth/me`
+- `GET /auth/sessions`
+- `POST /auth/logout-all`
+- `POST /auth/change-password`
+- `POST /auth/logout`
+- `GET /auth/admin/sessions`
+- `POST /auth/admin/users/{user_id}/logout-all`
+- `GET /auth/admin/users`
+- `POST /auth/admin/users`
+- `PUT /auth/admin/users/{user_id}`
+- `POST /auth/admin/users/{user_id}/reset-password`
+- `GET /auth/admin/audit-logs`
+
+### Dashboard
+
+- `GET /dashboard/summary`
+- `GET /dashboard/overview-panels`
+- `GET /dashboard/problem-devices`
+- `GET /dashboard/overview-data`
+
+### Devices
+
+- `GET /devices/meta/types`
+- `GET /devices/status-summary`
+- `GET /devices/options`
+- `GET /devices`
+- `GET /devices/paged`
+- `GET /devices/{device_id}`
+- `POST /devices`
+- `PUT /devices/{device_id}`
+- `DELETE /devices/{device_id}`
+
+### Metrics
+
+- `GET /metrics/names`
+- `GET /metrics/history`
+- `GET /metrics/history/paged`
+- `GET /metrics/history/context`
+- `GET /metrics/latest-snapshot/paged`
+- `GET /metrics/latest-snapshot/status-summary`
+- `GET /metrics/latest-snapshot/uptime-map`
+
+### Alerts, Incidents, Thresholds, System
+
+- `GET /alerts/active`
+- `GET /incidents`
+- `GET /thresholds`
+- `PUT /thresholds/{key}`
+- `POST /system/run-cycle`
+
+### Observability
+
+- `GET /observability/summary`
+- `GET /observability/metrics`
+
+`/observability/metrics` menghasilkan format Prometheus text.
+
+## Dashboard
+
+Dashboard Streamlit ada di `dashboard/`.
+
+Halaman:
+- `Overview`: summary, KPI, problem devices, active alert, active incident, latest snapshot
+- `Devices`: inventory device, filter, pagination, create/update/delete untuk admin
+- `Alerts`: active alert
+- `History`: metric history, latest snapshot, chart, dynamic Mikrotik/printer views
+- `Incidents`: active/resolved incidents
+- `Thresholds`: threshold alert dan update untuk admin
+
+Auth dashboard:
+- login memakai `/auth/login`
+- session dipulihkan lewat `/auth/restore`
+- browser cookie dikelola lewat auth bridge component
+- request dashboard normal memakai bearer token session user
+- API key tidak dipakai sebagai fallback user-facing dashboard
+
+## Scheduler Jobs
+
+Worker dijalankan dengan:
+
+```bash
+python -m backend.app.scheduler.worker
+```
+
+Job yang diregistrasi:
+- `internet_checks`
+- `device_checks`
+- `server_checks`
+- `mikrotik_checks`
+- `alert_evaluation`
+- `retention_cleanup`
+
+Setiap job menyimpan status ke tabel `scheduler_job_statuses`, termasuk:
+- running state
+- consecutive failures
+- last started/succeeded/failed
+- last duration
+- last error
+
+Status ini dipakai health/observability untuk operational alert.
+
+## Database Dan Migration
+
+Migration memakai Alembic.
+
+Apply migration:
+
+```bash
+alembic upgrade head
+```
+
+Generate migration baru:
+
+```bash
+alembic revision --autogenerate -m "describe change"
+```
+
+Docker Compose migration:
+
+```bash
+docker compose --profile ops run --rm migrate
+```
+
+Di production, backend tidak menjalankan `create_all()`. Schema harus dikelola lewat Alembic.
+
+Model utama:
+- `devices`
+- `metrics`
+- `latest_metrics`
+- `metric_daily_rollups`
+- `metric_cold_archives`
+- `alerts`
+- `incidents`
+- `thresholds`
+- `users`
+- `auth_sessions`
+- `auth_login_attempts`
+- `admin_audit_logs`
+- `scheduler_job_statuses`
+
+## Retention Dan Data Lifecycle
+
+Cleanup scheduler menjalankan:
+- rollup raw metric lama ke `metric_daily_rollups`
+- archive raw metric yang melewati cutoff ke `metric_cold_archives`
+- delete raw metric yang melewati `RAW_METRIC_RETENTION_DAYS`
+- delete alert resolved lama
+- delete incident resolved lama
+- cleanup auth session dan login attempt lama
+
+Raw metric tetap dipakai untuk history detail jangka pendek. Rollup/archive dipakai agar data lama tetap punya ringkasan tanpa membesarkan tabel raw metrics terus-menerus.
+
+## Scripts
+
+### Bootstrap demo
+
+Seed device contoh, seed threshold, lalu jalankan satu cycle monitoring.
+
+```bash
+python scripts/bootstrap_demo.py
+```
+
+### Seed devices
+
+```bash
+python scripts/seed_devices.py
+```
+
+Device contoh yang dibuat:
+- Gateway Lokal
+- Google DNS
+- Cloudflare DNS
+- Mikrotik Utama
+- Server Monitoring
+- NVR Kantor
+- Switch Lantai 1
+- AP Meeting Room
+- Printer Finance
+
+### Seed thresholds
+
+```bash
+python scripts/seed_thresholds.py
+```
+
+### Manual monitoring cycle
+
+```bash
+python scripts/run_monitor_cycle.py
+```
+
+Atau via API:
+
+```bash
+curl -X POST http://localhost:8000/system/run-cycle -H "x-api-key: dev-internal-key"
+```
+
+### SNMP printer test
+
+```bash
+python scripts/test_snmp.py --ip 192.168.88.38 --community public
+```
+
+### Backfill numeric metric
+
+Dipakai setelah migration `metric_value_numeric` untuk mengisi numeric value dari metric lama.
+
+```bash
+python scripts/backfill_metric_numeric.py --batch-size 500
+```
+
+Dry run:
+
+```bash
+python scripts/backfill_metric_numeric.py --dry-run
+```
+
+### Benchmark endpoint
+
+```bash
+python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --api-key dev-internal-key --runs 10
+```
+
+Opsional:
+
+```bash
+python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --api-key dev-internal-key --runs 10 --max-p95-ms 1500 --max-max-ms 2500
+```
+
+### Concurrency smoke
+
+```bash
+python scripts/concurrency_smoke.py --base-url http://localhost:8000 --path /health/live --requests 20 --concurrency 5 --max-p95-ms 1000
+```
+
+## Testing, Lint, Dan Audit
+
+Test:
+
+```bash
+python -m pytest
+```
+
+Lint:
+
+```bash
+ruff check backend dashboard scripts tests
+```
+
+Dependency audit:
+
+```bash
+pip-audit -r requirements/backend.txt
+pip-audit -r requirements/dashboard.txt
+```
+
+CI GitHub Actions menjalankan:
+- Ruff lint
+- pytest
+- Alembic migration smoke test ke MySQL
+- benchmark regression gate
+- concurrency smoke test
+- Docker build backend dan dashboard
+- pip-audit untuk backend/dashboard dependencies
+
+## Operasional Harian
+
+### Cek service
+
+```bash
+curl http://localhost:8000/health/live
+curl http://localhost:8000/health/ready
+curl -H "x-api-key: dev-internal-key" http://localhost:8000/observability/summary
+```
+
+### Cek metrics Prometheus-style
+
+```bash
+curl -H "x-api-key: dev-internal-key" http://localhost:8000/observability/metrics
+```
+
+### Jalankan manual cycle
+
+```bash
+curl -X POST http://localhost:8000/system/run-cycle -H "x-api-key: dev-internal-key"
+```
+
+Jika mendapat `409 Conflict`, berarti monitoring pipeline sedang berjalan.
+
+### Lihat log Docker
+
+```bash
+docker compose logs --tail=100 backend
+docker compose logs --tail=100 scheduler
+docker compose logs --tail=100 dashboard
+```
+
+### Apply migration setelah deploy
+
+```bash
+docker compose --profile ops run --rm migrate
+docker compose up -d --build
+```
+
+## Troubleshooting
+
+### Backend gagal startup di production
+
+Cek env berikut:
+- `AUTH_PASSWORD_SECRET`
+- `AUTH_JWT_SECRET`
+- `INTERNAL_API_KEY` atau `INTERNAL_API_KEYS`
+- `BOOTSTRAP_ADMIN_PASSWORD`
+- `CORS_ORIGINS`
+- `TRUSTED_HOSTS`
+- `AUTH_COOKIE_SECURE`
+
+Production akan fail-fast jika konfigurasi security longgar.
+
+### Dashboard login gagal
+
+Cek:
+- backend hidup di `DASHBOARD_API_URL`
+- browser bisa akses `DASHBOARD_PUBLIC_API_URL`
+- `CORS_ORIGINS` mengizinkan URL dashboard
+- `TRUSTED_HOSTS` mengizinkan host backend
+- admin bootstrap sudah dibuat
+- password memenuhi policy
+
+### Endpoint API return 401
+
+Gunakan salah satu:
+- header `Authorization: Bearer <token>`
+- header `x-api-key: <secret>`
+
+Untuk endpoint write/ops, pastikan role/scope benar.
+
+### Scheduler degraded
+
+Cek:
+- `GET /health/dependencies`
+- `GET /observability/summary`
+- log service `scheduler`
+- koneksi DB
+- interval scheduler dan timeout collector
+
+Job failure beruntun akan muncul sebagai operational alert.
+
+### Metric kosong
+
+Cek:
+- device `is_active=True`
+- `device_type` sesuai collector
+- scheduler worker jalan
+- manual `POST /system/run-cycle`
+- ping/SNMP/RouterOS credentials benar
+- database migration sudah head
+
+### Printer SNMP tidak muncul
+
+Cek:
+- device type `printer`
+- printer bisa diping
+- SNMP v2c aktif di printer
+- community masuk di `PRINTER_SNMP_COMMUNITIES`
+- port UDP 161 tidak diblok
+- coba `scripts/test_snmp.py`
+
+### Mikrotik API gagal
+
+Cek:
+- `MIKROTIK_HOST`, `MIKROTIK_PORT`, `MIKROTIK_USERNAME`, `MIKROTIK_PASSWORD`
+- service API RouterOS aktif
+- firewall Mikrotik mengizinkan koneksi dari host scheduler
+- metric `mikrotik_api` di latest snapshot
+
+### Data history terlalu besar
+
+Cek:
+- `RAW_METRIC_RETENTION_DAYS`
+- `RETENTION_ROLLUP_BATCH_SIZE`
+- `RETENTION_ARCHIVE_BATCH_SIZE`
+- job `retention_cleanup`
+- tabel `metric_daily_rollups` dan `metric_cold_archives`
+
+## Catatan Deployment
+
+- Compose publish MySQL, backend, dan dashboard ke `127.0.0.1` agar tidak terbuka ke LAN secara tidak sengaja.
+- Backend dan dashboard container berjalan sebagai non-root user.
+- Backend bisa multi-worker lewat `WEB_CONCURRENCY`.
+- Migration adalah step eksplisit, bukan bagian startup backend/scheduler.
+- Untuk reverse proxy, isi `TRUSTED_PROXY_IPS` agar `X-Forwarded-For` hanya dipercaya dari proxy yang dikontrol.
+- Simpan secret production di secret manager atau environment deployment, bukan di git.
 
 ## Posisi Streamlit
 
@@ -337,11 +982,56 @@ Dashboard Streamlit di project ini diposisikan sebagai frontend internal ops, bu
 Masih cocok untuk:
 - dashboard internal tim kecil
 - troubleshooting harian
-- auto-refresh ringan dengan pagination server-side
+- auto-refresh ringan
+- pagination/filter server-side
 
 Mulai tidak ideal jika:
 - banyak user aktif bersamaan
-- kebutuhan UX makin kompleks dan stateful
-- perlu kontrol frontend yang lebih presisi untuk auth, navigation, dan real-time updates
+- UX semakin kompleks dan stateful
+- butuh realtime interaktif yang lebih presisi
+- auth/navigation perlu kontrol frontend penuh
 
-Kalau kebutuhan sudah ke arah itu, jalur upgrade yang lebih aman biasanya memindahkan UI ke frontend web dedicated, sementara FastAPI tetap jadi API/backend observability.
+Kalau kebutuhan sudah menuju sana, jalur upgrade paling aman adalah mempertahankan FastAPI sebagai backend observability dan mengganti dashboard menjadi frontend web dedicated.
+
+## Checklist Handover
+
+Sebelum project diserahkan ke maintainer baru:
+- pastikan `.env.example` sesuai target environment
+- berikan credential admin awal lewat channel aman
+- jelaskan hostname backend/dashboard yang dipakai browser
+- jalankan `alembic upgrade head`
+- jalankan `python -m pytest`
+- jalankan satu `POST /system/run-cycle`
+- cek `/health/ready`, `/health/dependencies`, dan `/observability/summary`
+- pastikan scheduler worker hidup
+- pastikan device inventory sudah benar
+- pastikan threshold sesuai standar operasional
+- pastikan Telegram, SNMP printer, dan Mikrotik credentials sudah diuji bila fitur itu dipakai
+
+## Perintah Cepat
+
+```bash
+# Test
+python -m pytest
+
+# Lint
+ruff check backend dashboard scripts tests
+
+# Backend lokal
+uvicorn backend.app.main:app --reload
+
+# Scheduler lokal
+python -m backend.app.scheduler.worker
+
+# Dashboard lokal
+streamlit run dashboard/Overview.py
+
+# Migration
+alembic upgrade head
+
+# Docker migration
+docker compose --profile ops run --rm migrate
+
+# Docker full stack
+docker compose up --build
+```
