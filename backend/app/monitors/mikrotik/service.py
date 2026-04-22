@@ -60,6 +60,7 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
         checked_at = utcnow()
         target_device = devices[0]
         previous_metrics = await _latest_metric_map(db, target_device.id)
+        dynamic_sections = settings.normalized_mikrotik_dynamic_sections
 
         metrics.extend(
             [
@@ -153,10 +154,52 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
                 },
             ]
         )
-        metrics.extend(_interface_metrics(target_device.id, interfaces, previous_metrics, checked_at))
-        metrics.extend(_firewall_metrics(target_device.id, "filter", firewall_filters, previous_metrics, checked_at))
-        metrics.extend(_firewall_metrics(target_device.id, "nat", firewall_nat, previous_metrics, checked_at))
-        metrics.extend(_queue_metrics(target_device.id, simple_queues, previous_metrics, checked_at))
+        if "interface" in dynamic_sections:
+            metrics.extend(
+                _interface_metrics(
+                    target_device.id,
+                    interfaces,
+                    previous_metrics,
+                    checked_at,
+                    allowlist=settings.normalized_mikrotik_interface_allowlist,
+                    max_items=settings.mikrotik_dynamic_max_interfaces,
+                )
+            )
+        if "firewall" in dynamic_sections:
+            firewall_sections = settings.normalized_mikrotik_dynamic_firewall_sections
+            if "filter" in firewall_sections:
+                metrics.extend(
+                    _firewall_metrics(
+                        target_device.id,
+                        "filter",
+                        firewall_filters,
+                        previous_metrics,
+                        checked_at,
+                        max_items=settings.mikrotik_dynamic_max_firewall_rules,
+                    )
+                )
+            if "nat" in firewall_sections:
+                metrics.extend(
+                    _firewall_metrics(
+                        target_device.id,
+                        "nat",
+                        firewall_nat,
+                        previous_metrics,
+                        checked_at,
+                        max_items=settings.mikrotik_dynamic_max_firewall_rules,
+                    )
+                )
+        if "queue" in dynamic_sections:
+            metrics.extend(
+                _queue_metrics(
+                    target_device.id,
+                    simple_queues,
+                    previous_metrics,
+                    checked_at,
+                    allowlist=settings.normalized_mikrotik_queue_allowlist,
+                    max_items=settings.mikrotik_dynamic_max_queues,
+                )
+            )
     except Exception:
         logger.exception("Mikrotik API check failed for host %s", settings.mikrotik_host)
         checked_at = utcnow()
@@ -213,12 +256,23 @@ async def _latest_metric_map(db: AsyncSession, device_id: int) -> dict[str, Metr
     return await repository.latest_metric_map_for_device(device_id)
 
 
-def _interface_metrics(device_id: int, interfaces: list[dict], previous_metrics: dict[str, Metric], checked_at: datetime) -> list[dict]:
+def _interface_metrics(
+    device_id: int,
+    interfaces: list[dict],
+    previous_metrics: dict[str, Metric],
+    checked_at: datetime,
+    *,
+    allowlist: set[str] | None = None,
+    max_items: int | None = None,
+) -> list[dict]:
     metrics: list[dict] = []
-    for interface in interfaces:
+    candidate_interfaces = list(_limit_items(interfaces, max_items))
+    for interface in candidate_interfaces:
         if _truthy(interface.get("disabled")):
             continue
         name = _object_name(interface, fallback_prefix="interface")
+        if not _is_allowed_dynamic_name(name, allowlist):
+            continue
         prefix = _dynamic_metric_name("interface", name)
         rx_bytes = _safe_int(interface.get("rx-byte") or interface.get("rx-bytes"))
         tx_bytes = _safe_int(interface.get("tx-byte") or interface.get("tx-bytes"))
@@ -255,9 +309,12 @@ def _firewall_metrics(
     rules: list[dict],
     previous_metrics: dict[str, Metric],
     checked_at: datetime,
+    *,
+    max_items: int | None = None,
 ) -> list[dict]:
     metrics: list[dict] = []
-    for index, rule in enumerate(rules, start=1):
+    candidate_rules = list(_limit_items(rules, max_items))
+    for index, rule in enumerate(candidate_rules, start=1):
         if _truthy(rule.get("disabled")):
             continue
         name = _firewall_rule_name(rule, index)
@@ -282,12 +339,23 @@ def _firewall_metrics(
     return metrics
 
 
-def _queue_metrics(device_id: int, queues: list[dict], previous_metrics: dict[str, Metric], checked_at: datetime) -> list[dict]:
+def _queue_metrics(
+    device_id: int,
+    queues: list[dict],
+    previous_metrics: dict[str, Metric],
+    checked_at: datetime,
+    *,
+    allowlist: set[str] | None = None,
+    max_items: int | None = None,
+) -> list[dict]:
     metrics: list[dict] = []
-    for queue in queues:
+    candidate_queues = list(_limit_items(queues, max_items))
+    for queue in candidate_queues:
         if _truthy(queue.get("disabled")):
             continue
         name = _object_name(queue, fallback_prefix="queue")
+        if not _is_allowed_dynamic_name(name, allowlist):
+            continue
         prefix = _dynamic_metric_name("queue", name)
         rx_bytes, tx_bytes = _split_counter_pair(queue.get("bytes"))
         rx_rate, tx_rate = _split_counter_pair(queue.get("rate"))
@@ -421,6 +489,21 @@ def _truthy(value) -> bool:
     if isinstance(value, bool):
         return value
     return str(value or "").strip().lower() in {"true", "yes", "1", "enabled", "running"}
+
+
+def _is_allowed_dynamic_name(name: str, allowlist: set[str] | None) -> bool:
+    if not allowlist:
+        return True
+    normalized_name = str(name or "").strip().lower()
+    if not normalized_name:
+        return False
+    return any(token in normalized_name for token in allowlist)
+
+
+def _limit_items(items: list[dict], max_items: int | None):
+    if max_items is None or max_items < 1:
+        return items
+    return items[:max_items]
 
 
 def _safe_int(value) -> int:

@@ -570,7 +570,9 @@ def _fetch_history_rows_bulk(
         status=status,
         checked_from_date=checked_from_date,
         checked_to_date=checked_to_date,
-        limit=max(per_metric_limit * len(metric_names), per_metric_limit),
+        # Backend applies per-metric limiting when metric_names + per_metric_limit
+        # are provided, and still validates `limit` <= 500.
+        limit=500,
         offset=0,
         per_metric_limit=per_metric_limit,
     )
@@ -1001,8 +1003,7 @@ st.markdown(_history_css(), unsafe_allow_html=True)
 st.title("History")
 st.caption("Halaman ini menampilkan histori pengecekan metric. Pilih device dan metric supaya grafik lebih jelas dibaca.")
 
-devices_payload = get_json("/devices/paged?active_only=false&limit=1000&offset=0", {"items": [], "meta": {}})
-devices = paged_items(devices_payload)
+devices = get_json("/devices/options?active_only=false&limit=300&offset=0", [])
 device_type_by_id = {
     int(device["id"]): str(device.get("device_type") or "")
     for device in devices

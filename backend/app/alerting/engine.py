@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from ..repositories.alert_repository import AlertRepository
 from ..repositories.device_repository import DeviceRepository
 from ..repositories.incident_repository import IncidentRepository
@@ -18,15 +20,21 @@ async def evaluate_alerts(db) -> list[dict]:
     latest_metrics = await metric_repository.latest_metric_map()
     devices = await device_repository.list_devices(active_only=True)
     notifications: list[dict] = []
+    telegram_messages: list[str] = []
     thresholds = await get_threshold_map(db)
     active_alerts = {(alert.device_id, alert.alert_type): alert for alert in await alert_repository.list_active_alerts()}
     active_incidents_by_device = {
         incident.device_id: incident for incident in await incident_repository.list_active_incidents()
     }
-    printer_uptime_history_by_device = await metric_repository.list_recent_metrics_by_device(
-        device_ids=[device.id for device in devices if device.device_type == "printer"],
-        metric_name="printer_uptime_seconds",
-        per_device_limit=2,
+    printer_device_ids = [device.id for device in devices if device.device_type == "printer"]
+    printer_uptime_history_by_device = (
+        await metric_repository.list_recent_metrics_by_device(
+            device_ids=printer_device_ids,
+            metric_name="printer_uptime_seconds",
+            per_device_limit=2,
+        )
+        if printer_device_ids
+        else {}
     )
     active_alert_count_by_device: dict[int | None, int] = {}
     for alert in active_alerts.values():
@@ -45,10 +53,7 @@ async def evaluate_alerts(db) -> list[dict]:
                 message=f"{device.name} is unreachable",
             )
         elif ping_metric is not None:
-            try:
-                ping_value = float(ping_metric.metric_value)
-            except (TypeError, ValueError):
-                ping_value = None
+            ping_value = _metric_numeric_value(ping_metric)
 
             if ping_value is not None:
                 if ping_value >= thresholds["ping_latency_critical"]:
@@ -147,9 +152,8 @@ async def evaluate_alerts(db) -> list[dict]:
             metric = latest_metrics.get((device.id, metric_name))
             if metric is None:
                 continue
-            try:
-                value = float(metric.metric_value)
-            except (TypeError, ValueError):
+            value = _metric_numeric_value(metric)
+            if value is None:
                 continue
 
             if value >= threshold:
@@ -240,7 +244,7 @@ async def evaluate_alerts(db) -> list[dict]:
             "incident_action": incident_action,
         }
         notifications.append(notification)
-        await send_telegram_alert(created_alert.message)
+        telegram_messages.append(created_alert.message)
 
     resolved_at = utcnow()
     for key, alert in list(active_alerts.items()):
@@ -268,15 +272,30 @@ async def evaluate_alerts(db) -> list[dict]:
 
     if has_pending_writes:
         await db.commit()
+    if telegram_messages:
+        await asyncio.gather(
+            *(send_telegram_alert(message) for message in telegram_messages),
+            return_exceptions=True,
+        )
 
     return notifications
 
 
-def _safe_float(value: str) -> float | None:
+def _safe_float(value: str | None) -> float | None:
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _metric_numeric_value(metric) -> float | None:
+    numeric_value = getattr(metric, "metric_value_numeric", None)
+    if numeric_value is not None:
+        try:
+            return float(numeric_value)
+        except (TypeError, ValueError):
+            pass
+    return _safe_float(getattr(metric, "metric_value", None))
 
 
 def _is_mikrotik_device(device) -> bool:

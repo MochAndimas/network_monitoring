@@ -91,6 +91,44 @@ class DeviceRepository:
             query = query.where(Device.is_active.is_(True))
         return list((await self.db.scalars(query)).all())
 
+    async def list_device_options(
+        self,
+        *,
+        active_only: bool = False,
+        search: str | None = None,
+        limit: int = 300,
+        offset: int = 0,
+    ) -> list[dict]:
+        query = select(
+            Device.id,
+            Device.name,
+            Device.ip_address,
+            Device.device_type,
+            Device.site,
+            Device.is_active,
+        )
+        if active_only:
+            query = query.where(Device.is_active.is_(True))
+        search_filter = self._search_filter(search)
+        if search_filter is not None:
+            query = query.where(search_filter)
+        rows = (
+            await self.db.execute(
+                query.order_by(Device.name.asc()).offset(offset).limit(limit)
+            )
+        ).all()
+        return [
+            {
+                "id": row.id,
+                "name": row.name,
+                "ip_address": row.ip_address,
+                "device_type": row.device_type,
+                "site": row.site,
+                "is_active": row.is_active,
+            }
+            for row in rows
+        ]
+
     async def count_devices(self, active_only: bool = False) -> int:
         query = select(func.count()).select_from(Device)
         if active_only:

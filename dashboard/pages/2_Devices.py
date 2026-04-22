@@ -13,7 +13,7 @@ require_dashboard_login()
 st.title("Devices")
 payload = get_json_map(
     {
-        "devices": ("/devices?limit=1000&offset=0", []),
+        "devices": ("/devices/options?active_only=false&limit=300&offset=0", []),
         "device_types": ("/devices/meta/types", []),
     }
 )

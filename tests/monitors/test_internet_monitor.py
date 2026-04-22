@@ -363,6 +363,76 @@ def test_mikrotik_api_checks_collect_routeros_metrics(monkeypatch, session_facto
     assert metrics_by_name["firewall:filter:001_forward_drop_bad:pps"]["status"] == "warning"
 
 
+def test_mikrotik_dynamic_metric_controls_support_section_toggle_limits_and_allowlist(monkeypatch, session_factory):
+    ping_samples = iter([0.010, 0.010, 0.010])
+    monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
+
+    async def fake_safe_ping(_ip_address):
+        return next(ping_samples)
+
+    class FakeApi:
+        def path(self, *parts):
+            paths = {
+                ("system", "resource"): [
+                    {
+                        "cpu-load": "12",
+                        "total-memory": "1000",
+                        "free-memory": "250",
+                        "total-hdd-space": "2000",
+                        "free-hdd-space": "500",
+                    }
+                ],
+                ("interface",): [
+                    {"name": "ether1", "running": True, "rx-byte": "1001000", "tx-byte": "2002000"},
+                    {"name": "ether2", "running": True, "rx-byte": "1001000", "tx-byte": "2002000"},
+                ],
+                ("ip", "dhcp-server", "lease"): [],
+                ("ip", "arp"): [],
+                ("ip", "firewall", "filter"): [
+                    {"chain": "forward", "action": "drop", "comment": "bad", "packets": "5000", "bytes": "10000000"}
+                ],
+                ("ip", "firewall", "nat"): [
+                    {"chain": "srcnat", "action": "masquerade", "comment": "wan", "packets": "100", "bytes": "1200"}
+                ],
+                ("queue", "simple"): [
+                    {"name": "user-a", "bytes": "3003000/4004000", "rate": "7000000/8000000"},
+                    {"name": "user-b", "bytes": "1000/1000", "rate": "1000/1000"},
+                ],
+            }
+            return paths.get(parts, [])
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_host", "192.168.88.1")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_username", "monitor")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_password", "secret")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_dynamic_sections", "interface,queue")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_dynamic_interface_allowlist", "ether1")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_dynamic_queue_allowlist", "user-a")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_dynamic_max_interfaces", 1)
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_dynamic_max_queues", 1)
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_dynamic_max_firewall_rules", 1)
+    monkeypatch.setattr(mikrotik_service, "connect", lambda **_kwargs: FakeApi())
+
+    async def scenario():
+        async with session_factory() as db:
+            devices = await DeviceRepository(db).upsert_devices(
+                [{"name": "Mikrotik Utama", "ip_address": "192.168.88.1", "device_type": "internet_target"}]
+            )
+            return await mikrotik_service.run_mikrotik_checks(db), devices[0].id
+
+    metrics, device_id = run(scenario())
+
+    metric_names = {metric["metric_name"] for metric in metrics if metric["device_id"] == device_id}
+    assert "interface:ether1:rx_mbps" in metric_names
+    assert "queue:user-a:rx_mbps" in metric_names
+    assert not any(name.startswith("interface:ether2:") for name in metric_names)
+    assert not any(name.startswith("queue:user-b:") for name in metric_names)
+    assert not any(name.startswith("firewall:") for name in metric_names)
+
+
 @pytest.fixture
 def session_factory():
     engine = create_async_engine(

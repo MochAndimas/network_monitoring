@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth import is_admin, require_dashboard_login, session_expiry_label
-from components.api import get_json_map, has_pending_action, post_json
+from components.api import get_json, has_pending_action, post_json
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
@@ -158,40 +158,35 @@ def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
 
 
 def _render_overview_body() -> None:
-    payload = get_json_map(
+    payload = get_json(
+        "/dashboard/overview-data",
         {
-            "overview": (
-                "/dashboard/overview-panels?snapshot_limit=12&alerts_limit=5&incidents_limit=5",
-                {
-                    "summary": {
-                        "internet_status": "unknown",
-                        "mikrotik_status": "unknown",
-                        "server_status": "unknown",
-                        "active_alerts": 0,
-                    },
-                    "device_counts": {
-                        "total": 0,
-                        "active": 0,
-                        "inactive": 0,
-                        "statuses": {},
-                        "latest_check_at": None,
-                    },
-                    "alert_severity_summary": {},
-                    "alerts": [],
-                    "incidents": [],
-                    "latest_snapshot": {"items": [], "meta": {}},
-                },
-            ),
-            "problem_devices": ("/dashboard/problem-devices?limit=25", []),
-        }
+            "summary": {
+                "internet_status": "unknown",
+                "mikrotik_status": "unknown",
+                "server_status": "unknown",
+                "active_alerts": 0,
+            },
+            "device_counts": {
+                "total": 0,
+                "active": 0,
+                "inactive": 0,
+                "statuses": {},
+                "latest_check_at": None,
+            },
+            "alert_severity_summary": {},
+            "alerts": [],
+            "incidents": [],
+            "latest_snapshot": {"items": [], "meta": {}},
+            "problem_devices": [],
+        },
     )
-    overview_payload = payload["overview"]
-    summary = overview_payload["summary"]
-    device_counts = overview_payload["device_counts"]
+    summary = payload["summary"]
+    device_counts = payload["device_counts"]
     problem_devices = payload["problem_devices"]
-    alerts = overview_payload["alerts"]
-    incidents = overview_payload["incidents"]
-    latest_snapshot = overview_payload["latest_snapshot"]
+    alerts = payload["alerts"]
+    incidents = payload["incidents"]
+    latest_snapshot = payload["latest_snapshot"]
 
     devices_frame = _prepare_devices_frame(problem_devices)
     alerts_frame = _prepare_alerts_frame(alerts)
@@ -210,7 +205,7 @@ def _render_overview_body() -> None:
         else "-"
     )
     severity_counts = pd.DataFrame(
-        [{"severity": severity, "count": count} for severity, count in overview_payload.get("alert_severity_summary", {}).items()]
+        [{"severity": severity, "count": count} for severity, count in payload.get("alert_severity_summary", {}).items()]
     )
 
     st.markdown(

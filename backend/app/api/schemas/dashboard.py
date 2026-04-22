@@ -149,6 +149,15 @@ class DeviceTypeOption(BaseModel):
     label: str
 
 
+class DeviceOption(BaseModel):
+    id: int
+    name: str
+    ip_address: str
+    device_type: str
+    site: str | None = None
+    is_active: bool
+
+
 class AuthObservabilitySummary(BaseModel):
     active_sessions: int
     login_failures_window: int

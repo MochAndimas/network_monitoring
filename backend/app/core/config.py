@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     mikrotik_port: int = 8728
     mikrotik_username: str = ""
     mikrotik_password: str = ""
+    mikrotik_dynamic_sections: str = "interface,firewall,queue"
+    mikrotik_dynamic_firewall_section_allowlist: str = "filter,nat"
+    mikrotik_dynamic_interface_allowlist: str = ""
+    mikrotik_dynamic_queue_allowlist: str = ""
+    mikrotik_dynamic_max_interfaces: int = 64
+    mikrotik_dynamic_max_firewall_rules: int = 128
+    mikrotik_dynamic_max_queues: int = 64
     dashboard_api_url: str = "http://localhost:8000"
     ping_timeout_seconds: float = 2.0
     ping_sample_count: int = 3
@@ -44,6 +51,8 @@ class Settings(BaseSettings):
     http_check_url: str = "https://www.google.com/generate_204"
     public_ip_check_url: str = "https://api.ipify.org"
     raw_metric_retention_days: int = 7
+    retention_rollup_batch_size: int = 500
+    retention_archive_batch_size: int = 500
     alert_retention_days: int = 180
     incident_retention_days: int = 180
     scheduler_cleanup_interval_hours: int = 24
@@ -133,6 +142,24 @@ class Settings(BaseSettings):
         allowed = {"lax", "strict", "none"}
         value = str(self.auth_cookie_samesite or "lax").strip().lower()
         return value if value in allowed else "lax"
+
+    @property
+    def normalized_mikrotik_dynamic_sections(self) -> set[str]:
+        sections = {item.lower() for item in _split_csv(self.mikrotik_dynamic_sections)}
+        return sections or {"interface", "firewall", "queue"}
+
+    @property
+    def normalized_mikrotik_dynamic_firewall_sections(self) -> set[str]:
+        sections = {item.lower() for item in _split_csv(self.mikrotik_dynamic_firewall_section_allowlist)}
+        return sections or {"filter", "nat"}
+
+    @property
+    def normalized_mikrotik_interface_allowlist(self) -> set[str]:
+        return {item.lower() for item in _split_csv(self.mikrotik_dynamic_interface_allowlist)}
+
+    @property
+    def normalized_mikrotik_queue_allowlist(self) -> set[str]:
+        return {item.lower() for item in _split_csv(self.mikrotik_dynamic_queue_allowlist)}
 
     @property
     def is_production(self) -> bool:

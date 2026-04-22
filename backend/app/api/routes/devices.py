@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.deps import require_write_access
-from ...api.schemas import DeviceCreate, DeviceListItem, DeviceListPage, DeviceTypeOption, PageMeta, DeviceUpdate
+from ...api.schemas import DeviceCreate, DeviceListItem, DeviceListPage, DeviceOption, DeviceTypeOption, PageMeta, DeviceUpdate
 from ...core.constants import DEVICE_TYPE_CHOICES
 from ...db.session import get_db
 from ...repositories.device_repository import DeviceRepository
@@ -32,6 +32,25 @@ async def get_device_status_summary(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
     return await DeviceRepository(db).summarize_device_status_counts(active_only=active_only)
+
+
+@router.get("/options", response_model=list[DeviceOption])
+async def list_device_options(
+    active_only: bool = Query(default=False),
+    search: str | None = Query(default=None, min_length=1, max_length=150),
+    limit: int = Query(default=300, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> list[DeviceOption]:
+    return [
+        DeviceOption(**item)
+        for item in await DeviceRepository(db).list_device_options(
+            active_only=active_only,
+            search=search,
+            limit=limit,
+            offset=offset,
+        )
+    ]
 
 
 @router.get("", response_model=list[DeviceListItem])

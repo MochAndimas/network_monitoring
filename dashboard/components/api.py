@@ -8,7 +8,8 @@ import streamlit as st
 
 
 API_BASE_URL = os.getenv("DASHBOARD_API_URL", "http://localhost:8000").rstrip("/")
-GET_CACHE_TTL_SECONDS = 2
+GET_CACHE_TTL_SECONDS = 5
+GET_CACHE_TTL_SLOW_SECONDS = 15
 PENDING_API_REQUEST_KEY = "pending_api_request"
 
 
@@ -121,7 +122,7 @@ def _request_with_auth_recovery(
     request_fallback = pending_request.get("fallback") if pending_request else fallback
     try:
         if method == "GET" and request_payload is None:
-            result = _cached_get_json(request_path, timeout, api_base_url, auth_token)
+            result = _cached_get_by_profile(request_path, timeout, api_base_url, auth_token)
         else:
             result = _request_json(
                 method,
@@ -167,6 +168,48 @@ def _cached_get_json_map(
     for name, path in request_items:
         payload[name] = _request_json("GET", path, api_base_url=api_base_url, auth_token=auth_token)
     return payload
+
+
+@st.cache_data(show_spinner=False, ttl=GET_CACHE_TTL_SLOW_SECONDS)
+def _cached_get_json_slow(path: str, timeout: float, api_base_url: str, auth_token: str):
+    return _request_json("GET", path, timeout=timeout, api_base_url=api_base_url, auth_token=auth_token)
+
+
+@st.cache_data(show_spinner=False, ttl=GET_CACHE_TTL_SLOW_SECONDS)
+def _cached_get_json_map_slow(
+    request_items: tuple[tuple[str, str], ...],
+    api_base_url: str,
+    auth_token: str,
+) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    for name, path in request_items:
+        payload[name] = _request_json("GET", path, api_base_url=api_base_url, auth_token=auth_token)
+    return payload
+
+
+def _is_slow_changing_path(path: str) -> bool:
+    normalized = str(path or "").lower()
+    return (
+        normalized.startswith("/devices/options")
+        or normalized.startswith("/devices/meta/types")
+        or normalized.startswith("/thresholds")
+    )
+
+
+def _cached_get_by_profile(path: str, timeout: float, api_base_url: str, auth_token: str):
+    if _is_slow_changing_path(path):
+        return _cached_get_json_slow(path, timeout, api_base_url, auth_token)
+    return _cached_get_json(path, timeout, api_base_url, auth_token)
+
+
+def _cached_get_map_by_profile(
+    request_items: tuple[tuple[str, str], ...],
+    api_base_url: str,
+    auth_token: str,
+) -> dict[str, object]:
+    if request_items and all(_is_slow_changing_path(path) for _, path in request_items):
+        return _cached_get_json_map_slow(request_items, api_base_url, auth_token)
+    return _cached_get_json_map(request_items, api_base_url, auth_token)
 
 
 def get_json(path: str, fallback):
@@ -223,7 +266,7 @@ def delete_json(path: str, fallback=False, *, action_key: str | None = None):
 def get_json_map(requests: Mapping[str, tuple[str, object]]) -> dict[str, object]:
     request_items = tuple((name, path) for name, (path, _fallback) in requests.items())
     try:
-        payload = _cached_get_json_map(request_items, API_BASE_URL, str(st.session_state.get("auth_token") or ""))
+        payload = _cached_get_map_by_profile(request_items, API_BASE_URL, str(st.session_state.get("auth_token") or ""))
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 401 and st.session_state.get("dashboard_authenticated"):
             _prepare_auth_restore()

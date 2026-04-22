@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, time, timedelta
 from math import inf
 
-from sqlalchemy import and_, delete, or_, select, tuple_
+from sqlalchemy import and_, delete, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
@@ -36,31 +36,27 @@ async def cleanup_monitoring_data(db: AsyncSession) -> dict[str, int]:
 
 async def rollup_completed_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:
     cutoff = _today_start()
-    payloads = await _build_rollup_payloads(db, cutoff)
-    if not payloads:
-        if commit:
-            await db.commit()
-        else:
-            await db.flush()
-        return 0
+    processed = 0
+    batch_size = max(int(settings.retention_rollup_batch_size), 1)
+    pending_payloads: dict[tuple[int, object], dict] = {}
 
-    existing_rollups = await _load_existing_rollups(db, payloads.keys())
-    now = utcnow()
-    for key, payload in payloads.items():
-        payload["updated_at"] = now
-        existing = existing_rollups.get(key)
-        if existing is None:
-            db.add(MetricDailyRollup(**payload))
+    async for key, payload in _iter_rollup_payloads(db, cutoff):
+        pending_payloads[key] = payload
+        if len(pending_payloads) < batch_size:
             continue
+        await _upsert_rollup_payloads(db, pending_payloads)
+        processed += len(pending_payloads)
+        pending_payloads = {}
 
-        for field_name, value in payload.items():
-            setattr(existing, field_name, value)
+    if pending_payloads:
+        await _upsert_rollup_payloads(db, pending_payloads)
+        processed += len(pending_payloads)
 
     if commit:
         await db.commit()
     else:
         await db.flush()
-    return len(payloads)
+    return processed
 
 
 async def delete_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:
@@ -74,30 +70,27 @@ async def delete_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -
 
 async def archive_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:
     cutoff = _raw_metric_cutoff()
-    payloads = await _build_archive_payloads(db, cutoff)
-    if not payloads:
-        if commit:
-            await db.commit()
-        else:
-            await db.flush()
-        return 0
+    processed = 0
+    batch_size = max(int(settings.retention_archive_batch_size), 1)
+    pending_payloads: dict[tuple[int, object, str, str, str], dict] = {}
 
-    existing_archives = await _load_existing_archives(db, payloads.keys())
-    now = utcnow()
-    for key, payload in payloads.items():
-        payload["updated_at"] = now
-        existing = existing_archives.get(key)
-        if existing is None:
-            db.add(MetricColdArchive(**payload))
+    async for key, payload in _iter_archive_payloads(db, cutoff):
+        pending_payloads[key] = payload
+        if len(pending_payloads) < batch_size:
             continue
-        for field_name, value in payload.items():
-            setattr(existing, field_name, value)
+        await _upsert_archive_payloads(db, pending_payloads)
+        processed += len(pending_payloads)
+        pending_payloads = {}
+
+    if pending_payloads:
+        await _upsert_archive_payloads(db, pending_payloads)
+        processed += len(pending_payloads)
 
     if commit:
         await db.commit()
     else:
         await db.flush()
-    return len(payloads)
+    return processed
 
 
 async def delete_expired_alerts(db: AsyncSession, *, commit: bool = True) -> int:
@@ -145,7 +138,7 @@ def _today_start() -> datetime:
     return datetime.combine(utcnow().date(), time.min)
 
 
-async def _build_rollup_payloads(db: AsyncSession, cutoff: datetime) -> dict[tuple[int, object], dict]:
+async def _iter_rollup_payloads(db: AsyncSession, cutoff: datetime):
     query = (
         select(
             Metric.device_id,
@@ -158,17 +151,22 @@ async def _build_rollup_payloads(db: AsyncSession, cutoff: datetime) -> dict[tup
         .order_by(Metric.device_id.asc(), Metric.checked_at.asc(), Metric.id.asc())
     )
     result = await db.stream(query)
-    grouped_stats: dict[tuple[int, object], _RollupAccumulator] = {}
-
+    current_key: tuple[int, object] | None = None
+    current_accumulator: _RollupAccumulator | None = None
     async for device_id, checked_at, metric_name, metric_value, status in result:
-        key = (device_id, checked_at.date())
-        accumulator = grouped_stats.setdefault(key, _RollupAccumulator(device_id=device_id, rollup_date=checked_at.date()))
-        accumulator.add(metric_name, metric_value, status)
+        key = (int(device_id), checked_at.date())
+        if current_key != key:
+            if current_accumulator is not None and current_key is not None:
+                yield current_key, current_accumulator.to_payload()
+            current_key = key
+            current_accumulator = _RollupAccumulator(device_id=key[0], rollup_date=key[1])
+        current_accumulator.add(metric_name, metric_value, status)
 
-    return {key: accumulator.to_payload() for key, accumulator in grouped_stats.items()}
+    if current_accumulator is not None and current_key is not None:
+        yield current_key, current_accumulator.to_payload()
 
 
-async def _build_archive_payloads(db: AsyncSession, cutoff: datetime) -> dict[tuple[int, object, str, str, str], dict]:
+async def _iter_archive_payloads(db: AsyncSession, cutoff: datetime):
     query = (
         select(
             Metric.device_id,
@@ -181,32 +179,65 @@ async def _build_archive_payloads(db: AsyncSession, cutoff: datetime) -> dict[tu
         .where(Metric.checked_at < cutoff)
         .order_by(
             Metric.device_id.asc(),
-            Metric.checked_at.asc(),
+            func.date(Metric.checked_at).asc(),
             Metric.metric_name.asc(),
+            func.lower(func.coalesce(Metric.status, "unknown")).asc(),
+            func.coalesce(Metric.unit, "").asc(),
+            Metric.checked_at.asc(),
             Metric.id.asc(),
         )
     )
     result = await db.stream(query)
-    grouped_stats: dict[tuple[int, object, str, str, str], _ArchiveAccumulator] = {}
-
+    current_key: tuple[int, object, str, str, str] | None = None
+    current_accumulator: _ArchiveAccumulator | None = None
     async for device_id, checked_at, metric_name, metric_value, status, unit in result:
         archive_date = checked_at.date()
         normalized_status = str(status or "unknown").lower()
         normalized_unit = str(unit or "")
         key = (int(device_id), archive_date, str(metric_name), normalized_status, normalized_unit)
-        accumulator = grouped_stats.setdefault(
-            key,
-            _ArchiveAccumulator(
+        if current_key != key:
+            if current_accumulator is not None and current_key is not None:
+                yield current_key, current_accumulator.to_payload()
+            current_key = key
+            current_accumulator = _ArchiveAccumulator(
                 device_id=int(device_id),
                 archive_date=archive_date,
                 metric_name=str(metric_name),
                 status=normalized_status,
                 unit=normalized_unit,
-            ),
-        )
-        accumulator.add(metric_value=str(metric_value), checked_at=checked_at)
+            )
+        current_accumulator.add(metric_value=str(metric_value), checked_at=checked_at)
 
-    return {key: accumulator.to_payload() for key, accumulator in grouped_stats.items()}
+    if current_accumulator is not None and current_key is not None:
+        yield current_key, current_accumulator.to_payload()
+
+
+async def _upsert_rollup_payloads(db: AsyncSession, payloads: dict[tuple[int, object], dict]) -> None:
+    existing_rollups = await _load_existing_rollups(db, payloads.keys())
+    now = utcnow()
+    for key, payload in payloads.items():
+        payload["updated_at"] = now
+        existing = existing_rollups.get(key)
+        if existing is None:
+            db.add(MetricDailyRollup(**payload))
+            continue
+        for field_name, value in payload.items():
+            setattr(existing, field_name, value)
+    await db.flush()
+
+
+async def _upsert_archive_payloads(db: AsyncSession, payloads: dict[tuple[int, object, str, str, str], dict]) -> None:
+    existing_archives = await _load_existing_archives(db, payloads.keys())
+    now = utcnow()
+    for key, payload in payloads.items():
+        payload["updated_at"] = now
+        existing = existing_archives.get(key)
+        if existing is None:
+            db.add(MetricColdArchive(**payload))
+            continue
+        for field_name, value in payload.items():
+            setattr(existing, field_name, value)
+    await db.flush()
 
 
 async def _load_existing_rollups(db: AsyncSession, keys) -> dict[tuple[int, object], MetricDailyRollup]:
@@ -253,7 +284,7 @@ async def _load_existing_archives(db: AsyncSession, keys) -> dict[tuple[int, obj
     return existing
 
 
-def _chunked(items: list[tuple[int, object]], size: int):
+def _chunked(items: list[tuple], size: int):
     for index in range(0, len(items), size):
         yield items[index : index + size]
 
