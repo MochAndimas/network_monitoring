@@ -2,6 +2,7 @@ from .admin_audit_log import AdminAuditLog
 from .alert import Alert
 from .device import Device
 from .incident import Incident
+from .latest_metric import LatestMetric
 from .metric import Metric
 from .metric_cold_archive import MetricColdArchive
 from .metric_daily_rollup import MetricDailyRollup
@@ -16,6 +17,7 @@ __all__ = [
     "AuthSession",
     "Device",
     "Incident",
+    "LatestMetric",
     "Metric",
     "MetricColdArchive",
     "MetricDailyRollup",

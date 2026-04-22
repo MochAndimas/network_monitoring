@@ -1,10 +1,11 @@
-from sqlalchemy import Select, delete, desc, func, or_, select, update
+from sqlalchemy import Select, delete, func, or_, select, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.device import Device
 from ..models.alert import Alert
 from ..models.incident import Incident
+from ..models.latest_metric import LatestMetric
 from ..models.metric import Metric
 from ..models.metric_cold_archive import MetricColdArchive
 from ..models.metric_daily_rollup import MetricDailyRollup
@@ -16,26 +17,12 @@ class DeviceRepository:
 
     @staticmethod
     def _latest_ping_metrics_subquery():
-        ranked_ping_metrics = (
-            select(
-                Metric.id.label("metric_id"),
-                Metric.device_id.label("device_id"),
-                func.row_number()
-                .over(
-                    partition_by=Metric.device_id,
-                    order_by=(desc(Metric.checked_at), desc(Metric.id)),
-                )
-                .label("row_number"),
-            )
-            .where(Metric.metric_name == "ping")
-            .subquery()
-        )
         return (
             select(
-                ranked_ping_metrics.c.metric_id,
-                ranked_ping_metrics.c.device_id,
+                LatestMetric.metric_id.label("metric_id"),
+                LatestMetric.device_id.label("device_id"),
             )
-            .where(ranked_ping_metrics.c.row_number == 1)
+            .where(LatestMetric.metric_name == "ping")
             .subquery()
         )
 
@@ -53,7 +40,6 @@ class DeviceRepository:
     def _device_status_query(
         self,
         *,
-        include_total_count: bool = False,
         active_only: bool = False,
         device_id: int | None = None,
         device_type: str | None = None,
@@ -73,8 +59,6 @@ class DeviceRepository:
             latest_ping.status.label("latest_status"),
             latest_ping.checked_at.label("latest_checked_at"),
         ]
-        if include_total_count:
-            columns.append(func.count().over().label("total_count"))
 
         query = (
             select(*columns)
@@ -163,7 +147,6 @@ class DeviceRepository:
         offset: int = 0,
     ) -> tuple[list[dict], int]:
         query, _latest_ping = self._device_status_query(
-            include_total_count=True,
             active_only=active_only,
             device_type=device_type,
             latest_status=latest_status,
@@ -174,7 +157,15 @@ class DeviceRepository:
                 query.order_by(Device.name.asc()).offset(offset).limit(limit)
             )
         ).all()
-        total = int(rows[0].total_count) if rows else 0
+        if offset == 0 and len(rows) < limit:
+            total = len(rows)
+        else:
+            total = await self.count_device_status_rows(
+                active_only=active_only,
+                device_type=device_type,
+                latest_status=latest_status,
+                search=search,
+            )
         return [
             {
                 "id": row.id,
@@ -254,7 +245,7 @@ class DeviceRepository:
         *,
         active_only: bool = False,
         device_type: str | None = None,
-        latest_status: str | None = None,
+        latest_status: str | list[str] | tuple[str, ...] | None = None,
         search: str | None = None,
     ) -> int:
         query, _latest_ping = self._device_status_query(

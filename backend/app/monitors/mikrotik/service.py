@@ -210,11 +210,7 @@ def _mikrotik_memory_percent(resource: dict) -> str:
 
 async def _latest_metric_map(db: AsyncSession, device_id: int) -> dict[str, Metric]:
     repository = MetricRepository(db)
-    metrics = await repository.list_recent_metrics(limit=5000, device_id=device_id)
-    latest: dict[str, Metric] = {}
-    for metric in metrics:
-        latest.setdefault(metric.metric_name, metric)
-    return latest
+    return await repository.latest_metric_map_for_device(device_id)
 
 
 def _interface_metrics(device_id: int, interfaces: list[dict], previous_metrics: dict[str, Metric], checked_at: datetime) -> list[dict]:

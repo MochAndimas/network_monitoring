@@ -112,8 +112,8 @@ async def get_metrics_history_context(
     selected_device_history_rows = []
     selected_device_history_total = 0
     if device_id is not None:
-        if selected_device_offset == 0 and selected_device_limit == limit:
-            selected_device_history_rows = history_rows
+        if selected_device_offset == 0 and selected_device_limit <= limit:
+            selected_device_history_rows = history_rows[:selected_device_limit]
             selected_device_history_total = history_total
         else:
             selected_device_history_rows, selected_device_history_total = await repository.list_recent_metric_rows_paged(
