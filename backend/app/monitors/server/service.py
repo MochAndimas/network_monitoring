@@ -11,14 +11,6 @@ from ..helpers import bounded_gather, build_ping_metric, safe_ping
 
 
 async def run_server_checks(db: AsyncSession) -> list[dict]:
-    """Run server checks for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`).
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     servers = await DeviceRepository(db).list_by_type("server", active_only=True)
     metrics: list[dict] = []
     if not servers:

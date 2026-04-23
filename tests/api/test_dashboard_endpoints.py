@@ -1,7 +1,6 @@
 """Provide automated regression tests for the network monitoring project."""
 
 from contextlib import contextmanager
-import asyncio
 from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
@@ -9,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from backend.app.db.base import Base
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.models.scheduler_job_status import SchedulerJobStatus
@@ -21,45 +19,23 @@ from backend.app.core.security import AuthConfigurationError, create_access_toke
 from backend.app.repositories.device_repository import DeviceRepository
 from backend.app.repositories.metric_repository import MetricRepository
 from backend.app.core.time import utcnow
+from tests.test_utils import create_all, drop_all, empty_checks, run
 
 
 TEST_API_KEY = "test-internal-key"
 API_HEADERS = {"x-api-key": TEST_API_KEY}
 
-
-def run(coro):
-    """Run the requested operation for automated regression tests.
-
-    Args:
-        coro: coro value used by this routine.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
-    return asyncio.run(coro)
-
-
 @contextmanager
 def client_context():
-    """Handle client context for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     TestingSessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-    run(_create_all(engine))
+    run(create_all(engine))
 
     async def override_get_db():
-        """Handle override get db for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         async with TestingSessionLocal() as db:
             yield db
 
@@ -86,11 +62,6 @@ def client_context():
     original_run_cycle_session_local = run_cycle_module.SessionLocal
 
     async def fake_init_db():
-        """Handle fake init db for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         return None
 
     main_module.init_db = fake_init_db
@@ -127,47 +98,10 @@ def client_context():
         pipeline_control_module.engine = original_pipeline_engine
         run_cycle_module.SessionLocal = original_run_cycle_session_local
         app.dependency_overrides.clear()
-        run(_drop_all(engine))
-
-
-async def _create_all(engine) -> None:
-    """Create all for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        engine: engine value used by this routine.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-
-
-async def _drop_all(engine) -> None:
-    """Handle the internal drop all helper logic for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        engine: engine value used by this routine.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+        run(drop_all(engine))
 
 
 async def _seed_devices_and_metrics(session_factory, devices_payload: list[dict], metrics_payload: list[dict]):
-    """Seed devices and metrics for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        session_factory: session factory value used by this routine.
-        devices_payload: devices payload value used by this routine (type `list[dict]`).
-        metrics_payload: metrics payload value used by this routine (type `list[dict]`).
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     async with session_factory() as db:
         devices = await DeviceRepository(db).upsert_devices(devices_payload)
         if metrics_payload:
@@ -176,18 +110,6 @@ async def _seed_devices_and_metrics(session_factory, devices_payload: list[dict]
 
 
 async def _create_user(session_factory, *, username: str, password: str, role: str = "viewer", full_name: str = "Test User"):
-    """Create user for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        session_factory: session factory value used by this routine.
-        username: username keyword value used by this routine (type `str`).
-        password: password keyword value used by this routine (type `str`).
-        role: role keyword value used by this routine (type `str`, optional).
-        full_name: full name keyword value used by this routine (type `str`, optional).
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     async with session_factory() as db:
         user = User(
             username=username,
@@ -202,11 +124,6 @@ async def _create_user(session_factory, *, username: str, password: str, role: s
 
 
 def test_devices_endpoint_returns_latest_status():
-    """Handle test devices endpoint returns latest status for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(
             _seed_devices_and_metrics(
@@ -248,18 +165,8 @@ def test_devices_endpoint_returns_latest_status():
 
 
 def test_dashboard_summary_and_alerts_endpoint():
-    """Handle test dashboard summary and alerts endpoint for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [
@@ -330,18 +237,8 @@ def test_dashboard_summary_and_alerts_endpoint():
 
 
 def test_dashboard_summary_uses_mikrotik_api_health_without_ping():
-    """Handle test dashboard summary uses mikrotik api health without ping for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [
@@ -370,11 +267,6 @@ def test_dashboard_summary_uses_mikrotik_api_health_without_ping():
 
 
 def test_auth_login_me_and_logout_flow():
-    """Handle test auth login me and logout flow for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -424,11 +316,6 @@ def test_auth_login_me_and_logout_flow():
 
 
 def test_auth_me_prefers_bearer_token_over_cookie_session():
-    """Handle test auth me prefers bearer token over cookie session for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client_a, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer", full_name="Viewer User"))
         run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
@@ -450,11 +337,6 @@ def test_auth_me_prefers_bearer_token_over_cookie_session():
 
 
 def test_write_routes_ignore_cookie_even_when_cookie_user_is_admin():
-    """Handle test write routes ignore cookie even when cookie user is admin for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client_a, session_factory):
         run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer", full_name="Viewer User"))
@@ -476,11 +358,6 @@ def test_write_routes_ignore_cookie_even_when_cookie_user_is_admin():
 
 
 def test_auth_requires_dedicated_password_and_jwt_secrets():
-    """Handle test auth requires dedicated password and jwt secrets for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     import backend.app.core.security as security_module
 
     original_password_secret = security_module.settings.auth_password_secret
@@ -507,11 +384,6 @@ def test_auth_requires_dedicated_password_and_jwt_secrets():
 
 
 def test_production_auth_validation_rejects_insecure_defaults():
-    """Handle test production auth validation rejects insecure defaults for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     import backend.app.core.security as security_module
 
     original_app_env = security_module.settings.app_env
@@ -550,11 +422,6 @@ def test_production_auth_validation_rejects_insecure_defaults():
 
 
 def test_production_auth_validation_accepts_hardened_defaults():
-    """Handle test production auth validation accepts hardened defaults for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     import backend.app.core.security as security_module
 
     original_app_env = security_module.settings.app_env
@@ -592,11 +459,6 @@ def test_production_auth_validation_accepts_hardened_defaults():
 
 
 def test_refresh_cookie_cannot_authenticate_api_requests_directly():
-    """Handle test refresh cookie cannot authenticate api requests directly for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -614,11 +476,6 @@ def test_refresh_cookie_cannot_authenticate_api_requests_directly():
 
 
 def test_logout_clears_refresh_cookie_even_when_access_token_has_expired():
-    """Handle test logout clears refresh cookie even when access token has expired for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         user = run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -647,11 +504,6 @@ def test_logout_clears_refresh_cookie_even_when_access_token_has_expired():
 
 
 def test_bearer_read_requests_do_not_update_last_seen_until_refresh():
-    """Handle test bearer read requests do not update last seen until refresh for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -662,11 +514,6 @@ def test_bearer_read_requests_do_not_update_last_seen_until_refresh():
         baseline_seen_at = utcnow() - timedelta(hours=1)
 
         async def set_last_seen() -> None:
-            """Handle set last seen for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                None. The routine is executed for its side effects.
-            """
             async with session_factory() as db:
                 session = await db.scalar(select(AuthSession).where(AuthSession.jwt_id == jwt_id))
                 assert session is not None
@@ -674,11 +521,6 @@ def test_bearer_read_requests_do_not_update_last_seen_until_refresh():
                 await db.commit()
 
         async def get_last_seen():
-            """Return last seen for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 session = await db.scalar(select(AuthSession).where(AuthSession.jwt_id == jwt_id))
                 assert session is not None
@@ -696,11 +538,6 @@ def test_bearer_read_requests_do_not_update_last_seen_until_refresh():
 
 
 def test_access_cookie_cannot_be_used_as_refresh_token_when_refresh_cookie_is_missing():
-    """Handle test access cookie cannot be used as refresh token when refresh cookie is missing for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -715,11 +552,6 @@ def test_access_cookie_cannot_be_used_as_refresh_token_when_refresh_cookie_is_mi
 
 
 def test_login_rate_limit_blocks_repeated_failed_attempts():
-    """Handle test login rate limit blocks repeated failed attempts for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -733,11 +565,6 @@ def test_login_rate_limit_blocks_repeated_failed_attempts():
 
 
 def test_refresh_token_reuse_revokes_session_chain():
-    """Handle test refresh token reuse revokes session chain for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -767,11 +594,6 @@ def test_refresh_token_reuse_revokes_session_chain():
 
 
 def test_login_uses_forwarded_ip_only_for_trusted_proxy():
-    """Handle test login uses forwarded ip only for trusted proxy for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     import backend.app.api.routes.auth as auth_route_module
 
     original_trusted_proxies = auth_route_module.settings.trusted_proxy_ips
@@ -799,11 +621,6 @@ def test_login_uses_forwarded_ip_only_for_trusted_proxy():
 
 
 def test_user_can_list_active_sessions_with_current_marker():
-    """Handle test user can list active sessions with current marker for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -823,11 +640,6 @@ def test_user_can_list_active_sessions_with_current_marker():
 
 
 def test_logout_all_revokes_other_sessions_but_keeps_current_session():
-    """Handle test logout all revokes other sessions but keeps current session for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client_a, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -868,11 +680,6 @@ def test_logout_all_revokes_other_sessions_but_keeps_current_session():
 
 
 def test_admin_can_inspect_and_revoke_user_sessions():
-    """Handle test admin can inspect and revoke user sessions for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         viewer_user = run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
         run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
@@ -902,11 +709,6 @@ def test_admin_can_inspect_and_revoke_user_sessions():
 
 
 def test_viewer_cannot_access_admin_mutation_routes():
-    """Handle test viewer cannot access admin mutation routes for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -922,11 +724,6 @@ def test_viewer_cannot_access_admin_mutation_routes():
 
 
 def test_admin_bearer_token_can_access_read_and_write_routes():
-    """Handle test admin bearer token can access read and write routes for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
 
@@ -946,18 +743,8 @@ def test_admin_bearer_token_can_access_read_and_write_routes():
 
 
 def test_dashboard_overview_panels_and_problem_devices_endpoints():
-    """Handle test dashboard overview panels and problem devices endpoints for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [
@@ -1021,11 +808,6 @@ def test_dashboard_overview_panels_and_problem_devices_endpoints():
 
 
 def test_create_update_and_delete_device_endpoint():
-    """Handle test create update and delete device endpoint for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         create_response = client.post(
             "/devices",
@@ -1061,11 +843,6 @@ def test_create_update_and_delete_device_endpoint():
         assert updated_payload["is_active"] is False
 
         async def seed_related_rows():
-            """Seed related rows for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 await MetricRepository(db).create_metrics(
                     [
@@ -1097,11 +874,6 @@ def test_create_update_and_delete_device_endpoint():
         get_deleted_response = client.get(f'/devices/{created_payload["id"]}', headers=API_HEADERS)
 
         async def fetch_alert_device_id():
-            """Fetch alert device id for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 return await db.scalar(select(Alert.device_id).where(Alert.alert_type == "device_down"))
 
@@ -1111,11 +883,6 @@ def test_create_update_and_delete_device_endpoint():
 
 
 def test_device_type_metadata_and_validation():
-    """Handle test device type metadata and validation for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, _session_factory):
         types_response = client.get("/devices/meta/types", headers=API_HEADERS)
         invalid_ip_response = client.post(
@@ -1139,18 +906,8 @@ def test_device_type_metadata_and_validation():
 
 
 def test_metrics_history_filters():
-    """Handle test metrics history filters for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [
@@ -1206,11 +963,6 @@ def test_metrics_history_filters():
 
 
 def test_devices_endpoint_supports_filters_and_pagination():
-    """Handle test devices endpoint supports filters and pagination for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(
             _seed_devices_and_metrics(
@@ -1264,18 +1016,8 @@ def test_devices_endpoint_supports_filters_and_pagination():
 
 
 def test_metrics_history_supports_time_window_filters():
-    """Handle test metrics history supports time window filters for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [{"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"}]
@@ -1328,18 +1070,8 @@ def test_metrics_history_supports_time_window_filters():
 
 
 def test_metrics_history_paged_supports_bulk_metric_names_with_per_metric_limit():
-    """Handle test metrics history paged supports bulk metric names with per metric limit for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [{"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"}]
@@ -1398,18 +1130,8 @@ def test_metrics_history_paged_supports_bulk_metric_names_with_per_metric_limit(
 
 
 def test_metrics_daily_summary_reads_rollup_table_with_filters():
-    """Handle test metrics daily summary reads rollup table with filters for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [
@@ -1468,18 +1190,8 @@ def test_metrics_daily_summary_reads_rollup_table_with_filters():
 
 
 def test_metrics_daily_summary_supports_pagination():
-    """Handle test metrics daily summary supports pagination for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [{"name": "ISP Utama", "ip_address": "8.8.8.8", "device_type": "internet_target"}]
@@ -1517,18 +1229,8 @@ def test_metrics_daily_summary_supports_pagination():
 
 
 def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
-    """Handle test latest snapshot endpoint is unfiltered and paged for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [
@@ -1597,18 +1299,8 @@ def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
 
 
 def test_metrics_history_context_endpoint():
-    """Handle test metrics history context endpoint for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [{"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"}]
@@ -1655,18 +1347,8 @@ def test_metrics_history_context_endpoint():
 
 
 def test_metrics_history_live_endpoint_returns_lightweight_sample():
-    """Handle test metrics history live endpoint returns lightweight sample for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [{"name": "ISP Utama", "ip_address": "8.8.8.8", "device_type": "internet_target"}]
@@ -1721,18 +1403,8 @@ def test_metrics_history_live_endpoint_returns_lightweight_sample():
 
 
 def test_metrics_history_live_global_snapshot_summary_remains_representative_when_paged():
-    """Handle test metrics history live global snapshot summary remains representative when paged for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [
@@ -1777,18 +1449,8 @@ def test_metrics_history_live_global_snapshot_summary_remains_representative_whe
 
 
 def test_latest_snapshot_status_summary_preserves_fallback_first_status_behavior():
-    """Handle test latest snapshot status summary preserves fallback first status behavior for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         async def scenario():
-            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
                     [{"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"}]
@@ -1828,11 +1490,6 @@ def test_latest_snapshot_status_summary_preserves_fallback_first_status_behavior
 
 
 def test_run_cycle_creates_alerts_and_incidents():
-    """Handle test run cycle creates alerts and incidents for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         internet_device_id = run(
             _seed_devices_and_metrics(
@@ -1853,14 +1510,6 @@ def test_run_cycle_creates_alerts_and_incidents():
         original_mikrotik = run_cycle_module.run_mikrotik_checks
 
         async def fake_internet_checks(_db):
-            """Handle fake internet checks for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Args:
-                _db: db value used by this routine.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             return [
                 {
                     "device_id": internet_device_id,
@@ -1874,17 +1523,6 @@ def test_run_cycle_creates_alerts_and_incidents():
 
         try:
             run_cycle_module.run_internet_checks = fake_internet_checks
-            async def empty_checks(_db):
-                """Handle empty checks for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-                Args:
-                    _db: db value used by this routine.
-
-                Returns:
-                    The computed result, response payload, or side-effect outcome for the caller.
-                """
-                return []
-
             run_cycle_module.run_device_checks = empty_checks
             run_cycle_module.run_server_checks = empty_checks
             run_cycle_module.run_mikrotik_checks = empty_checks
@@ -1914,11 +1552,6 @@ def test_run_cycle_creates_alerts_and_incidents():
 
 
 def test_threshold_endpoints_and_update():
-    """Handle test threshold endpoints and update for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, _session_factory):
         list_response = client.get("/thresholds", headers=API_HEADERS)
 
@@ -1950,11 +1583,6 @@ def test_threshold_endpoints_and_update():
 
 
 def test_run_cycle_creates_ping_latency_alert():
-    """Handle test run cycle creates ping latency alert for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         internet_device_id = run(
             _seed_devices_and_metrics(
@@ -1972,14 +1600,6 @@ def test_run_cycle_creates_ping_latency_alert():
         original_mikrotik = run_cycle_module.run_mikrotik_checks
 
         async def fake_internet_checks(_db):
-            """Handle fake internet checks for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Args:
-                _db: db value used by this routine.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             return [
                 {
                     "device_id": internet_device_id,
@@ -1993,17 +1613,6 @@ def test_run_cycle_creates_ping_latency_alert():
 
         try:
             run_cycle_module.run_internet_checks = fake_internet_checks
-            async def empty_checks(_db):
-                """Handle empty checks for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-                Args:
-                    _db: db value used by this routine.
-
-                Returns:
-                    The computed result, response payload, or side-effect outcome for the caller.
-                """
-                return []
-
             run_cycle_module.run_device_checks = empty_checks
             run_cycle_module.run_server_checks = empty_checks
             run_cycle_module.run_mikrotik_checks = empty_checks
@@ -2029,11 +1638,6 @@ def test_run_cycle_creates_ping_latency_alert():
 
 
 def test_run_cycle_creates_mikrotik_metric_alerts():
-    """Handle test run cycle creates mikrotik metric alerts for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         mikrotik_device_id = run(
             _seed_devices_and_metrics(
@@ -2051,14 +1655,6 @@ def test_run_cycle_creates_mikrotik_metric_alerts():
         original_mikrotik = run_cycle_module.run_mikrotik_checks
 
         async def fake_mikrotik_checks(_db):
-            """Handle fake mikrotik checks for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Args:
-                _db: db value used by this routine.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             checked_at = utcnow()
             return [
                 {
@@ -2096,17 +1692,6 @@ def test_run_cycle_creates_mikrotik_metric_alerts():
             ]
 
         try:
-            async def empty_checks(_db):
-                """Handle empty checks for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-                Args:
-                    _db: db value used by this routine.
-
-                Returns:
-                    The computed result, response payload, or side-effect outcome for the caller.
-                """
-                return []
-
             run_cycle_module.run_internet_checks = empty_checks
             run_cycle_module.run_device_checks = empty_checks
             run_cycle_module.run_server_checks = empty_checks
@@ -2140,11 +1725,6 @@ def test_run_cycle_creates_mikrotik_metric_alerts():
 
 
 def test_run_cycle_creates_internet_quality_alerts():
-    """Handle test run cycle creates internet quality alerts for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         internet_device_id = run(
             _seed_devices_and_metrics(
@@ -2162,14 +1742,6 @@ def test_run_cycle_creates_internet_quality_alerts():
         original_mikrotik = run_cycle_module.run_mikrotik_checks
 
         async def fake_internet_checks(_db):
-            """Handle fake internet checks for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Args:
-                _db: db value used by this routine.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             return [
                 {
                     "device_id": internet_device_id,
@@ -2215,17 +1787,6 @@ def test_run_cycle_creates_internet_quality_alerts():
 
         try:
             run_cycle_module.run_internet_checks = fake_internet_checks
-            async def empty_checks(_db):
-                """Handle empty checks for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-                Args:
-                    _db: db value used by this routine.
-
-                Returns:
-                    The computed result, response payload, or side-effect outcome for the caller.
-                """
-                return []
-
             run_cycle_module.run_device_checks = empty_checks
             run_cycle_module.run_server_checks = empty_checks
             run_cycle_module.run_mikrotik_checks = empty_checks
@@ -2255,11 +1816,6 @@ def test_run_cycle_creates_internet_quality_alerts():
 
 
 def test_run_cycle_creates_printer_alerts_and_incident():
-    """Handle test run cycle creates printer alerts and incident for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         printer_device_id = run(
             _seed_devices_and_metrics(
@@ -2286,14 +1842,6 @@ def test_run_cycle_creates_printer_alerts_and_incident():
         original_mikrotik = run_cycle_module.run_mikrotik_checks
 
         async def fake_device_checks(_db):
-            """Handle fake device checks for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Args:
-                _db: db value used by this routine.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             now = utcnow()
             return [
                 {
@@ -2355,17 +1903,6 @@ def test_run_cycle_creates_printer_alerts_and_incident():
             ]
 
         try:
-            async def empty_checks(_db):
-                """Handle empty checks for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-                Args:
-                    _db: db value used by this routine.
-
-                Returns:
-                    The computed result, response payload, or side-effect outcome for the caller.
-                """
-                return []
-
             run_cycle_module.run_internet_checks = empty_checks
             run_cycle_module.run_device_checks = fake_device_checks
             run_cycle_module.run_server_checks = empty_checks
@@ -2399,11 +1936,6 @@ def test_run_cycle_creates_printer_alerts_and_incident():
 
 
 def test_internal_api_key_protects_mutation_endpoints():
-    """Handle test internal api key protects mutation endpoints for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, _session_factory):
         unauthorized_device = client.post(
             "/devices",
@@ -2422,11 +1954,6 @@ def test_internal_api_key_protects_mutation_endpoints():
 
 
 def test_internal_api_key_scopes_split_write_and_ops_access():
-    """Handle test internal api key scopes split write and ops access for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     import backend.app.core.config as config_module
 
     original_internal_api_key = config_module.settings.internal_api_key
@@ -2469,11 +1996,6 @@ def test_internal_api_key_scopes_split_write_and_ops_access():
 
 
 def test_internal_api_key_protects_read_endpoints():
-    """Handle test internal api key protects read endpoints for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, _session_factory):
         unauthorized_devices = client.get("/devices")
         authorized_devices = client.get("/devices", headers=API_HEADERS)
@@ -2483,11 +2005,6 @@ def test_internal_api_key_protects_read_endpoints():
 
 
 def test_missing_credentials_are_rejected_without_api_key_or_bearer_token():
-    """Handle test missing credentials are rejected without api key or bearer token for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     import backend.app.api.deps as deps_module
 
     with client_context() as (client, _session_factory):
@@ -2507,11 +2024,6 @@ def test_missing_credentials_are_rejected_without_api_key_or_bearer_token():
 
 
 def test_admin_user_lifecycle_and_audit_logs():
-    """Handle test admin user lifecycle and audit logs for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
 
@@ -2560,11 +2072,6 @@ def test_admin_user_lifecycle_and_audit_logs():
 
 
 def test_user_can_change_password_and_old_password_stops_working():
-    """Handle test user can change password and old password stops working for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -2590,20 +2097,10 @@ def test_user_can_change_password_and_old_password_stops_working():
 
 
 def test_health_endpoint_and_request_id_header():
-    """Handle test health endpoint and request id header for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     import backend.app.api.routes.health as health_module
 
     original_check = health_module.check_database_connection
     async def fake_check_database_connection():
-        """Handle fake check database connection for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         return True
 
     health_module.check_database_connection = fake_check_database_connection
@@ -2629,33 +2126,15 @@ def test_health_endpoint_and_request_id_header():
 
 
 def test_health_ready_stays_up_when_scheduler_is_degraded():
-    """Handle test health ready stays up when scheduler is degraded for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     import backend.app.api.routes.health as health_module
 
     original_check = health_module.check_database_connection
     original_list_statuses = health_module.list_scheduler_job_statuses
 
     async def fake_check_database_connection():
-        """Handle fake check database connection for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         return True
 
     async def fake_list_scheduler_job_statuses(_db):
-        """Handle fake list scheduler job statuses for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            _db: db value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         return [
             SchedulerJobStatus(
                 job_name="device_checks",
@@ -2687,11 +2166,6 @@ def test_health_ready_stays_up_when_scheduler_is_degraded():
 
 
 def test_observability_metrics_use_route_templates_for_http_paths():
-    """Handle test observability metrics use route templates for http paths for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     import backend.app.services.observability_service as observability_module
 
     original_request_count = observability_module._http_request_count.copy()
@@ -2728,11 +2202,6 @@ def test_observability_metrics_use_route_templates_for_http_paths():
 
 
 def test_observability_metrics_include_history_payload_counters():
-    """Handle test observability metrics include history payload counters for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     import backend.app.services.observability_service as observability_module
 
     original_payload_request_count = observability_module._api_payload_request_count.copy()
@@ -2798,20 +2267,10 @@ def test_observability_metrics_include_history_payload_counters():
 
 
 def test_observability_summary_endpoint():
-    """Handle test observability summary endpoint for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     import backend.app.api.routes.observability as observability_module
 
     original_check = observability_module.check_database_connection
     async def fake_check_database_connection():
-        """Handle fake check database connection for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         return True
 
     observability_module.check_database_connection = fake_check_database_connection
@@ -2819,11 +2278,6 @@ def test_observability_summary_endpoint():
     try:
         with client_context() as (client, session_factory):
             async def scenario():
-                """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-                Returns:
-                    The computed result, response payload, or side-effect outcome for the caller.
-                """
                 async with session_factory() as db:
                     devices = await DeviceRepository(db).upsert_devices(
                         [

@@ -7,6 +7,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from shared.device_utils import format_device_label, is_mikrotik_device
 from components.auth import require_dashboard_login
 from components.api import get_json, paged_items, paged_meta
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
@@ -66,27 +67,7 @@ INTERNET_ONLY_METRICS = {"dns_resolution_time", "http_response_time", "public_ip
 PRINTER_DETAIL_ONLY_METRICS = {"printer_uptime_seconds", "printer_total_pages"}
 
 
-def _format_device_label(device: dict) -> str:
-    """Format device label for Streamlit dashboard page rendering.
-
-    Args:
-        device: device value used by this routine (type `dict`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
-    return f'{device["name"]} ({device["device_type"]})'
-
-
 def _default_device_option_label(devices: list[dict]) -> str:
-    """Handle the internal default device option label helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        devices: devices value used by this routine (type `list[dict]`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     internet_targets = [device for device in devices if device.get("device_type") == "internet_target"]
     if not internet_targets:
         return "Semua Device"
@@ -96,33 +77,25 @@ def _default_device_option_label(devices: list[dict]) -> str:
         None,
     )
     if preferred_device:
-        return _format_device_label(preferred_device)
+        return format_device_label(preferred_device)
 
     preferred_device = next(
         (device for device in internet_targets if "isp" in str(device.get("name", "")).lower()),
         None,
     )
     if preferred_device:
-        return _format_device_label(preferred_device)
+        return format_device_label(preferred_device)
 
     preferred_device = next(
         (device for device in internet_targets if "mikrotik" not in str(device.get("name", "")).lower()),
         None,
     )
     if preferred_device:
-        return _format_device_label(preferred_device)
+        return format_device_label(preferred_device)
     return "Semua Device"
 
 
 def _format_metric_value(row: pd.Series) -> str:
-    """Format metric value for Streamlit dashboard page rendering.
-
-    Args:
-        row: row value used by this routine (type `pd.Series`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     return _format_metric_value_components(
         metric_name=str(row.get("metric_name") or ""),
         metric_value=row.get("metric_value"),
@@ -138,17 +111,6 @@ def _format_metric_value_components(
     metric_value_numeric,
     unit,
 ) -> str:
-    """Format metric value components for Streamlit dashboard page rendering.
-
-    Args:
-        metric_name: metric name keyword value used by this routine (type `str`).
-        metric_value: metric value keyword value used by this routine.
-        metric_value_numeric: metric value numeric keyword value used by this routine.
-        unit: unit keyword value used by this routine.
-
-    Returns:
-        `str` result produced by the routine.
-    """
     metric_name = str(metric_name or "")
     if metric_name == "printer_uptime_seconds" and pd.notna(metric_value_numeric):
         return _format_duration(pd.Timedelta(seconds=float(metric_value_numeric)))
@@ -163,14 +125,6 @@ def _format_metric_value_components(
 
 
 def _friendly_metric_name(metric_name: str) -> str:
-    """Handle the internal friendly metric name helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        metric_name: metric name value used by this routine (type `str`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     dynamic_label = _dynamic_mikrotik_metric_label(metric_name)
     if dynamic_label:
         return dynamic_label
@@ -178,28 +132,12 @@ def _friendly_metric_name(metric_name: str) -> str:
 
 
 def _metric_filter_label(metric_name: str) -> str:
-    """Handle the internal metric filter label helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        metric_name: metric name value used by this routine (type `str`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     if metric_name == "All Metrics":
         return "Semua Metrik"
     return f"{_friendly_metric_name(metric_name)} ({metric_name})"
 
 
 def _dynamic_mikrotik_metric_label(metric_name: str) -> str | None:
-    """Handle the internal dynamic mikrotik metric label helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        metric_name: metric name value used by this routine (type `str`).
-
-    Returns:
-        `str | None` result produced by the routine.
-    """
     parts = str(metric_name or "").split(":")
     if len(parts) < 3:
         return None
@@ -229,60 +167,17 @@ def _dynamic_mikrotik_metric_label(metric_name: str) -> str | None:
 
 
 def _humanize_printer_text(value: str) -> str:
-    """Handle the internal humanize printer text helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        value: value value used by this routine (type `str`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     normalized = value.replace(",", ", ").replace("_", " ").strip()
     if not normalized:
         return "-"
     return normalized.title()
 
 
-def _is_mikrotik_device(device_type: str | None, device_name: str | None) -> bool:
-    """Handle the internal is mikrotik device helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        device_type: device type value used by this routine (type `str | None`).
-        device_name: device name value used by this routine (type `str | None`).
-
-    Returns:
-        `bool` result produced by the routine.
-    """
-    normalized_type = str(device_type or "").lower()
-    normalized_name = str(device_name or "").lower()
-    return normalized_type == "mikrotik" or "mikrotik" in normalized_name
-
-
 def _should_hide_metric_for_device(metric_name: str, device_type: str | None, device_name: str | None) -> bool:
-    """Handle the internal should hide metric for device helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        metric_name: metric name value used by this routine (type `str`).
-        device_type: device type value used by this routine (type `str | None`).
-        device_name: device name value used by this routine (type `str | None`).
-
-    Returns:
-        `bool` result produced by the routine.
-    """
-    return _is_mikrotik_device(device_type, device_name) and metric_name in INTERNET_ONLY_METRICS
+    return is_mikrotik_device(device_type, device_name) and metric_name in INTERNET_ONLY_METRICS
 
 
 def _filter_metric_names(metric_names: list[str], device_type: str | None, device_name: str | None = None) -> list[str]:
-    """Handle the internal filter metric names helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        metric_names: metric names value used by this routine (type `list[str]`).
-        device_type: device type value used by this routine (type `str | None`).
-        device_name: device name value used by this routine (type `str | None`, optional).
-
-    Returns:
-        `list[str]` result produced by the routine.
-    """
     return [
         metric_name
         for metric_name in metric_names
@@ -296,16 +191,6 @@ def _filter_history_rows(
     device_type_by_id: dict[int, str],
     device_name_by_id: dict[int, str],
 ) -> list[dict]:
-    """Handle the internal filter history rows helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        rows: rows value used by this routine (type `list[dict]`).
-        device_type_by_id: device type by id value used by this routine (type `dict[int, str]`).
-        device_name_by_id: device name by id value used by this routine (type `dict[int, str]`).
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     filtered_rows: list[dict] = []
     for row in rows:
         device_id = int(row.get("device_id", 0) or 0)
@@ -319,15 +204,6 @@ def _filter_history_rows(
 
 
 def _y_axis_label(metric_name: str, unit: str | None) -> str:
-    """Handle the internal y axis label helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        metric_name: metric name value used by this routine (type `str`).
-        unit: unit value used by this routine (type `str | None`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     friendly_name = _friendly_metric_name(metric_name)
     if unit:
         return f"{friendly_name} ({unit})"
@@ -335,14 +211,6 @@ def _y_axis_label(metric_name: str, unit: str | None) -> str:
 
 
 def _format_duration(delta: pd.Timedelta | None) -> str:
-    """Format duration for Streamlit dashboard page rendering.
-
-    Args:
-        delta: delta value used by this routine (type `pd.Timedelta | None`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     if delta is None or pd.isna(delta):
         return "-"
     total_seconds = max(int(delta.total_seconds()), 0)
@@ -362,15 +230,6 @@ def _format_duration(delta: pd.Timedelta | None) -> str:
 
 
 def _prepare_history_frame(history: list[dict], *, sort_desc: bool = True) -> pd.DataFrame:
-    """Handle the internal prepare history frame helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        history: history value used by this routine (type `list[dict]`).
-        sort_desc: sort desc keyword value used by this routine (type `bool`, optional).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     dataframe = pd.DataFrame(history)
     if dataframe.empty:
         return dataframe
@@ -390,14 +249,6 @@ def _prepare_history_frame(history: list[dict], *, sort_desc: bool = True) -> pd
 
 
 def _format_metric_values(dataframe: pd.DataFrame) -> pd.Series:
-    """Format metric values for Streamlit dashboard page rendering.
-
-    Args:
-        dataframe: dataframe value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        `pd.Series` result produced by the routine.
-    """
     unit_suffix = dataframe["unit"].map(lambda unit: f" {unit}" if unit else "")
     display_values = dataframe["metric_value"].astype(str) + unit_suffix
     numeric_values = pd.to_numeric(dataframe["metric_value_numeric"], errors="coerce")
@@ -434,20 +285,6 @@ def _fetch_device_history_rows(
     max_pages: int | None = None,
     initial_payload: dict | None = None,
 ) -> list[dict]:
-    """Fetch device history rows for Streamlit dashboard page rendering.
-
-    Args:
-        device_id: device id keyword value used by this routine (type `int`).
-        checked_from_date: checked from date keyword value used by this routine.
-        checked_to_date: checked to date keyword value used by this routine.
-        metric_names: metric names keyword value used by this routine (type `list[str] | None`, optional).
-        status: status keyword value used by this routine (type `str | None`, optional).
-        max_pages: max pages keyword value used by this routine (type `int | None`, optional).
-        initial_payload: initial payload keyword value used by this routine (type `dict | None`, optional).
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     if metric_names:
         unique_metric_names = list(dict.fromkeys(str(metric_name) for metric_name in metric_names))
         if max_pages == 1:
@@ -497,22 +334,6 @@ def _history_query_params(
     metric_names: list[str] | None = None,
     per_metric_limit: int | None = None,
 ) -> dict[str, object]:
-    """Handle the internal history query params helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        device_id: device id keyword value used by this routine (type `int`).
-        metric_name: metric name keyword value used by this routine (type `str | None`, optional).
-        status: status keyword value used by this routine (type `str | None`, optional).
-        checked_from_date: checked from date keyword value used by this routine (optional).
-        checked_to_date: checked to date keyword value used by this routine (optional).
-        limit: limit keyword value used by this routine (type `int`, optional).
-        offset: offset keyword value used by this routine (type `int`, optional).
-        metric_names: metric names keyword value used by this routine (type `list[str] | None`, optional).
-        per_metric_limit: per metric limit keyword value used by this routine (type `int | None`, optional).
-
-    Returns:
-        `dict[str, object]` result produced by the routine.
-    """
     query_params: dict[str, object] = {
         "limit": limit,
         "offset": offset,
@@ -543,20 +364,6 @@ def _fetch_history_pages(
     max_pages: int | None = None,
     initial_payload: dict | None = None,
 ) -> list[dict]:
-    """Fetch history pages for Streamlit dashboard page rendering.
-
-    Args:
-        device_id: device id keyword value used by this routine (type `int`).
-        metric_name: metric name keyword value used by this routine (type `str | None`, optional).
-        status: status keyword value used by this routine (type `str | None`, optional).
-        checked_from_date: checked from date keyword value used by this routine (optional).
-        checked_to_date: checked to date keyword value used by this routine (optional).
-        max_pages: max pages keyword value used by this routine (type `int | None`, optional).
-        initial_payload: initial payload keyword value used by this routine (type `dict | None`, optional).
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     page_size = 500
     offset = 0
     items: list[dict] = []
@@ -602,19 +409,6 @@ def _fetch_history_rows_bulk(
     checked_to_date=None,
     per_metric_limit: int = 500,
 ) -> list[dict]:
-    """Fetch history rows bulk for Streamlit dashboard page rendering.
-
-    Args:
-        device_id: device id keyword value used by this routine (type `int`).
-        metric_names: metric names keyword value used by this routine (type `list[str]`).
-        status: status keyword value used by this routine (type `str | None`, optional).
-        checked_from_date: checked from date keyword value used by this routine (optional).
-        checked_to_date: checked to date keyword value used by this routine (optional).
-        per_metric_limit: per metric limit keyword value used by this routine (type `int`, optional).
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     if not metric_names:
         return []
     query_params = _history_query_params(
@@ -634,15 +428,6 @@ def _fetch_history_rows_bulk(
 
 
 def _fetch_latest_device_snapshot(device_id: int, limit: int = 500) -> list[dict]:
-    """Fetch latest device snapshot for Streamlit dashboard page rendering.
-
-    Args:
-        device_id: device id value used by this routine (type `int`).
-        limit: limit value used by this routine (type `int`, optional).
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     payload = get_json(
         f"/metrics/latest-snapshot/paged?{urlencode({'device_id': device_id, 'limit': limit, 'offset': 0})}",
         {"items": [], "meta": {}},
@@ -651,26 +436,10 @@ def _fetch_latest_device_snapshot(device_id: int, limit: int = 500) -> list[dict
 
 
 def _latest_snapshot_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
-    """Handle the internal latest snapshot frame helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        dataframe: dataframe value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     return dataframe.drop_duplicates(subset=["device_name", "metric_name"]).copy()
 
 
 def _snapshot_pagination_controls(total_rows: int) -> tuple[int, int]:
-    """Handle the internal snapshot pagination controls helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        total_rows: total rows value used by this routine (type `int`).
-
-    Returns:
-        `tuple[int, int]` result produced by the routine.
-    """
     page_size_col, page_col, _ = st.columns([1, 1, 4])
     default_page_size = int(st.session_state.get("history_snapshot_page_size", 10))
     if default_page_size not in [10, 25, 50, 100]:
@@ -694,16 +463,6 @@ def _snapshot_pagination_controls(total_rows: int) -> tuple[int, int]:
 
 
 def _paginate_frame(dataframe: pd.DataFrame, *, key_prefix: str, page_size: int = 10) -> pd.DataFrame:
-    """Handle the internal paginate frame helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        dataframe: dataframe value used by this routine (type `pd.DataFrame`).
-        key_prefix: key prefix keyword value used by this routine (type `str`).
-        page_size: page size keyword value used by this routine (type `int`, optional).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     if dataframe.empty:
         return dataframe
     total_rows = len(dataframe)
@@ -731,16 +490,6 @@ def _render_metric_trend_section(
     chart_window_label: str,
     target_column=None,
 ) -> None:
-    """Render metric trend section for Streamlit dashboard page rendering.
-
-    Args:
-        metric_frame: metric frame value used by this routine (type `pd.DataFrame`).
-        chart_window_label: chart window label keyword value used by this routine (type `str`).
-        target_column: target column keyword value used by this routine (optional).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     container = target_column if target_column is not None else st
     latest_metric_timestamp = metric_frame["checked_at"].max()
     chart_window_hours = CHART_WINDOW_OPTIONS[chart_window_label]
@@ -829,17 +578,6 @@ def _render_metric_trend_section(
 
 
 def _render_stat_card(column, label: str, value: str | int, *, compact: bool = False) -> None:
-    """Render stat card for Streamlit dashboard page rendering.
-
-    Args:
-        column: column value used by this routine.
-        label: label value used by this routine (type `str`).
-        value: value value used by this routine (type `str | int`).
-        compact: compact keyword value used by this routine (type `bool`, optional).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     with column.container(border=True):
         st.metric(label, value)
 
@@ -848,15 +586,6 @@ def _status_counts_frame(
     latest_snapshot_status_summary: dict[str, int],
     fallback_frame: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Handle the internal status counts frame helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        latest_snapshot_status_summary: latest snapshot status summary value used by this routine (type `dict[str, int]`).
-        fallback_frame: fallback frame value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     if latest_snapshot_status_summary:
         status_counts = pd.DataFrame(
             [{"status": normalize_status_label(status), "Jumlah": count} for status, count in latest_snapshot_status_summary.items()]
@@ -873,11 +602,6 @@ def _status_counts_frame(
 
 
 def _status_color_scale() -> alt.Scale:
-    """Handle the internal status color scale helper logic for Streamlit dashboard page rendering.
-
-    Returns:
-        `alt.Scale` result produced by the routine.
-    """
     return alt.Scale(
         domain=["Down", "Error", "Warning", "Unknown", "Active", "Resolved", "OK", "Up"],
         range=["#dc2626", "#ef4444", "#f59e0b", "#6b7280", "#3b82f6", "#10b981", "#22c55e", "#16a34a"],
@@ -885,14 +609,6 @@ def _status_color_scale() -> alt.Scale:
 
 
 def _health_score_percent(status_counts: pd.DataFrame) -> int:
-    """Report health for score percent for Streamlit dashboard page rendering.
-
-    Args:
-        status_counts: status counts value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        `int` result produced by the routine.
-    """
     if status_counts.empty:
         return 0
     total = int(status_counts["Jumlah"].sum())
@@ -915,17 +631,6 @@ def _health_score_percent(status_counts: pd.DataFrame) -> int:
 
 
 def _entity_volume_frame(dataframe: pd.DataFrame, column_name: str, label_name: str, top_n: int = 6) -> pd.DataFrame:
-    """Handle the internal entity volume frame helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        dataframe: dataframe value used by this routine (type `pd.DataFrame`).
-        column_name: column name value used by this routine (type `str`).
-        label_name: label name value used by this routine (type `str`).
-        top_n: top n value used by this routine (type `int`, optional).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     if dataframe.empty or column_name not in dataframe.columns:
         return pd.DataFrame(columns=[label_name, "Jumlah"])
     grouped = (
@@ -941,15 +646,6 @@ def _entity_volume_frame(dataframe: pd.DataFrame, column_name: str, label_name: 
 
 
 def _recent_anomaly_frame(dataframe: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
-    """Handle the internal recent anomaly frame helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        dataframe: dataframe value used by this routine (type `pd.DataFrame`).
-        top_n: top n value used by this routine (type `int`, optional).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     if dataframe.empty:
         return pd.DataFrame()
     anomaly_statuses = {"Warning", "Down", "Error"}
@@ -960,15 +656,6 @@ def _recent_anomaly_frame(dataframe: pd.DataFrame, top_n: int = 20) -> pd.DataFr
 
 
 def _format_metric_numeric(value: float | int | None, unit: str | None = None) -> str:
-    """Format metric numeric for Streamlit dashboard page rendering.
-
-    Args:
-        value: value value used by this routine (type `float | int | None`).
-        unit: unit value used by this routine (type `str | None`, optional).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     if value is None or pd.isna(value):
         return "-"
     suffix = f" {unit}" if unit else ""
@@ -976,14 +663,6 @@ def _format_metric_numeric(value: float | int | None, unit: str | None = None) -
 
 
 def _trend_direction_text(delta_value: float | None) -> str:
-    """Handle the internal trend direction text helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        delta_value: delta value value used by this routine (type `float | None`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     if delta_value is None or pd.isna(delta_value):
         return "Stabil (data awal)"
     if abs(float(delta_value)) < 1e-9:
@@ -993,14 +672,6 @@ def _trend_direction_text(delta_value: float | None) -> str:
 
 
 def _metric_kpi_summary(metric_frame: pd.DataFrame) -> dict[str, object]:
-    """Handle the internal metric kpi summary helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        metric_frame: metric frame value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        `dict[str, object]` result produced by the routine.
-    """
     if metric_frame.empty:
         return {}
     ordered = metric_frame.sort_values("checked_at").copy()
@@ -1034,15 +705,6 @@ def _metric_kpi_summary(metric_frame: pd.DataFrame) -> dict[str, object]:
 
 
 def _raw_history_view(raw_history_frame: pd.DataFrame, *, metric_selected: bool) -> pd.DataFrame:
-    """Handle the internal raw history view helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        raw_history_frame: raw history frame value used by this routine (type `pd.DataFrame`).
-        metric_selected: metric selected keyword value used by this routine (type `bool`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     if raw_history_frame.empty:
         return pd.DataFrame(columns=["Dicek (WIB)", "Nilai", "Status", "Device", "Metrik"])
     if not metric_selected:
@@ -1090,14 +752,6 @@ def _raw_history_view(raw_history_frame: pd.DataFrame, *, metric_selected: bool)
 
 
 def _status_label_for_display(status_value: object) -> str:
-    """Handle the internal status label for display helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        status_value: status value value used by this routine (type `object`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     normalized = str(status_value or "").strip().lower()
     if normalized in {"down", "error"}:
         return f"Tinggi | {normalize_status_label(normalized)}"
@@ -1109,14 +763,6 @@ def _status_label_for_display(status_value: object) -> str:
 
 
 def _non_numeric_metric_timeline(metric_frame: pd.DataFrame) -> pd.DataFrame:
-    """Handle the internal non numeric metric timeline helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        metric_frame: metric frame value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     if metric_frame.empty:
         return pd.DataFrame(columns=["Dicek (WIB)", "Nilai", "Status", "Device", "Metrik"])
     ordered = metric_frame.sort_values("checked_at", ascending=False).copy()
@@ -1135,14 +781,6 @@ def _non_numeric_metric_timeline(metric_frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _latest_metric_snapshot_map(dataframe: pd.DataFrame) -> dict[str, pd.Series]:
-    """Handle the internal latest metric snapshot map helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        dataframe: dataframe value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        `dict[str, pd.Series]` result produced by the routine.
-    """
     if dataframe.empty:
         return {}
     latest_rows = dataframe.sort_values("checked_at").drop_duplicates(subset=["metric_name"], keep="last")
@@ -1154,16 +792,6 @@ def _latest_metric_value_from_map(
     metric_name: str,
     default: str = "-",
 ) -> str:
-    """Handle the internal latest metric value from map helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        latest_map: latest map value used by this routine (type `dict[str, pd.Series]`).
-        metric_name: metric name value used by this routine (type `str`).
-        default: default value used by this routine (type `str`, optional).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     row = latest_map.get(metric_name)
     if row is None:
         return default
@@ -1171,14 +799,6 @@ def _latest_metric_value_from_map(
 
 
 def _format_percent(value: str) -> str:
-    """Format percent for Streamlit dashboard page rendering.
-
-    Args:
-        value: value value used by this routine (type `str`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     try:
         return f"{float(value):.1f}%"
     except (TypeError, ValueError):
@@ -1186,14 +806,6 @@ def _format_percent(value: str) -> str:
 
 
 def _format_bytes(value: float | int | None) -> str:
-    """Format bytes for Streamlit dashboard page rendering.
-
-    Args:
-        value: value value used by this routine (type `float | int | None`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     if value is None or pd.isna(value):
         return "-"
     size = float(value)
@@ -1205,29 +817,12 @@ def _format_bytes(value: float | int | None) -> str:
 
 
 def _format_mbps(value: float | int | None) -> str:
-    """Format mbps for Streamlit dashboard page rendering.
-
-    Args:
-        value: value value used by this routine (type `float | int | None`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     if value is None or pd.isna(value):
         return "-"
     return f"{float(value):.2f}"
 
 
 def _dynamic_mikrotik_metric_table(dataframe: pd.DataFrame, prefix: str) -> pd.DataFrame:
-    """Handle the internal dynamic mikrotik metric table helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        dataframe: dataframe value used by this routine (type `pd.DataFrame`).
-        prefix: prefix value used by this routine (type `str`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     if dataframe.empty:
         return pd.DataFrame()
 
@@ -1276,14 +871,6 @@ def _dynamic_mikrotik_metric_table(dataframe: pd.DataFrame, prefix: str) -> pd.D
 
 
 def _interface_view(dataframe: pd.DataFrame) -> pd.DataFrame:
-    """Handle the internal interface view helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        dataframe: dataframe value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     table = _dynamic_mikrotik_metric_table(dataframe, "interface")
     if table.empty:
         return table
@@ -1308,14 +895,6 @@ def _interface_view(dataframe: pd.DataFrame) -> pd.DataFrame:
 
 
 def _firewall_view(dataframe: pd.DataFrame) -> pd.DataFrame:
-    """Handle the internal firewall view helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        dataframe: dataframe value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     table = _dynamic_mikrotik_metric_table(dataframe, "firewall")
     if table.empty:
         return table
@@ -1333,14 +912,6 @@ def _firewall_view(dataframe: pd.DataFrame) -> pd.DataFrame:
 
 
 def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> None:
-    """Render mikrotik history section for Streamlit dashboard page rendering.
-
-    Args:
-        mikrotik_history_frame: mikrotik history frame value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     if mikrotik_history_frame.empty:
         st.info("Belum ada metrik Mikrotik API. Pastikan device aktif dan monitoring cycle berjalan.")
         return
@@ -1431,26 +1002,10 @@ def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> No
 
 
 def _is_dynamic_mikrotik_metric(metric_name: str) -> bool:
-    """Handle the internal is dynamic mikrotik metric helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        metric_name: metric name value used by this routine (type `str`).
-
-    Returns:
-        `bool` result produced by the routine.
-    """
     return str(metric_name or "").startswith(("interface:", "queue:", "firewall:"))
 
 
 def _default_mikrotik_trend_metrics(metric_names: list[str]) -> list[str]:
-    """Handle the internal default mikrotik trend metrics helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        metric_names: metric names value used by this routine (type `list[str]`).
-
-    Returns:
-        `list[str]` result produced by the routine.
-    """
     preferred_metrics = [
         "ping",
         "packet_loss",
@@ -1464,14 +1019,6 @@ def _default_mikrotik_trend_metrics(metric_names: list[str]) -> list[str]:
 def _render_printer_history_section(
     printer_history_frame: pd.DataFrame,
 ) -> None:
-    """Render printer history section for Streamlit dashboard page rendering.
-
-    Args:
-        printer_history_frame: printer history frame value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     if printer_history_frame.empty:
         st.info("Belum ada metrik printer SNMP. Periksa koneksi SNMP printer dan jalankan monitoring cycle.")
         return
@@ -1544,7 +1091,7 @@ device_by_id = {
 }
 device_options = {"Semua Device": None}
 for device in devices:
-    device_options[_format_device_label(device)] = device["id"]
+    device_options[format_device_label(device)] = device["id"]
 
 today = datetime.now().date()
 default_start_date = today - timedelta(days=1)
@@ -1552,11 +1099,6 @@ auto_refresh, interval_seconds = refresh_controls("history", default_enabled=Tru
 
 
 def _render_history_filters() -> dict:
-    """Render history filters near page header for Streamlit dashboard page rendering.
-
-    Returns:
-        `dict` result produced by the routine.
-    """
     default_device_label = _default_device_option_label(devices)
     device_option_labels = list(device_options.keys())
     if "history_selected_device" not in st.session_state or st.session_state["history_selected_device"] not in device_option_labels:
@@ -1592,7 +1134,7 @@ def _render_history_filters() -> dict:
         selected_device_record.get("name") if selected_device_record else None,
     )
     if (
-        _is_mikrotik_device(
+        is_mikrotik_device(
             selected_device_type,
             selected_device_record.get("name") if selected_device_record else None,
         )
@@ -1650,11 +1192,6 @@ history_filters = _render_history_filters()
 
 
 def _render_history_body() -> None:
-    """Render history body for Streamlit dashboard page rendering.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     meta_container = st.container()
     summary_container = st.container()
     snapshot_container = st.container()
@@ -1662,15 +1199,6 @@ def _render_history_body() -> None:
     prepared_history_frame_cache: dict[tuple[int, bool], pd.DataFrame] = {}
 
     def _prepare_history_frame_cached(rows: list[dict], *, sort_desc: bool = True) -> pd.DataFrame:
-        """Handle the internal prepare history frame cached helper logic for Streamlit dashboard page rendering.
-
-        Args:
-            rows: rows value used by this routine (type `list[dict]`).
-            sort_desc: sort desc keyword value used by this routine (type `bool`, optional).
-
-        Returns:
-            `pd.DataFrame` result produced by the routine.
-        """
         key = (id(rows), sort_desc)
         cached = prepared_history_frame_cache.get(key)
         if cached is not None:
@@ -1701,7 +1229,7 @@ def _render_history_body() -> None:
     }
     if selected_device_id is not None:
         context_query_params["device_id"] = selected_device_id
-    if selected_device_id is not None and _is_mikrotik_device(
+    if selected_device_id is not None and is_mikrotik_device(
         selected_device_type,
         selected_device_record.get("name") if selected_device_record else None,
     ):
@@ -1745,7 +1273,7 @@ def _render_history_body() -> None:
     history_meta = paged_meta(history_payload)
     history = _filter_history_rows(history, device_type_by_id, device_name_by_id)
     selected_device_history = _filter_history_rows(selected_device_history_raw, device_type_by_id, device_name_by_id)
-    selected_is_mikrotik = selected_device_id is not None and _is_mikrotik_device(
+    selected_is_mikrotik = selected_device_id is not None and is_mikrotik_device(
         selected_device_type,
         selected_device_record.get("name") if selected_device_record else None,
     )

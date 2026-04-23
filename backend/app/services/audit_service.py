@@ -21,21 +21,6 @@ async def record_admin_audit_log(
     user_agent: str = "",
     details: dict | None = None,
 ) -> AdminAuditLog:
-    """Record admin audit log for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`).
-        actor: actor keyword value used by this routine.
-        action: action keyword value used by this routine (type `str`).
-        target_type: target type keyword value used by this routine (type `str`).
-        target_id: target id keyword value used by this routine (type `str | None`).
-        ip_address: ip address keyword value used by this routine (type `str`, optional).
-        user_agent: user agent keyword value used by this routine (type `str`, optional).
-        details: details keyword value used by this routine (type `dict | None`, optional).
-
-    Returns:
-        `AdminAuditLog` result produced by the routine.
-    """
     user = getattr(actor, "user", None)
     entry = AdminAuditLog(
         actor_kind=str(getattr(actor, "kind", "unknown")),
@@ -61,14 +46,5 @@ async def list_admin_audit_logs(
     *,
     limit: int = 100,
 ) -> list[AdminAuditLog]:
-    """Return a list of admin audit logs for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`).
-        limit: limit keyword value used by this routine (type `int`, optional).
-
-    Returns:
-        `list[AdminAuditLog]` result produced by the routine.
-    """
     rows = await db.scalars(select(AdminAuditLog).order_by(desc(AdminAuditLog.created_at), desc(AdminAuditLog.id)).limit(limit))
     return list(rows.all())

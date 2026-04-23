@@ -8,21 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ..core.time import now
 from ..db.base import Base
 
-
-def _utcnow() -> datetime:
-    """Handle the internal utcnow helper logic for SQLAlchemy ORM models.
-
-    Returns:
-        `datetime` result produced by the routine.
-    """
-    return now()
-
-
 class SchedulerJobStatus(Base):
-    """Represent scheduler job status behavior and data for SQLAlchemy ORM models.
-
-    Inherits from `Base` to match the surrounding framework or persistence model.
-    """
     __tablename__ = "scheduler_job_statuses"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -35,4 +21,4 @@ class SchedulerJobStatus(Base):
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_running: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)

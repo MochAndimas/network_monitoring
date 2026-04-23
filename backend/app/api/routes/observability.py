@@ -23,14 +23,6 @@ router = APIRouter()
 
 @router.get("/summary")
 async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
-    """Handle observability summary for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `dict` result produced by the routine.
-    """
     database_ok = await check_database_connection()
     devices_total = await DeviceRepository(db).count_devices(active_only=False)
     metrics_latest_snapshot = await MetricRepository(db).count_latest_metrics()
@@ -66,14 +58,6 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
 
 @router.get("/metrics", response_class=PlainTextResponse)
 async def observability_metrics(db: AsyncSession = Depends(get_db)) -> PlainTextResponse:
-    """Handle observability metrics for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `PlainTextResponse` result produced by the routine.
-    """
     database_ok = await check_database_connection()
     scheduler_statuses = await list_scheduler_job_statuses(db)
     scheduler_alerts = build_scheduler_operational_alerts(scheduler_statuses)

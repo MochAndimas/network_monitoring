@@ -7,6 +7,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from shared.device_utils import format_device_label
 from components.auth import require_dashboard_login
 from components.api import get_json, get_json_map, paged_items, paged_meta
 from components.sidebar import collapse_sidebar_on_page_load
@@ -23,43 +24,13 @@ render_page_header(
 )
 
 
-def _format_device_label(device: dict) -> str:
-    """Format device label for Streamlit dashboard page rendering.
-
-    Args:
-        device: device value used by this routine (type `dict`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
-    return f'{device["name"]} ({device["device_type"]})'
-
-
 def _format_number(value, suffix: str = "", decimals: int = 2) -> str:
-    """Format number for Streamlit dashboard page rendering.
-
-    Args:
-        value: value value used by this routine.
-        suffix: suffix value used by this routine (type `str`, optional).
-        decimals: decimals value used by this routine (type `int`, optional).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     if value is None or pd.isna(value):
         return "-"
     return f"{float(value):.{decimals}f}{suffix}"
 
 
 def _prepare_summary_frame(rows: list[dict]) -> pd.DataFrame:
-    """Prepare summary frame for Streamlit dashboard page rendering.
-
-    Args:
-        rows: rows value used by this routine (type `list[dict]`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     dataframe = pd.DataFrame(rows)
     if dataframe.empty:
         return dataframe
@@ -83,16 +54,6 @@ def _prepare_summary_frame(rows: list[dict]) -> pd.DataFrame:
 
 
 def _weighted_average(dataframe: pd.DataFrame, value_column: str, weight_column: str) -> float | None:
-    """Calculate weighted average for Streamlit dashboard page rendering.
-
-    Args:
-        dataframe: dataframe value used by this routine (type `pd.DataFrame`).
-        value_column: value column value used by this routine (type `str`).
-        weight_column: weight column value used by this routine (type `str`).
-
-    Returns:
-        `float | None` result produced by the routine.
-    """
     if dataframe.empty or value_column not in dataframe.columns or weight_column not in dataframe.columns:
         return None
     working = dataframe[[value_column, weight_column]].dropna().copy()
@@ -107,28 +68,10 @@ def _weighted_average(dataframe: pd.DataFrame, value_column: str, weight_column:
 
 
 def _weighted_average_for_group(group: pd.DataFrame, value_column: str, weight_column: str) -> float | None:
-    """Calculate weighted average for grouped frame for Streamlit dashboard page rendering.
-
-    Args:
-        group: group value used by this routine (type `pd.DataFrame`).
-        value_column: value column value used by this routine (type `str`).
-        weight_column: weight column value used by this routine (type `str`).
-
-    Returns:
-        `float | None` result produced by the routine.
-    """
     return _weighted_average(group, value_column, weight_column)
 
 
 def _aggregate_all_devices_weighted(frame: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate all devices per day with weighted metrics for Streamlit dashboard page rendering.
-
-    Args:
-        frame: frame value used by this routine (type `pd.DataFrame`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     rows: list[dict] = []
     for rollup_date, group in frame.groupby("rollup_date"):
         rows.append(
@@ -160,7 +103,7 @@ payload = get_json_map(
 devices = list(payload.get("devices", []))
 device_options = {"Semua Device": None}
 for device in devices:
-    device_options[_format_device_label(device)] = device["id"]
+    device_options[format_device_label(device)] = device["id"]
 
 today = datetime.now().date()
 default_start_date = today - timedelta(days=7)

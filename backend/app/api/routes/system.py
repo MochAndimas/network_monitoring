@@ -19,16 +19,6 @@ async def run_cycle(
     actor=Depends(require_ops_access),
     db: AsyncSession = Depends(get_db),
 ) -> RunCycleResult:
-    """Run cycle for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        request: request value used by this routine (type `Request`).
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `RunCycleResult` result produced by the routine.
-    """
     async with monitoring_pipeline_guard(wait=False) as acquired:
         if not acquired:
             raise HTTPException(

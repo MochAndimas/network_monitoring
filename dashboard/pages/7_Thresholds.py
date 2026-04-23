@@ -21,14 +21,6 @@ thresholds = get_json("/thresholds", [])
 
 
 def _threshold_category(key: str) -> str:
-    """Handle the internal threshold category helper logic for Streamlit dashboard page rendering.
-
-    Args:
-        key: key value used by this routine (type `str`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     normalized = str(key or "").strip()
     if not normalized:
         return "uncategorized"

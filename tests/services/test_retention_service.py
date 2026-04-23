@@ -1,14 +1,11 @@
 """Provide automated regression tests for the network monitoring project."""
 
-import asyncio
-
 from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from backend.app.db.base import Base
 from backend.app.models.alert import Alert
 from backend.app.models.incident import Incident
 from backend.app.models.metric import Metric
@@ -18,36 +15,16 @@ from backend.app.repositories.device_repository import DeviceRepository
 from backend.app.repositories.metric_repository import MetricRepository
 from backend.app.core.time import utcnow
 from backend.app.services.retention_service import cleanup_monitoring_data
-
-
-def run(coro):
-    """Run the requested operation for automated regression tests.
-
-    Args:
-        coro: coro value used by this routine.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
-    return asyncio.run(coro)
-
+from tests.test_utils import create_all, drop_all, run
 
 def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatch):
-    """Handle test cleanup rolls up old raw metrics and prunes resolved records for automated regression tests.
-
-    Args:
-        monkeypatch: monkeypatch value used by this routine.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     SessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-    run(_create_all(engine))
+    run(create_all(engine))
 
     monkeypatch.setattr("backend.app.services.retention_service.settings.raw_metric_retention_days", 7)
     monkeypatch.setattr("backend.app.services.retention_service.settings.alert_retention_days", 180)
@@ -101,25 +78,17 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
         assert [alert.status for alert in remaining_alerts] == ["active"]
         assert [incident.status for incident in remaining_incidents] == ["active"]
     finally:
-        run(_drop_all(engine))
+        run(drop_all(engine))
 
 
 def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypatch):
-    """Handle test cleanup rolls up yesterday without deleting recent raw metrics for automated regression tests.
-
-    Args:
-        monkeypatch: monkeypatch value used by this routine.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     SessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-    run(_create_all(engine))
+    run(create_all(engine))
 
     monkeypatch.setattr("backend.app.services.retention_service.settings.raw_metric_retention_days", 7)
 
@@ -136,22 +105,17 @@ def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypa
         assert rollups[0].rollup_date == yesterday.date()
         assert len(remaining_metrics) == 2
     finally:
-        run(_drop_all(engine))
+        run(drop_all(engine))
 
 
 def test_latest_metric_map_uses_latest_metric_for_each_device_metric_pair():
-    """Handle test latest metric map uses latest metric for each device metric pair for automated regression tests.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     SessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-    run(_create_all(engine))
+    run(create_all(engine))
 
     now = utcnow()
 
@@ -162,23 +126,10 @@ def test_latest_metric_map_uses_latest_metric_for_each_device_metric_pair():
         assert latest_metrics[(device_id, "packet_loss")].metric_value == "0.00"
         assert len(latest_metrics) == 2
     finally:
-        run(_drop_all(engine))
+        run(drop_all(engine))
 
 
 def _metric(device_id: int, name: str, value: str, status: str, unit: str | None, checked_at):
-    """Handle the internal metric helper logic for automated regression tests.
-
-    Args:
-        device_id: device id value used by this routine (type `int`).
-        name: name value used by this routine (type `str`).
-        value: value value used by this routine (type `str`).
-        status: status value used by this routine (type `str`).
-        unit: unit value used by this routine (type `str | None`).
-        checked_at: checked at value used by this routine.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     return {
         "device_id": device_id,
         "metric_name": name,
@@ -188,46 +139,7 @@ def _metric(device_id: int, name: str, value: str, status: str, unit: str | None
         "checked_at": checked_at,
     }
 
-
-async def _create_all(engine) -> None:
-    """Create all for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        engine: engine value used by this routine.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-
-
-async def _drop_all(engine) -> None:
-    """Handle the internal drop all helper logic for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        engine: engine value used by this routine.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
-
-
 async def _cleanup_old_metrics(session_factory, old_timestamp, recent_timestamp, very_old_timestamp):
-    """Handle the internal cleanup old metrics helper logic for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        session_factory: session factory value used by this routine.
-        old_timestamp: old timestamp value used by this routine.
-        recent_timestamp: recent timestamp value used by this routine.
-        very_old_timestamp: very old timestamp value used by this routine.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     async with session_factory() as db:
         device = (
             await DeviceRepository(db).upsert_devices(
@@ -295,15 +207,6 @@ async def _cleanup_old_metrics(session_factory, old_timestamp, recent_timestamp,
 
 
 async def _cleanup_yesterday_metrics(session_factory, yesterday):
-    """Handle the internal cleanup yesterday metrics helper logic for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        session_factory: session factory value used by this routine.
-        yesterday: yesterday value used by this routine.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     async with session_factory() as db:
         device = (
             await DeviceRepository(db).upsert_devices(
@@ -325,15 +228,6 @@ async def _cleanup_yesterday_metrics(session_factory, yesterday):
 
 
 async def _latest_metric_map_for_device(session_factory, now):
-    """Handle the internal latest metric map for device helper logic for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        session_factory: session factory value used by this routine.
-        now: now value used by this routine.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     async with session_factory() as db:
         device = (
             await DeviceRepository(db).upsert_devices(

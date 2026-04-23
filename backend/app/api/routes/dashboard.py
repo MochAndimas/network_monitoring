@@ -21,17 +21,6 @@ async def _build_overview_panels(
     alerts_limit: int,
     incidents_limit: int,
 ) -> dict:
-    """Build overview panels for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`).
-        snapshot_limit: snapshot limit keyword value used by this routine (type `int`).
-        alerts_limit: alerts limit keyword value used by this routine (type `int`).
-        incidents_limit: incidents limit keyword value used by this routine (type `int`).
-
-    Returns:
-        `dict` result produced by the routine.
-    """
     device_repository = DeviceRepository(db)
     metric_repository = MetricRepository(db)
     summary = await build_dashboard_summary(db)
@@ -63,14 +52,6 @@ async def _build_overview_panels(
 
 @router.get("/summary", response_model=DashboardSummary)
 async def get_summary(db: AsyncSession = Depends(get_db)) -> DashboardSummary:
-    """Return summary for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `DashboardSummary` result produced by the routine.
-    """
     return DashboardSummary(**await build_dashboard_summary(db))
 
 
@@ -81,17 +62,6 @@ async def get_overview_panels(
     incidents_limit: int = Query(default=5, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Return overview panels for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        snapshot_limit: snapshot limit value used by this routine (type `int`, optional).
-        alerts_limit: alerts limit value used by this routine (type `int`, optional).
-        incidents_limit: incidents limit value used by this routine (type `int`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `dict` result produced by the routine.
-    """
     return await _build_overview_panels(
         db,
         snapshot_limit=snapshot_limit,
@@ -105,15 +75,6 @@ async def get_problem_devices(
     limit: int = Query(default=25, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
-    """Return problem devices for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        limit: limit value used by this routine (type `int`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     return await DeviceRepository(db).list_device_status_rows(
         active_only=True,
         latest_status=["down", "warning", "error"],
@@ -124,28 +85,12 @@ async def get_problem_devices(
 
 @router.get("/overview-data")
 async def get_overview_data(db: AsyncSession = Depends(get_db)) -> dict:
-    """Return overview data for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `dict` result produced by the routine.
-    """
     payload = await _build_overview_panels(db, snapshot_limit=12, alerts_limit=5, incidents_limit=5)
     payload["problem_devices"] = await get_problem_devices(limit=25, db=db)
     return payload
 
 
 def _metric_history_items(rows: list[dict]) -> list[dict]:
-    """Handle the internal metric history items helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        rows: rows value used by this routine (type `list[dict]`).
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     return [
         {
             "id": metric["id"],

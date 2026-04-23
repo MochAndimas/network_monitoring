@@ -7,10 +7,6 @@ from ..db.base import Base
 
 
 class Threshold(Base):
-    """Represent threshold behavior and data for SQLAlchemy ORM models.
-
-    Inherits from `Base` to match the surrounding framework or persistence model.
-    """
     __tablename__ = "thresholds"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

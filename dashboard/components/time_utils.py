@@ -13,14 +13,6 @@ _WIB_ZONE = ZoneInfo(WIB_TIMEZONE)
 
 
 def to_wib_timestamp(value):
-    """Handle to wib timestamp for shared Streamlit dashboard UI and API helpers.
-
-    Args:
-        value: value value used by this routine.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     parsed = pd.to_datetime(value)
     if isinstance(parsed, pd.Series):
         if parsed.dt.tz is None:
@@ -32,29 +24,12 @@ def to_wib_timestamp(value):
 
 
 def format_wib_timestamp(value) -> str:
-    """Format wib timestamp for shared Streamlit dashboard UI and API helpers.
-
-    Args:
-        value: value value used by this routine.
-
-    Returns:
-        `str` result produced by the routine.
-    """
     if pd.isna(value):
         return "-"
     return pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S WIB")
 
 
 def wib_date_boundary_to_utc_iso(value, *, end_of_day: bool = False) -> str:
-    """Handle wib date boundary to utc iso for shared Streamlit dashboard UI and API helpers.
-
-    Args:
-        value: value value used by this routine.
-        end_of_day: end of day keyword value used by this routine (type `bool`, optional).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     boundary_time = time.max if end_of_day else time.min
     localized = datetime.combine(value, boundary_time, tzinfo=_WIB_ZONE)
     return localized.replace(tzinfo=None).isoformat()

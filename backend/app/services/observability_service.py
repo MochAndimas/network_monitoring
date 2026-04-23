@@ -34,19 +34,7 @@ _api_payload_sampled = Counter()
 
 
 class JsonLogFormatter(logging.Formatter):
-    """Represent json log formatter behavior and data for business services that coordinate repositories and domain workflows.
-
-    Inherits from `logging.Formatter` to match the surrounding framework or persistence model.
-    """
     def format(self, record: logging.LogRecord) -> str:
-        """Format the requested operation for business services that coordinate repositories and domain workflows.
-
-        Args:
-            record: record value used by this routine (type `logging.LogRecord`).
-
-        Returns:
-            `str` result produced by the routine.
-        """
         payload = {
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
@@ -61,11 +49,6 @@ class JsonLogFormatter(logging.Formatter):
 
 
 def configure_structured_logging() -> None:
-    """Handle configure structured logging for business services that coordinate repositories and domain workflows.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     root_logger = logging.getLogger()
     formatter: logging.Formatter
     if settings.log_as_json:
@@ -78,14 +61,6 @@ def configure_structured_logging() -> None:
 
 @contextmanager
 def request_logging_context(request_id: str):
-    """Handle request logging context for business services that coordinate repositories and domain workflows.
-
-    Args:
-        request_id: request id value used by this routine (type `str`).
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     token = request_id_context.set(request_id)
     try:
         yield
@@ -95,14 +70,6 @@ def request_logging_context(request_id: str):
 
 @contextmanager
 def job_logging_context(job_name: str):
-    """Handle job logging context for business services that coordinate repositories and domain workflows.
-
-    Args:
-        job_name: job name value used by this routine (type `str`).
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     token = job_name_context.set(job_name)
     try:
         yield
@@ -111,15 +78,6 @@ def job_logging_context(job_name: str):
 
 
 def normalized_http_metric_path(*, path: str, route_path: str | None = None) -> str:
-    """Handle normalized http metric path for business services that coordinate repositories and domain workflows.
-
-    Args:
-        path: path keyword value used by this routine (type `str`).
-        route_path: route path keyword value used by this routine (type `str | None`, optional).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     normalized_route = str(route_path or "").strip()
     if normalized_route:
         return normalized_route
@@ -128,18 +86,6 @@ def normalized_http_metric_path(*, path: str, route_path: str | None = None) -> 
 
 
 def record_http_request(*, path: str, method: str, status_code: int, duration_ms: float, route_path: str | None = None) -> None:
-    """Record http request for business services that coordinate repositories and domain workflows.
-
-    Args:
-        path: path keyword value used by this routine (type `str`).
-        method: method keyword value used by this routine (type `str`).
-        status_code: status code keyword value used by this routine (type `int`).
-        duration_ms: duration ms keyword value used by this routine (type `float`).
-        route_path: route path keyword value used by this routine (type `str | None`, optional).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     metric_path = normalized_http_metric_path(path=path, route_path=route_path)
     key = (method.upper(), metric_path, str(status_code))
     _http_request_count[key] += 1
@@ -149,27 +95,10 @@ def record_http_request(*, path: str, method: str, status_code: int, duration_ms
 
 
 def record_exception(*, source: str) -> None:
-    """Record exception for business services that coordinate repositories and domain workflows.
-
-    Args:
-        source: source keyword value used by this routine (type `str`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     _exception_count[source] += 1
 
 
 def record_api_payload_request(*, endpoint: str, scope: str) -> None:
-    """Record api payload request for business services that coordinate repositories and domain workflows.
-
-    Args:
-        endpoint: endpoint keyword value used by this routine (type `str`).
-        scope: scope keyword value used by this routine (type `str`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     _api_payload_request_count[(str(endpoint or "/unknown"), str(scope or "unknown"))] += 1
 
 
@@ -182,19 +111,6 @@ def record_api_payload_section(
     total_rows: int | None = None,
     sampled: bool = False,
 ) -> None:
-    """Record api payload section for business services that coordinate repositories and domain workflows.
-
-    Args:
-        endpoint: endpoint keyword value used by this routine (type `str`).
-        scope: scope keyword value used by this routine (type `str`).
-        section: section keyword value used by this routine (type `str`).
-        rows: rows keyword value used by this routine (type `int`).
-        total_rows: total rows keyword value used by this routine (type `int | None`, optional).
-        sampled: sampled keyword value used by this routine (type `bool`, optional).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     metric_endpoint = str(endpoint or "/unknown")
     metric_scope = str(scope or "unknown")
     metric_section = str(section or "unknown")
@@ -207,15 +123,6 @@ def record_api_payload_section(
 
 
 async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str) -> None:
-    """Handle mark scheduler job started for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`).
-        job_name: job name keyword value used by this routine (type `str`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     status.last_started_at = utcnow()
     status.is_running = True
@@ -224,16 +131,6 @@ async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str) -> None
 
 
 async def mark_scheduler_job_succeeded(db: AsyncSession, *, job_name: str, duration_ms: float) -> None:
-    """Handle mark scheduler job succeeded for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`).
-        job_name: job name keyword value used by this routine (type `str`).
-        duration_ms: duration ms keyword value used by this routine (type `float`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     now = utcnow()
     status.last_finished_at = now
@@ -249,17 +146,6 @@ async def mark_scheduler_job_succeeded(db: AsyncSession, *, job_name: str, durat
 
 
 async def mark_scheduler_job_failed(db: AsyncSession, *, job_name: str, duration_ms: float, error: str) -> None:
-    """Handle mark scheduler job failed for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`).
-        job_name: job name keyword value used by this routine (type `str`).
-        duration_ms: duration ms keyword value used by this routine (type `float`).
-        error: error keyword value used by this routine (type `str`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     now = utcnow()
     status.last_finished_at = now
@@ -277,27 +163,11 @@ async def mark_scheduler_job_failed(db: AsyncSession, *, job_name: str, duration
 
 
 async def list_scheduler_job_statuses(db: AsyncSession) -> list[SchedulerJobStatus]:
-    """Return a list of scheduler job statuses for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`).
-
-    Returns:
-        `list[SchedulerJobStatus]` result produced by the routine.
-    """
     rows = await db.scalars(select(SchedulerJobStatus).order_by(SchedulerJobStatus.job_name.asc()))
     return list(rows.all())
 
 
 def scheduler_job_is_stale(job: SchedulerJobStatus) -> bool:
-    """Handle scheduler job is stale for business services that coordinate repositories and domain workflows.
-
-    Args:
-        job: job value used by this routine (type `SchedulerJobStatus`).
-
-    Returns:
-        `bool` result produced by the routine.
-    """
     expected_interval = _expected_scheduler_interval_seconds(job.job_name)
     if expected_interval is None:
         return False
@@ -307,14 +177,6 @@ def scheduler_job_is_stale(job: SchedulerJobStatus) -> bool:
 
 
 def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -> list[dict]:
-    """Build scheduler operational alerts for business services that coordinate repositories and domain workflows.
-
-    Args:
-        job_statuses: job statuses value used by this routine (type `list[SchedulerJobStatus]`).
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     alerts: list[dict] = []
     for job in job_statuses:
         if job.consecutive_failures > 0:
@@ -341,16 +203,6 @@ def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -
 
 
 def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, scheduler_statuses: list[SchedulerJobStatus]) -> str:
-    """Render prometheus metrics for business services that coordinate repositories and domain workflows.
-
-    Args:
-        database_up: database up keyword value used by this routine (type `bool`).
-        scheduler_alert_count: scheduler alert count keyword value used by this routine (type `int`).
-        scheduler_statuses: scheduler statuses keyword value used by this routine (type `list[SchedulerJobStatus]`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     lines = [
         "# HELP network_monitoring_database_up Database connectivity status",
         "# TYPE network_monitoring_database_up gauge",
@@ -406,15 +258,6 @@ def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, 
 
 
 async def _get_or_create_scheduler_job_status(db: AsyncSession, *, job_name: str) -> SchedulerJobStatus:
-    """Return or create scheduler job status for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`).
-        job_name: job name keyword value used by this routine (type `str`).
-
-    Returns:
-        `SchedulerJobStatus` result produced by the routine.
-    """
     status = await db.scalar(select(SchedulerJobStatus).where(SchedulerJobStatus.job_name == job_name))
     if status is None:
         status = SchedulerJobStatus(job_name=job_name)
@@ -424,14 +267,6 @@ async def _get_or_create_scheduler_job_status(db: AsyncSession, *, job_name: str
 
 
 def _expected_scheduler_interval_seconds(job_name: str) -> int | None:
-    """Handle the internal expected scheduler interval seconds helper logic for business services that coordinate repositories and domain workflows.
-
-    Args:
-        job_name: job name value used by this routine (type `str`).
-
-    Returns:
-        `int | None` result produced by the routine.
-    """
     mapping = {
         "internet_checks": settings.scheduler_interval_internet_seconds,
         "device_checks": settings.scheduler_interval_device_seconds,

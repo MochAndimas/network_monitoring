@@ -13,14 +13,6 @@ from components.ui import normalize_status_label, render_kpi_cards, render_meta_
 
 
 def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
-    """Handle the internal prepare devices frame helper logic for project functionality.
-
-    Args:
-        devices: devices value used by this routine (type `list[dict]`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     dataframe = pd.DataFrame(devices)
     if dataframe.empty:
         return dataframe
@@ -36,14 +28,6 @@ def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
 
 
 def _prepare_alerts_frame(alerts: list[dict]) -> pd.DataFrame:
-    """Handle the internal prepare alerts frame helper logic for project functionality.
-
-    Args:
-        alerts: alerts value used by this routine (type `list[dict]`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     dataframe = pd.DataFrame(alerts)
     if dataframe.empty:
         return dataframe
@@ -54,14 +38,6 @@ def _prepare_alerts_frame(alerts: list[dict]) -> pd.DataFrame:
 
 
 def _prepare_incidents_frame(incidents: list[dict]) -> pd.DataFrame:
-    """Handle the internal prepare incidents frame helper logic for project functionality.
-
-    Args:
-        incidents: incidents value used by this routine (type `list[dict]`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     dataframe = pd.DataFrame(incidents)
     if dataframe.empty:
         return dataframe
@@ -72,14 +48,6 @@ def _prepare_incidents_frame(incidents: list[dict]) -> pd.DataFrame:
 
 
 def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
-    """Handle the internal prepare snapshot frame helper logic for project functionality.
-
-    Args:
-        snapshot_payload: snapshot payload value used by this routine (type `dict`).
-
-    Returns:
-        `pd.DataFrame` result produced by the routine.
-    """
     dataframe = pd.DataFrame(snapshot_payload.get("items", []))
     if dataframe.empty:
         return dataframe
@@ -92,11 +60,6 @@ def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
 
 
 def _render_overview_body() -> None:
-    """Render overview body for project functionality.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     payload = get_json(
         "/dashboard/overview-data",
         {

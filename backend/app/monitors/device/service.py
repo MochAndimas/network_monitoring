@@ -12,14 +12,6 @@ QUALITY_CHECK_TYPES = {"access_point", "voip", "printer"}
 
 
 async def run_device_checks(db: AsyncSession) -> list[dict]:
-    """Run device checks for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`).
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     devices = await DeviceRepository(db).list_by_types(DEVICE_TYPES, active_only=True)
     return [
         metric
@@ -29,14 +21,6 @@ async def run_device_checks(db: AsyncSession) -> list[dict]:
 
 
 async def _build_device_metrics(device) -> list[dict]:
-    """Build device metrics for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        device: device value used by this routine.
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     if device.device_type == "printer":
         samples = await collect_ping_samples(device.ip_address)
         printer_snmp_metrics = await collect_printer_snmp_metrics(device.id, device.ip_address)

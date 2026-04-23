@@ -2,6 +2,8 @@
 
 from collections.abc import Iterable
 
+from shared.collection_utils import chunked
+from shared.number_utils import safe_float
 from sqlalchemy import Select, and_, case, desc, distinct, func, select, tuple_
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,32 +18,14 @@ UP_STATUSES = {"up", "ok"}
 
 
 class MetricRepository:
-    """Represent metric repository behavior and data for database query and persistence repositories.
-    """
     def __init__(self, db: AsyncSession):
-        """Handle the internal init helper logic for database query and persistence repositories.
-
-        Args:
-            db: db value used by this routine (type `AsyncSession`).
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         self.db = db
 
     @staticmethod
     def _metric_row_payload(row) -> dict:
-        """Handle the internal metric row payload helper logic for database query and persistence repositories.
-
-        Args:
-            row: row value used by this routine.
-
-        Returns:
-            `dict` result produced by the routine.
-        """
         metric_value_numeric = row.metric_value_numeric
         if metric_value_numeric is None:
-            metric_value_numeric = _safe_float(row.metric_value)
+            metric_value_numeric = safe_float(row.metric_value)
         return {
             "id": row.id,
             "device_id": row.device_id,
@@ -56,14 +40,6 @@ class MetricRepository:
 
     @staticmethod
     def _normalize_metric_names(metric_names: list[str] | None) -> list[str]:
-        """Normalize metric names for database query and persistence repositories.
-
-        Args:
-            metric_names: metric names value used by this routine (type `list[str] | None`).
-
-        Returns:
-            `list[str]` result produced by the routine.
-        """
         if not metric_names:
             return []
         return list(dict.fromkeys(str(metric_name) for metric_name in metric_names if metric_name))
@@ -78,19 +54,6 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ) -> list[object]:
-        """Handle the internal recent metric filter conditions helper logic for database query and persistence repositories.
-
-        Args:
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-            metric_name: metric name keyword value used by this routine (type `str | None`, optional).
-            metric_names: metric names keyword value used by this routine (type `list[str] | None`, optional).
-            status: status keyword value used by this routine (type `str | None`, optional).
-            checked_from: checked from keyword value used by this routine (optional).
-            checked_to: checked to keyword value used by this routine (optional).
-
-        Returns:
-            `list[object]` result produced by the routine.
-        """
         conditions: list[object] = []
         if device_id is not None:
             conditions.append(Metric.device_id == device_id)
@@ -118,19 +81,6 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ):
-        """Handle the internal recent metric rows query helper logic for database query and persistence repositories.
-
-        Args:
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-            metric_name: metric name keyword value used by this routine (type `str | None`, optional).
-            metric_names: metric names keyword value used by this routine (type `list[str] | None`, optional).
-            status: status keyword value used by this routine (type `str | None`, optional).
-            checked_from: checked from keyword value used by this routine (optional).
-            checked_to: checked to keyword value used by this routine (optional).
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         query = (
             select(
                 Metric.id,
@@ -158,19 +108,11 @@ class MetricRepository:
         return query
 
     async def create_metrics(self, payloads: Iterable[dict]) -> list[Metric]:
-        """Create metrics for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            payloads: payloads value used by this routine (type `Iterable[dict]`).
-
-        Returns:
-            `list[Metric]` result produced by the routine.
-        """
         metrics = [
-            Metric(
-                **payload,
-                metric_value_numeric=payload.get("metric_value_numeric", _safe_float(payload.get("metric_value"))),
-            )
+                Metric(
+                    **payload,
+                    metric_value_numeric=payload.get("metric_value_numeric", safe_float(payload.get("metric_value"))),
+                )
             for payload in payloads
         ]
         if not metrics:
@@ -183,14 +125,6 @@ class MetricRepository:
         return metrics
 
     async def _upsert_latest_metrics(self, metrics: list[Metric]) -> None:
-        """Handle the internal upsert latest metrics helper logic for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            metrics: metrics value used by this routine (type `list[Metric]`).
-
-        Returns:
-            None. The routine is executed for its side effects.
-        """
         grouped_metrics: dict[tuple[int, str], list[Metric]] = {}
         for metric in metrics:
             key = (int(metric.device_id), str(metric.metric_name))
@@ -207,7 +141,7 @@ class MetricRepository:
         }
         keys = list(grouped_metrics.keys())
         existing_rows: dict[tuple[int, str], LatestMetric] = {}
-        for chunk in _chunked(keys, 250):
+        for chunk in chunked(keys, 250):
             query = select(LatestMetric).where(tuple_(LatestMetric.device_id, LatestMetric.metric_name).in_(chunk))
             for row in (await self.db.scalars(query)).all():
                 existing_rows[(int(row.device_id), str(row.metric_name))] = row
@@ -253,17 +187,6 @@ class MetricRepository:
         metric_name: str | None = None,
         status: str | None = None,
     ) -> list[Metric]:
-        """Return a list of recent metrics for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            limit: limit value used by this routine (type `int`, optional).
-            device_id: device id value used by this routine (type `int | None`, optional).
-            metric_name: metric name value used by this routine (type `str | None`, optional).
-            status: status value used by this routine (type `str | None`, optional).
-
-        Returns:
-            `list[Metric]` result produced by the routine.
-        """
         query: Select[tuple[Metric]] = select(Metric)
         if device_id is not None:
             query = query.where(Metric.device_id == device_id)
@@ -281,16 +204,6 @@ class MetricRepository:
         metric_name: str,
         per_device_limit: int = 2,
     ) -> dict[int, list[Metric]]:
-        """Return a list of recent metrics by device for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            device_ids: device ids keyword value used by this routine (type `list[int]`).
-            metric_name: metric name keyword value used by this routine (type `str`).
-            per_device_limit: per device limit keyword value used by this routine (type `int`, optional).
-
-        Returns:
-            `dict[int, list[Metric]]` result produced by the routine.
-        """
         if not device_ids or per_device_limit < 1:
             return {}
 
@@ -334,21 +247,6 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ) -> list[dict]:
-        """Return a list of recent metric rows for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            limit: limit value used by this routine (type `int`, optional).
-            offset: offset value used by this routine (type `int`, optional).
-            device_id: device id value used by this routine (type `int | None`, optional).
-            metric_name: metric name value used by this routine (type `str | None`, optional).
-            metric_names: metric names value used by this routine (type `list[str] | None`, optional).
-            status: status value used by this routine (type `str | None`, optional).
-            checked_from: checked from value used by this routine (optional).
-            checked_to: checked to value used by this routine (optional).
-
-        Returns:
-            `list[dict]` result produced by the routine.
-        """
         query = self._recent_metric_rows_query(
             device_id=device_id,
             metric_name=metric_name,
@@ -377,22 +275,6 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ) -> tuple[list[dict], int]:
-        """Return a list of recent metric rows paged for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            limit: limit keyword value used by this routine (type `int`, optional).
-            offset: offset keyword value used by this routine (type `int`, optional).
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-            metric_name: metric name keyword value used by this routine (type `str | None`, optional).
-            metric_names: metric names keyword value used by this routine (type `list[str] | None`, optional).
-            per_metric_limit: per metric limit keyword value used by this routine (type `int | None`, optional).
-            status: status keyword value used by this routine (type `str | None`, optional).
-            checked_from: checked from keyword value used by this routine (optional).
-            checked_to: checked to keyword value used by this routine (optional).
-
-        Returns:
-            `tuple[list[dict], int]` result produced by the routine.
-        """
         normalized_metric_names = self._normalize_metric_names(metric_names)
         if normalized_metric_names and per_metric_limit is not None and offset == 0:
             return await self._list_recent_metric_rows_per_metric_limit(
@@ -454,20 +336,6 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ) -> tuple[list[dict], int]:
-        """Return a list of recent metric rows per metric limit for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-            metric_name: metric name keyword value used by this routine (type `str | None`, optional).
-            metric_names: metric names keyword value used by this routine (type `list[str]`).
-            per_metric_limit: per metric limit keyword value used by this routine (type `int`).
-            status: status keyword value used by this routine (type `str | None`, optional).
-            checked_from: checked from keyword value used by this routine (optional).
-            checked_to: checked to keyword value used by this routine (optional).
-
-        Returns:
-            `tuple[list[dict], int]` result produced by the routine.
-        """
         conditions = self._recent_metric_filter_conditions(
             device_id=device_id,
             metric_name=metric_name,
@@ -522,19 +390,6 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ) -> int:
-        """Count recent metric rows for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-            metric_name: metric name keyword value used by this routine (type `str | None`, optional).
-            metric_names: metric names keyword value used by this routine (type `list[str] | None`, optional).
-            status: status keyword value used by this routine (type `str | None`, optional).
-            checked_from: checked from keyword value used by this routine (optional).
-            checked_to: checked to keyword value used by this routine (optional).
-
-        Returns:
-            `int` result produced by the routine.
-        """
         query = select(func.count()).select_from(Metric)
         conditions = self._recent_metric_filter_conditions(
             device_id=device_id,
@@ -550,14 +405,6 @@ class MetricRepository:
 
     @staticmethod
     def _latest_metrics_query(*, device_id: int | None = None):
-        """Handle the internal latest metrics query helper logic for database query and persistence repositories.
-
-        Args:
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         internet_target_name_priority = case(
             (
                 and_(
@@ -622,16 +469,6 @@ class MetricRepository:
         offset: int = 0,
         device_id: int | None = None,
     ) -> list[dict]:
-        """Return a list of latest metric rows for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            limit: limit keyword value used by this routine (type `int`, optional).
-            offset: offset keyword value used by this routine (type `int`, optional).
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-
-        Returns:
-            `list[dict]` result produced by the routine.
-        """
         rows = (await self.db.execute(self._latest_metrics_query(device_id=device_id).offset(offset).limit(limit))).all()
         return [self._metric_row_payload(row) for row in rows]
 
@@ -642,16 +479,6 @@ class MetricRepository:
         offset: int = 0,
         device_id: int | None = None,
     ) -> tuple[list[dict], int]:
-        """Return a list of latest metric rows paged for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            limit: limit keyword value used by this routine (type `int`, optional).
-            offset: offset keyword value used by this routine (type `int`, optional).
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-
-        Returns:
-            `tuple[list[dict], int]` result produced by the routine.
-        """
         rows = (await self.db.execute(self._latest_metrics_query(device_id=device_id).offset(offset).limit(limit))).all()
         payload = [self._metric_row_payload(row) for row in rows]
         if offset == 0 and len(payload) < limit:
@@ -661,25 +488,11 @@ class MetricRepository:
         return payload, await self.count_latest_metrics(device_id=device_id)
 
     async def list_latest_metrics(self) -> list[Metric]:
-        """Return a list of latest metrics for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            `list[Metric]` result produced by the routine.
-        """
         latest_metric = aliased(Metric)
         query = select(latest_metric).join(LatestMetric, latest_metric.id == LatestMetric.metric_id)
         return list((await self.db.scalars(query)).all())
 
     async def get_latest_metric(self, device_id: int, metric_name: str) -> Metric | None:
-        """Return latest metric for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            device_id: device id value used by this routine (type `int`).
-            metric_name: metric name value used by this routine (type `str`).
-
-        Returns:
-            `Metric | None` result produced by the routine.
-        """
         query = (
             select(Metric)
             .join(LatestMetric, Metric.id == LatestMetric.metric_id)
@@ -692,24 +505,11 @@ class MetricRepository:
         return (await self.db.scalars(query)).first()
 
     async def latest_metric_map(self) -> dict[tuple[int, str], Metric]:
-        """Handle latest metric map for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            `dict[tuple[int, str], Metric]` result produced by the routine.
-        """
         query = select(Metric).join(LatestMetric, Metric.id == LatestMetric.metric_id)
         metrics = list((await self.db.scalars(query)).all())
         return {(metric.device_id, metric.metric_name): metric for metric in metrics}
 
     async def latest_metric_map_for_device(self, device_id: int) -> dict[str, Metric]:
-        """Handle latest metric map for device for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            device_id: device id value used by this routine (type `int`).
-
-        Returns:
-            `dict[str, Metric]` result produced by the routine.
-        """
         query = (
             select(Metric)
             .join(LatestMetric, Metric.id == LatestMetric.metric_id)
@@ -719,25 +519,12 @@ class MetricRepository:
         return {metric.metric_name: metric for metric in metrics}
 
     async def count_latest_metrics(self, *, device_id: int | None = None) -> int:
-        """Count latest metrics for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-
-        Returns:
-            `int` result produced by the routine.
-        """
         query = select(func.count()).select_from(LatestMetric)
         if device_id is not None:
             query = query.where(LatestMetric.device_id == device_id)
         return int(await self.db.scalar(query) or 0)
 
     async def summarize_latest_snapshot_status_counts(self) -> dict[str, int]:
-        """Summarize latest snapshot status counts for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            `dict[str, int]` result produced by the routine.
-        """
         rows = (
             await self.db.execute(
                 select(
@@ -757,14 +544,6 @@ class MetricRepository:
         return counts
 
     def summarize_latest_snapshot_status_counts_for_rows(self, latest_rows: list[dict]) -> dict[str, int]:
-        """Summarize latest snapshot status counts for rows for database query and persistence repositories.
-
-        Args:
-            latest_rows: latest rows value used by this routine (type `list[dict]`).
-
-        Returns:
-            `dict[str, int]` result produced by the routine.
-        """
         device_statuses: dict[int, list[str]] = {}
         for row in latest_rows:
             device_id = int(row.get("device_id") or 0)
@@ -783,15 +562,6 @@ class MetricRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> dict[str, str]:
-        """Handle latest snapshot uptime map for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            limit: limit keyword value used by this routine (type `int`, optional).
-            offset: offset keyword value used by this routine (type `int`, optional).
-
-        Returns:
-            `dict[str, str]` result produced by the routine.
-        """
         latest_rows = await self.list_latest_metric_rows(limit=limit, offset=offset)
         return await self.latest_snapshot_uptime_map_for_rows(latest_rows)
 
@@ -799,14 +569,6 @@ class MetricRepository:
         self,
         latest_rows: list[dict],
     ) -> dict[str, str]:
-        """Handle latest snapshot uptime map for rows for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            latest_rows: latest rows value used by this routine (type `list[dict]`).
-
-        Returns:
-            `dict[str, str]` result produced by the routine.
-        """
         latest_pairs = [
             (int(row["device_id"]), str(row["metric_name"]), row["checked_at"], str(row.get("status") or "unknown"))
             for row in latest_rows
@@ -860,14 +622,6 @@ class MetricRepository:
         return payload
 
     async def list_metric_names(self, device_id: int | None = None) -> list[str]:
-        """Return a list of metric names for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            device_id: device id value used by this routine (type `int | None`, optional).
-
-        Returns:
-            `list[str]` result produced by the routine.
-        """
         query = select(distinct(LatestMetric.metric_name)).order_by(LatestMetric.metric_name)
         if device_id is not None:
             query = query.where(LatestMetric.device_id == device_id)
@@ -880,16 +634,6 @@ class MetricRepository:
         rollup_from=None,
         rollup_to=None,
     ):
-        """Build the daily summary query for database query and persistence repositories.
-
-        Args:
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-            rollup_from: rollup from keyword value used by this routine (optional).
-            rollup_to: rollup to keyword value used by this routine (optional).
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         query = (
             select(
                 MetricDailyRollup.id,
@@ -928,18 +672,6 @@ class MetricRepository:
         rollup_from=None,
         rollup_to=None,
     ) -> tuple[list[dict], int]:
-        """Return daily summary rows from rollups for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            limit: limit keyword value used by this routine (type `int`, optional).
-            offset: offset keyword value used by this routine (type `int`, optional).
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-            rollup_from: rollup from keyword value used by this routine (optional).
-            rollup_to: rollup to keyword value used by this routine (optional).
-
-        Returns:
-            `tuple[list[dict], int]` result produced by the routine.
-        """
         rows = (
             await self.db.execute(
                 self._daily_summary_query(
@@ -988,16 +720,6 @@ class MetricRepository:
         rollup_from=None,
         rollup_to=None,
     ) -> int:
-        """Count daily summary rows for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-            rollup_from: rollup from keyword value used by this routine (optional).
-            rollup_to: rollup to keyword value used by this routine (optional).
-
-        Returns:
-            `int` result produced by the routine.
-        """
         query = select(func.count()).select_from(MetricDailyRollup)
         if device_id is not None:
             query = query.where(MetricDailyRollup.device_id == device_id)
@@ -1008,32 +730,7 @@ class MetricRepository:
         return int(await self.db.scalar(query) or 0)
 
 
-def _safe_float(value: str | None) -> float | None:
-    """Handle the internal safe float helper logic for database query and persistence repositories.
-
-    Args:
-        value: value value used by this routine (type `str | None`).
-
-    Returns:
-        `float | None` result produced by the routine.
-    """
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _is_metric_newer(metric: Metric, existing_checked_at, existing_metric_id: int | None) -> bool:
-    """Handle the internal is metric newer helper logic for database query and persistence repositories.
-
-    Args:
-        metric: metric value used by this routine (type `Metric`).
-        existing_checked_at: existing checked at value used by this routine.
-        existing_metric_id: existing metric id value used by this routine (type `int | None`).
-
-    Returns:
-        `bool` result produced by the routine.
-    """
     if existing_checked_at is None:
         return True
     if metric.checked_at > existing_checked_at:
@@ -1049,16 +746,6 @@ def _next_uptime_streak_started_at(
     latest_metric: Metric,
     ordered_metric_batch: list[Metric],
 ):
-    """Handle the internal next uptime streak started at helper logic for database query and persistence repositories.
-
-    Args:
-        existing: existing keyword value used by this routine (type `LatestMetric | None`).
-        latest_metric: latest metric keyword value used by this routine (type `Metric`).
-        ordered_metric_batch: ordered metric batch keyword value used by this routine (type `list[Metric]`).
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     status = str(latest_metric.status or "").lower()
     if status not in UP_STATUSES:
         return None
@@ -1085,14 +772,6 @@ def _next_uptime_streak_started_at(
 
 
 def _rollup_statuses(statuses: list[str]) -> str:
-    """Handle the internal rollup statuses helper logic for database query and persistence repositories.
-
-    Args:
-        statuses: statuses value used by this routine (type `list[str]`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     normalized = [str(status).lower() for status in statuses if status]
     if not normalized:
         return "unknown"
@@ -1105,15 +784,3 @@ def _rollup_statuses(statuses: list[str]) -> str:
     return normalized[0]
 
 
-def _chunked(items: list[tuple[int, str]], size: int):
-    """Handle the internal chunked helper logic for database query and persistence repositories.
-
-    Args:
-        items: items value used by this routine (type `list[tuple[int, str]]`).
-        size: size value used by this routine (type `int`).
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
-    for index in range(0, len(items), size):
-        yield items[index : index + size]

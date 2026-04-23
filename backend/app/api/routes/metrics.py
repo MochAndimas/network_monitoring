@@ -19,15 +19,6 @@ async def get_metric_names(
     device_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[str]:
-    """Return metric names for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        device_id: device id value used by this routine (type `int | None`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `list[str]` result produced by the routine.
-    """
     return await MetricRepository(db).list_metric_names(device_id=device_id)
 
 
@@ -41,20 +32,6 @@ async def get_metrics_history(
     checked_to: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[MetricHistoryItem]:
-    """Return metrics history for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        limit: limit value used by this routine (type `int`, optional).
-        device_id: device id value used by this routine (type `int | None`, optional).
-        metric_name: metric name value used by this routine (type `str | None`, optional).
-        status: status value used by this routine (type `str | None`, optional).
-        checked_from: checked from value used by this routine (type `datetime | None`, optional).
-        checked_to: checked to value used by this routine (type `datetime | None`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `list[MetricHistoryItem]` result produced by the routine.
-    """
     metrics = await MetricRepository(db).list_recent_metric_rows(
         limit=limit,
         offset=0,
@@ -80,23 +57,6 @@ async def get_metrics_history_paged(
     checked_to: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricHistoryPage:
-    """Return metrics history paged for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        limit: limit value used by this routine (type `int`, optional).
-        offset: offset value used by this routine (type `int`, optional).
-        device_id: device id value used by this routine (type `int | None`, optional).
-        metric_name: metric name value used by this routine (type `str | None`, optional).
-        metric_names: metric names value used by this routine (type `list[str] | None`, optional).
-        per_metric_limit: per metric limit value used by this routine (type `int | None`, optional).
-        status: status value used by this routine (type `str | None`, optional).
-        checked_from: checked from value used by this routine (type `datetime | None`, optional).
-        checked_to: checked to value used by this routine (type `datetime | None`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `MetricHistoryPage` result produced by the routine.
-    """
     repository = MetricRepository(db)
     metrics, total = await repository.list_recent_metric_rows_paged(
         limit=limit,
@@ -143,25 +103,6 @@ async def get_metrics_history_context(
     include_selected_device_snapshot: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Return metrics history context for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        limit: limit value used by this routine (type `int`, optional).
-        device_id: device id value used by this routine (type `int | None`, optional).
-        metric_name: metric name value used by this routine (type `str | None`, optional).
-        status: status value used by this routine (type `str | None`, optional).
-        checked_from: checked from value used by this routine (type `datetime | None`, optional).
-        checked_to: checked to value used by this routine (type `datetime | None`, optional).
-        selected_device_limit: selected device limit value used by this routine (type `int`, optional).
-        selected_device_offset: selected device offset value used by this routine (type `int`, optional).
-        snapshot_limit: snapshot limit value used by this routine (type `int`, optional).
-        snapshot_offset: snapshot offset value used by this routine (type `int`, optional).
-        include_selected_device_snapshot: include selected device snapshot value used by this routine (type `bool`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `dict` result produced by the routine.
-    """
     repository = MetricRepository(db)
     history_rows, history_total = await repository.list_recent_metric_rows_paged(
         limit=limit,
@@ -290,24 +231,6 @@ async def get_metrics_history_live(
     include_selected_device_snapshot: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Return lightweight live history context for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        limit: limit value used by this routine (type `int`, optional).
-        device_id: device id value used by this routine (type `int | None`, optional).
-        metric_name: metric name value used by this routine (type `str | None`, optional).
-        status: status value used by this routine (type `str | None`, optional).
-        checked_from: checked from value used by this routine (type `datetime | None`, optional).
-        checked_to: checked to value used by this routine (type `datetime | None`, optional).
-        selected_device_limit: selected device limit value used by this routine (type `int`, optional).
-        snapshot_limit: snapshot limit value used by this routine (type `int`, optional).
-        snapshot_offset: snapshot offset value used by this routine (type `int`, optional).
-        include_selected_device_snapshot: include selected device snapshot value used by this routine (type `bool`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `dict` result produced by the routine.
-    """
     repository = MetricRepository(db)
     # Live mode is intentionally fixed to the most recent 24 hours.
     live_checked_to = now()
@@ -435,19 +358,6 @@ async def get_metrics_daily_summary(
     rollup_to: date | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricDailySummaryPage:
-    """Return metrics daily summary from rollup data for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        limit: limit value used by this routine (type `int`, optional).
-        offset: offset value used by this routine (type `int`, optional).
-        device_id: device id value used by this routine (type `int | None`, optional).
-        rollup_from: rollup from value used by this routine (type `date | None`, optional).
-        rollup_to: rollup to value used by this routine (type `date | None`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `MetricDailySummaryPage` result produced by the routine.
-    """
     rows, total = await MetricRepository(db).list_daily_summary_rows_paged(
         limit=limit,
         offset=offset,
@@ -468,17 +378,6 @@ async def get_latest_metrics_snapshot_paged(
     device_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricHistoryPage:
-    """Return latest metrics snapshot paged for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        limit: limit value used by this routine (type `int`, optional).
-        offset: offset value used by this routine (type `int`, optional).
-        device_id: device id value used by this routine (type `int | None`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `MetricHistoryPage` result produced by the routine.
-    """
     repository = MetricRepository(db)
     metrics, total = await repository.list_latest_metric_rows_paged(limit=limit, offset=offset, device_id=device_id)
     return MetricHistoryPage(
@@ -491,14 +390,6 @@ async def get_latest_metrics_snapshot_paged(
 async def get_latest_snapshot_status_summary(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
-    """Return latest snapshot status summary for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `dict[str, int]` result produced by the routine.
-    """
     return await MetricRepository(db).summarize_latest_snapshot_status_counts()
 
 
@@ -508,40 +399,14 @@ async def get_latest_snapshot_uptime_map(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    """Return latest snapshot uptime map for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        limit: limit value used by this routine (type `int`, optional).
-        offset: offset value used by this routine (type `int`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `dict[str, str]` result produced by the routine.
-    """
     return await MetricRepository(db).latest_snapshot_uptime_map(limit=limit, offset=offset)
 
 
 def _metric_history_response_items(metrics: list[dict]) -> list[MetricHistoryItem]:
-    """Handle the internal metric history response items helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        metrics: metrics value used by this routine (type `list[dict]`).
-
-    Returns:
-        `list[MetricHistoryItem]` result produced by the routine.
-    """
     return [MetricHistoryItem(**metric) for metric in _metric_history_dicts(metrics)]
 
 
 def _metric_history_dicts(metrics: list[dict]) -> list[dict]:
-    """Handle the internal metric history dicts helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        metrics: metrics value used by this routine (type `list[dict]`).
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     return [
         {
             "id": metric["id"],

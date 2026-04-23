@@ -8,21 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..core.time import now
 from ..db.base import Base
 
-
-def _utcnow() -> datetime:
-    """Handle the internal utcnow helper logic for SQLAlchemy ORM models.
-
-    Returns:
-        `datetime` result produced by the routine.
-    """
-    return now()
-
-
 class MetricColdArchive(Base):
-    """Represent metric cold archive behavior and data for SQLAlchemy ORM models.
-
-    Inherits from `Base` to match the surrounding framework or persistence model.
-    """
     __tablename__ = "metric_cold_archives"
     __table_args__ = (
         UniqueConstraint(
@@ -50,7 +36,7 @@ class MetricColdArchive(Base):
     first_checked_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_checked_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_metric_value: Mapped[str] = mapped_column(String(100), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
 
     device: Mapped["Device"] = relationship()

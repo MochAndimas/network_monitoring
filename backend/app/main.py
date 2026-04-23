@@ -34,14 +34,6 @@ logger = logging.getLogger("network_monitoring.http")
 
 
 def _route_template(request) -> str | None:
-    """Handle the internal route template helper logic for project functionality.
-
-    Args:
-        request: request value used by this routine.
-
-    Returns:
-        `str | None` result produced by the routine.
-    """
     route = request.scope.get("route")
     if route is None:
         return None
@@ -49,20 +41,7 @@ def _route_template(request) -> str | None:
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Represent request logging middleware behavior and data for project functionality.
-
-    Inherits from `BaseHTTPMiddleware` to match the surrounding framework or persistence model.
-    """
     async def dispatch(self, request, call_next):
-        """Handle dispatch for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            request: request value used by this routine.
-            call_next: call next value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
         start = time.perf_counter()
@@ -107,20 +86,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Represent security headers middleware behavior and data for project functionality.
-
-    Inherits from `BaseHTTPMiddleware` to match the surrounding framework or persistence model.
-    """
     async def dispatch(self, request, call_next):
-        """Handle dispatch for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            request: request value used by this routine.
-            call_next: call next value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -145,14 +111,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Handle lifespan for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        _: _ value used by this routine (type `FastAPI`).
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     configure_logging()
     validate_auth_configuration()
     if settings.app_env.lower() != "production":
@@ -196,9 +154,4 @@ app.include_router(observability_router, prefix="/observability", tags=["observa
 
 @app.get("/")
 async def root() -> dict:
-    """Handle root for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Returns:
-        `dict` result produced by the routine.
-    """
     return {"message": f"{settings.app_name} API is running"}

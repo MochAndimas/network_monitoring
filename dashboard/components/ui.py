@@ -9,28 +9,11 @@ import streamlit as st
 
 
 def render_page_header(title: str, description: str) -> None:
-    """Render page header for shared Streamlit dashboard UI and API helpers.
-
-    Args:
-        title: title value used by this routine (type `str`).
-        description: description value used by this routine (type `str`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     st.title(title)
     st.caption(description)
 
 
 def render_meta_row(items: Sequence[tuple[str, object]]) -> None:
-    """Render meta row for shared Streamlit dashboard UI and API helpers.
-
-    Args:
-        items: items value used by this routine (type `Sequence[tuple[str, object]]`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     if not items:
         return
     with st.container(border=True):
@@ -45,15 +28,6 @@ def render_kpi_cards(
     *,
     columns_per_row: int = 4,
 ) -> None:
-    """Render kpi cards for shared Streamlit dashboard UI and API helpers.
-
-    Args:
-        items: items value used by this routine (type `Sequence[tuple[str, object, str | None]]`).
-        columns_per_row: columns per row keyword value used by this routine (type `int`, optional).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     if not items:
         return
     columns_per_row = max(columns_per_row, 1)
@@ -67,14 +41,6 @@ def render_kpi_cards(
 
 
 def normalize_status_label(value: object) -> str:
-    """Normalize status label for shared Streamlit dashboard UI and API helpers.
-
-    Args:
-        value: value value used by this routine (type `object`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     normalized = str(value or "").strip().lower()
     if not normalized:
         return "Unknown"
@@ -92,14 +58,6 @@ def normalize_status_label(value: object) -> str:
 
 
 def status_priority(value: object) -> int:
-    """Handle status priority for shared Streamlit dashboard UI and API helpers.
-
-    Args:
-        value: value value used by this routine (type `object`).
-
-    Returns:
-        `int` result produced by the routine.
-    """
     normalized = str(value or "").strip().lower()
     priorities = {
         "critical": 0,

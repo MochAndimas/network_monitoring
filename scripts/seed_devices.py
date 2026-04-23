@@ -21,11 +21,6 @@ if __name__ == "__main__":
     from backend.app.repositories.device_repository import DeviceRepository
 
     async def main() -> None:
-        """Handle main for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            None. The routine is executed for its side effects.
-        """
         await init_db()
         async with SessionLocal() as db:
             devices = await DeviceRepository(db).upsert_devices(SEED_DEVICES)

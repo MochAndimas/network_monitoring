@@ -44,14 +44,6 @@ router = APIRouter()
 
 
 def _client_ip_from_request(request: Request) -> str:
-    """Handle the internal client ip from request helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        request: request value used by this routine (type `Request`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     remote_ip = request.client.host if request.client and request.client.host else ""
     forwarded_for = request.headers.get("x-forwarded-for", "")
     trusted_proxies = settings.normalized_trusted_proxy_ips
@@ -63,40 +55,14 @@ def _client_ip_from_request(request: Request) -> str:
 
 
 def _user_agent_from_request(request: Request) -> str:
-    """Handle the internal user agent from request helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        request: request value used by this routine (type `Request`).
-
-    Returns:
-        `str` result produced by the routine.
-    """
     return (request.headers.get("user-agent") or "").strip()[:255]
 
 
 def _max_age_from_expiry(expires_at) -> int:
-    """Handle the internal max age from expiry helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        expires_at: expires at value used by this routine.
-
-    Returns:
-        `int` result produced by the routine.
-    """
     return max(int(as_wib_aware(expires_at).timestamp() - time()), 0)
 
 
 def _set_auth_cookie(response: Response, token: str, *, expires_at) -> None:
-    """Handle the internal set auth cookie helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        response: response value used by this routine (type `Response`).
-        token: token value used by this routine (type `str`).
-        expires_at: expires at keyword value used by this routine.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     max_age = _max_age_from_expiry(expires_at)
     response.set_cookie(
         key=settings.auth_cookie_name,
@@ -111,14 +77,6 @@ def _set_auth_cookie(response: Response, token: str, *, expires_at) -> None:
 
 
 def _clear_auth_cookie(response: Response) -> None:
-    """Handle the internal clear auth cookie helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        response: response value used by this routine (type `Response`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     response.delete_cookie(
         key=settings.auth_cookie_name,
         httponly=True,
@@ -129,16 +87,6 @@ def _clear_auth_cookie(response: Response) -> None:
 
 
 def _set_refresh_cookie(response: Response, token: str, *, expires_at) -> None:
-    """Handle the internal set refresh cookie helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        response: response value used by this routine (type `Response`).
-        token: token value used by this routine (type `str`).
-        expires_at: expires at keyword value used by this routine.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     max_age = _max_age_from_expiry(expires_at)
     response.set_cookie(
         key=settings.auth_refresh_cookie_name,
@@ -153,14 +101,6 @@ def _set_refresh_cookie(response: Response, token: str, *, expires_at) -> None:
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    """Handle the internal clear refresh cookie helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        response: response value used by this routine (type `Response`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     response.delete_cookie(
         key=settings.auth_refresh_cookie_name,
         httponly=True,
@@ -171,16 +111,6 @@ def _clear_refresh_cookie(response: Response) -> None:
 
 
 def _build_login_response(user, token: str, expiry) -> LoginResponse:
-    """Build login response for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        user: user value used by this routine.
-        token: token value used by this routine (type `str`).
-        expiry: expiry value used by this routine.
-
-    Returns:
-        `LoginResponse` result produced by the routine.
-    """
     return LoginResponse(
         access_token=token,
         user=UserSessionInfo(
@@ -194,27 +124,11 @@ def _build_login_response(user, token: str, expiry) -> LoginResponse:
 
 
 def _set_no_store_headers(response: Response) -> None:
-    """Handle the internal set no store headers helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        response: response value used by this routine (type `Response`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
 
 
 def _client_metadata(request: Request) -> tuple[str, str]:
-    """Handle the internal client metadata helper logic for FastAPI route handlers and HTTP helpers.
-
-    Args:
-        request: request value used by this routine (type `Request`).
-
-    Returns:
-        `tuple[str, str]` result produced by the routine.
-    """
     return _client_ip_from_request(request), _user_agent_from_request(request)
 
 
@@ -225,17 +139,6 @@ async def login(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
-    """Authenticate the requested operation for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        payload: payload value used by this routine (type `LoginRequest`).
-        request: request value used by this routine (type `Request`).
-        response: response value used by this routine (type `Response`).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `LoginResponse` result produced by the routine.
-    """
     _set_no_store_headers(response)
     user, tokens = await authenticate_user_with_options(
         db,
@@ -257,17 +160,6 @@ async def restore_session(
     refresh_cookie: str | None = Cookie(default=None, alias=settings.auth_refresh_cookie_name),
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
-    """Restore session for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        response: response value used by this routine (type `Response`).
-        session_cookie: session cookie value used by this routine (type `str | None`, optional).
-        refresh_cookie: refresh cookie value used by this routine (type `str | None`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `LoginResponse` result produced by the routine.
-    """
     _set_no_store_headers(response)
     refresh_token = refresh_cookie or session_cookie
     if not refresh_token:
@@ -280,14 +172,6 @@ async def restore_session(
 
 @router.get("/me", response_model=CurrentUserResponse)
 async def me(actor=Depends(require_api_access_with_session_cookie)) -> CurrentUserResponse:
-    """Handle me for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        actor: actor value used by this routine (optional).
-
-    Returns:
-        `CurrentUserResponse` result produced by the routine.
-    """
     user = actor.user
     if user is None:
         return CurrentUserResponse(
@@ -311,15 +195,6 @@ async def me(actor=Depends(require_api_access_with_session_cookie)) -> CurrentUs
 
 @router.get("/sessions", response_model=list[AuthSessionItem])
 async def list_my_sessions(actor=Depends(require_api_access), db: AsyncSession = Depends(get_db)) -> list[AuthSessionItem]:
-    """Return a list of my sessions for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `list[AuthSessionItem]` result produced by the routine.
-    """
     if actor.user is None or actor.session is None:
         return []
     sessions = await list_active_sessions_for_user(db, user_id=actor.user.id, current_jwt_id=actor.session.jwt_id)
@@ -343,16 +218,6 @@ async def logout_all_sessions(
     actor=Depends(require_api_access),
     db: AsyncSession = Depends(get_db),
 ) -> LogoutAllResponse:
-    """Terminate all sessions for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        response: response value used by this routine (type `Response`).
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `LogoutAllResponse` result produced by the routine.
-    """
     _set_no_store_headers(response)
     if actor.user is None or actor.session is None:
         _clear_auth_cookie(response)
@@ -372,16 +237,6 @@ async def admin_list_sessions(
     include_revoked: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> list[AuthAdminSessionItem]:
-    """Handle admin list sessions for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        username: username value used by this routine (type `str | None`, optional).
-        include_revoked: include revoked value used by this routine (type `bool`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `list[AuthAdminSessionItem]` result produced by the routine.
-    """
     rows = await list_sessions_for_admin(db, username=username, include_revoked=include_revoked)
     return [
         AuthAdminSessionItem(
@@ -409,17 +264,6 @@ async def admin_logout_all_user_sessions(
     actor=Depends(require_admin_access),
     db: AsyncSession = Depends(get_db),
 ) -> LogoutAllResponse:
-    """Handle admin logout all user sessions for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        user_id: user id value used by this routine (type `int`).
-        request: request value used by this routine (type `Request`).
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `LogoutAllResponse` result produced by the routine.
-    """
     revoked_sessions = await revoke_all_sessions_for_user(db, user_id=user_id)
     client_ip, user_agent = _client_metadata(request)
     await record_admin_audit_log(
@@ -437,14 +281,6 @@ async def admin_logout_all_user_sessions(
 
 @router.get("/admin/users", response_model=list[UserAdminItem], dependencies=[Depends(require_admin_access)])
 async def admin_list_users(db: AsyncSession = Depends(get_db)) -> list[UserAdminItem]:
-    """Handle admin list users for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `list[UserAdminItem]` result produced by the routine.
-    """
     return [UserAdminItem.model_validate(user) for user in await list_users_for_admin(db)]
 
 
@@ -455,17 +291,6 @@ async def admin_create_user(
     actor=Depends(require_admin_access),
     db: AsyncSession = Depends(get_db),
 ) -> UserAdminItem:
-    """Handle admin create user for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        payload: payload value used by this routine (type `UserAdminCreateRequest`).
-        request: request value used by this routine (type `Request`).
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `UserAdminItem` result produced by the routine.
-    """
     user = await create_user_for_admin(
         db,
         username=payload.username,
@@ -495,18 +320,6 @@ async def admin_update_user(
     actor=Depends(require_admin_access),
     db: AsyncSession = Depends(get_db),
 ) -> UserAdminItem:
-    """Handle admin update user for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        user_id: user id value used by this routine (type `int`).
-        payload: payload value used by this routine (type `UserAdminUpdateRequest`).
-        request: request value used by this routine (type `Request`).
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `UserAdminItem` result produced by the routine.
-    """
     user = await update_user_for_admin(
         db,
         user_id=user_id,
@@ -537,18 +350,6 @@ async def admin_reset_password(
     actor=Depends(require_admin_access),
     db: AsyncSession = Depends(get_db),
 ) -> UserAdminItem:
-    """Handle admin reset password for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        user_id: user id value used by this routine (type `int`).
-        payload: payload value used by this routine (type `UserPasswordResetRequest`).
-        request: request value used by this routine (type `Request`).
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `UserAdminItem` result produced by the routine.
-    """
     user = await reset_user_password_for_admin(db, user_id=user_id, new_password=payload.new_password)
     client_ip, user_agent = _client_metadata(request)
     await record_admin_audit_log(
@@ -569,15 +370,6 @@ async def admin_list_audit_logs(
     limit: int = Query(default=100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
 ) -> list[AdminAuditLogItem]:
-    """Handle admin list audit logs for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        limit: limit value used by this routine (type `int`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `list[AdminAuditLogItem]` result produced by the routine.
-    """
     return [AdminAuditLogItem.model_validate(item) for item in await list_admin_audit_logs(db, limit=limit)]
 
 
@@ -588,17 +380,6 @@ async def change_password(
     actor=Depends(require_api_access),
     db: AsyncSession = Depends(get_db),
 ) -> CurrentUserResponse:
-    """Handle change password for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        payload: payload value used by this routine (type `ChangePasswordRequest`).
-        request: request value used by this routine (type `Request`).
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `CurrentUserResponse` result produced by the routine.
-    """
     if actor.user is None or actor.session is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User session required")
     user = await change_password_for_user(
@@ -638,18 +419,6 @@ async def logout(
     refresh_cookie: str | None = Cookie(default=None, alias=settings.auth_refresh_cookie_name),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Terminate the requested operation for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        response: response value used by this routine (type `Response`).
-        authorization: authorization value used by this routine (type `str | None`, optional).
-        session_cookie: session cookie value used by this routine (type `str | None`, optional).
-        refresh_cookie: refresh cookie value used by this routine (type `str | None`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `dict` result produced by the routine.
-    """
     _set_no_store_headers(response)
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()

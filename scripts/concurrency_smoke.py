@@ -12,16 +12,6 @@ import httpx
 
 
 async def _hit_endpoint(client: httpx.AsyncClient, path: str, semaphore: asyncio.Semaphore) -> tuple[int, float]:
-    """Handle the internal hit endpoint helper logic for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        client: client value used by this routine (type `httpx.AsyncClient`).
-        path: path value used by this routine (type `str`).
-        semaphore: semaphore value used by this routine (type `asyncio.Semaphore`).
-
-    Returns:
-        `tuple[int, float]` result produced by the routine.
-    """
     async with semaphore:
         started_at = time.perf_counter()
         response = await client.get(path)
@@ -30,11 +20,6 @@ async def _hit_endpoint(client: httpx.AsyncClient, path: str, semaphore: asyncio
 
 
 async def main() -> None:
-    """Handle main for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     parser = argparse.ArgumentParser(description="Run a simple concurrency smoke test against one endpoint.")
     parser.add_argument("--base-url", default="http://localhost:8000", help="Base backend URL.")
     parser.add_argument("--path", default="/health/live", help="Endpoint path to exercise.")

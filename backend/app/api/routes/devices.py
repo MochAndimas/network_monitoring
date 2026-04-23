@@ -22,11 +22,6 @@ router = APIRouter()
 
 @router.get("/meta/types", response_model=list[DeviceTypeOption])
 async def list_device_types() -> list[DeviceTypeOption]:
-    """Return a list of device types for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Returns:
-        `list[DeviceTypeOption]` result produced by the routine.
-    """
     return [
         DeviceTypeOption(value=device_type, label=device_type.replace("_", " ").title())
         for device_type in DEVICE_TYPE_CHOICES
@@ -38,15 +33,6 @@ async def get_device_status_summary(
     active_only: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
-    """Return device status summary for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        active_only: active only value used by this routine (type `bool`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `dict[str, int]` result produced by the routine.
-    """
     return await DeviceRepository(db).summarize_device_status_counts(active_only=active_only)
 
 
@@ -58,18 +44,6 @@ async def list_device_options(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[DeviceOption]:
-    """Return a list of device options for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        active_only: active only value used by this routine (type `bool`, optional).
-        search: search value used by this routine (type `str | None`, optional).
-        limit: limit value used by this routine (type `int`, optional).
-        offset: offset value used by this routine (type `int`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `list[DeviceOption]` result produced by the routine.
-    """
     return [
         DeviceOption(**item)
         for item in await DeviceRepository(db).list_device_options(
@@ -91,20 +65,6 @@ async def list_devices(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[DeviceListItem]:
-    """Return a list of devices for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        active_only: active only value used by this routine (type `bool`, optional).
-        device_type: device type value used by this routine (type `str | None`, optional).
-        latest_status: latest status value used by this routine (type `str | None`, optional).
-        search: search value used by this routine (type `str | None`, optional).
-        limit: limit value used by this routine (type `int | None`, optional).
-        offset: offset value used by this routine (type `int`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `list[DeviceListItem]` result produced by the routine.
-    """
     rows = await list_device_rows_filtered(
         db,
         active_only=active_only,
@@ -127,20 +87,6 @@ async def list_devices_paged(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> DeviceListPage:
-    """Return a list of devices paged for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        active_only: active only value used by this routine (type `bool`, optional).
-        device_type: device type value used by this routine (type `str | None`, optional).
-        latest_status: latest status value used by this routine (type `str | None`, optional).
-        search: search value used by this routine (type `str | None`, optional).
-        limit: limit value used by this routine (type `int`, optional).
-        offset: offset value used by this routine (type `int`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `DeviceListPage` result produced by the routine.
-    """
     rows, total = await DeviceRepository(db).list_device_status_rows_paged(
         active_only=active_only,
         device_type=device_type,
@@ -157,15 +103,6 @@ async def list_devices_paged(
 
 @router.get("/{device_id}", response_model=DeviceListItem)
 async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> DeviceListItem:
-    """Return device for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        device_id: device id value used by this routine (type `int`).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `DeviceListItem` result produced by the routine.
-    """
     return DeviceListItem(**await get_device_row(db, device_id))
 
 
@@ -176,17 +113,6 @@ async def create_device_endpoint(
     actor=Depends(require_write_access),
     db: AsyncSession = Depends(get_db),
 ) -> DeviceListItem:
-    """Create device endpoint for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        payload: payload value used by this routine (type `DeviceCreate`).
-        request: request value used by this routine (type `Request`).
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `DeviceListItem` result produced by the routine.
-    """
     created_device = await create_device(db, payload.model_dump())
     await record_admin_audit_log(
         db,
@@ -209,18 +135,6 @@ async def update_device_endpoint(
     actor=Depends(require_write_access),
     db: AsyncSession = Depends(get_db),
 ) -> DeviceListItem:
-    """Update device endpoint for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        device_id: device id value used by this routine (type `int`).
-        payload: payload value used by this routine (type `DeviceUpdate`).
-        request: request value used by this routine (type `Request`).
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        `DeviceListItem` result produced by the routine.
-    """
     updated_device = await update_device(db, device_id, payload.model_dump(exclude_unset=True))
     await record_admin_audit_log(
         db,
@@ -242,17 +156,6 @@ async def delete_device_endpoint(
     actor=Depends(require_write_access),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Delete device endpoint for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        device_id: device id value used by this routine (type `int`).
-        request: request value used by this routine (type `Request`).
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     existing = await get_device_row(db, device_id)
     await delete_device(db, device_id)
     await record_admin_audit_log(

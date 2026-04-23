@@ -27,18 +27,6 @@ DEFAULT_OIDS = [
 
 
 async def snmp_get(ip: str, community: str, oid: str, timeout: int, retries: int) -> tuple[bool, str]:
-    """Handle snmp get for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        ip: ip value used by this routine (type `str`).
-        community: community value used by this routine (type `str`).
-        oid: oid value used by this routine (type `str`).
-        timeout: timeout value used by this routine (type `int`).
-        retries: retries value used by this routine (type `int`).
-
-    Returns:
-        `tuple[bool, str]` result produced by the routine.
-    """
     engine = SnmpEngine()
     try:
         error_indication, error_status, _, var_binds = await get_cmd(
@@ -64,16 +52,6 @@ async def snmp_get(ip: str, community: str, oid: str, timeout: int, retries: int
 
 
 async def run_targets(targets: list[tuple[str, str, str]], timeout: int, retries: int) -> None:
-    """Run targets for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        targets: targets value used by this routine (type `list[tuple[str, str, str]]`).
-        timeout: timeout value used by this routine (type `int`).
-        retries: retries value used by this routine (type `int`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     for label, ip, community in targets:
         print(f"[{label}] {ip}")
         for oid_label, oid in DEFAULT_OIDS:
@@ -83,11 +61,6 @@ async def run_targets(targets: list[tuple[str, str, str]], timeout: int, retries
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse args for operator and maintenance scripts.
-
-    Returns:
-        `argparse.Namespace` result produced by the routine.
-    """
     parser = argparse.ArgumentParser(description="Test SNMP v2c reachability to one or more targets.")
     parser.add_argument("--ip", help="Target IP address.")
     parser.add_argument("--community", help="SNMP v2c community string.")
@@ -98,14 +71,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_targets(args: argparse.Namespace) -> list[tuple[str, str, str]]:
-    """Build targets for operator and maintenance scripts.
-
-    Args:
-        args: args value used by this routine (type `argparse.Namespace`).
-
-    Returns:
-        `list[tuple[str, str, str]]` result produced by the routine.
-    """
     if args.ip and args.community:
         return [(args.label, args.ip, args.community)]
     if args.ip or args.community:
@@ -114,11 +79,6 @@ def build_targets(args: argparse.Namespace) -> list[tuple[str, str, str]]:
 
 
 async def main() -> None:
-    """Handle main for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     args = parse_args()
     await run_targets(build_targets(args), args.timeout, args.retries)
 

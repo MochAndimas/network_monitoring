@@ -7,10 +7,6 @@ from ..db.base import Base
 
 
 class Device(Base):
-    """Represent device behavior and data for SQLAlchemy ORM models.
-
-    Inherits from `Base` to match the surrounding framework or persistence model.
-    """
     __tablename__ = "devices"
     __table_args__ = (
         Index("ix_devices_active_type_name", "is_active", "device_type", "name"),

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
+from shared.device_utils import is_mikrotik_device
+from shared.number_utils import safe_float
+
 from ..repositories.alert_repository import AlertRepository
 from ..repositories.device_repository import DeviceRepository
 from ..repositories.incident_repository import IncidentRepository
@@ -15,14 +18,6 @@ from .rules import ALERT_RULES
 
 
 async def evaluate_alerts(db) -> list[dict]:
-    """Handle evaluate alerts for alert evaluation and notification workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        db: db value used by this routine.
-
-    Returns:
-        `list[dict]` result produced by the routine.
-    """
     alert_repository = AlertRepository(db)
     incident_repository = IncidentRepository(db)
     metric_repository = MetricRepository(db)
@@ -98,7 +93,7 @@ async def evaluate_alerts(db) -> list[dict]:
             metric = latest_metrics.get((device.id, metric_name))
             if metric is None:
                 continue
-            value = _safe_float(metric.metric_value)
+            value = safe_float(metric.metric_value)
             if value is None:
                 continue
             if value >= critical_threshold:
@@ -116,7 +111,7 @@ async def evaluate_alerts(db) -> list[dict]:
 
         dns_metric = latest_metrics.get((device.id, "dns_resolution_time"))
         if dns_metric is not None:
-            dns_value = _safe_float(dns_metric.metric_value)
+            dns_value = safe_float(dns_metric.metric_value)
             if dns_metric.status == "down":
                 expected_alerts[(device.id, "dns_resolution_failed")] = _build_alert_payload(
                     device_id=device.id,
@@ -132,7 +127,7 @@ async def evaluate_alerts(db) -> list[dict]:
 
         http_metric = latest_metrics.get((device.id, "http_response_time"))
         if http_metric is not None:
-            http_value = _safe_float(http_metric.metric_value)
+            http_value = safe_float(http_metric.metric_value)
             if http_metric.status == "down":
                 expected_alerts[(device.id, "http_check_failed")] = _build_alert_payload(
                     device_id=device.id,
@@ -173,7 +168,7 @@ async def evaluate_alerts(db) -> list[dict]:
                     message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
                 )
 
-        if _is_mikrotik_device(device):
+        if is_mikrotik_device(device.device_type, device.name):
             _evaluate_mikrotik_alerts(
                 device=device,
                 latest_metrics=latest_metrics,
@@ -183,11 +178,11 @@ async def evaluate_alerts(db) -> list[dict]:
 
         if device.device_type == "printer":
             uptime_metric = latest_metrics.get((device.id, "printer_uptime_seconds"))
-            current_uptime = _safe_float(uptime_metric.metric_value) if uptime_metric is not None else None
+            current_uptime = safe_float(uptime_metric.metric_value) if uptime_metric is not None else None
             if current_uptime is not None:
                 uptime_history = printer_uptime_history_by_device.get(device.id, [])
                 if len(uptime_history) >= 2:
-                    previous_uptime = _safe_float(uptime_history[1].metric_value)
+                    previous_uptime = safe_float(uptime_history[1].metric_value)
                     if previous_uptime is not None and current_uptime < previous_uptime:
                         expected_alerts[(device.id, "printer_reboot_detected")] = _build_alert_payload(
                             device_id=device.id,
@@ -291,63 +286,17 @@ async def evaluate_alerts(db) -> list[dict]:
     return notifications
 
 
-def _safe_float(value: str | None) -> float | None:
-    """Handle the internal safe float helper logic for alert evaluation and notification workflows.
-
-    Args:
-        value: value value used by this routine (type `str | None`).
-
-    Returns:
-        `float | None` result produced by the routine.
-    """
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _metric_numeric_value(metric) -> float | None:
-    """Handle the internal metric numeric value helper logic for alert evaluation and notification workflows.
-
-    Args:
-        metric: metric value used by this routine.
-
-    Returns:
-        `float | None` result produced by the routine.
-    """
     numeric_value = getattr(metric, "metric_value_numeric", None)
     if numeric_value is not None:
         try:
             return float(numeric_value)
         except (TypeError, ValueError):
             pass
-    return _safe_float(getattr(metric, "metric_value", None))
-
-
-def _is_mikrotik_device(device) -> bool:
-    """Handle the internal is mikrotik device helper logic for alert evaluation and notification workflows.
-
-    Args:
-        device: device value used by this routine.
-
-    Returns:
-        `bool` result produced by the routine.
-    """
-    return str(device.device_type or "").lower() == "mikrotik" or "mikrotik" in str(device.name or "").lower()
+    return safe_float(getattr(metric, "metric_value", None))
 
 
 def _evaluate_mikrotik_alerts(*, device, latest_metrics: dict, thresholds: dict[str, float], expected_alerts: dict) -> None:
-    """Handle the internal evaluate mikrotik alerts helper logic for alert evaluation and notification workflows.
-
-    Args:
-        device: device keyword value used by this routine.
-        latest_metrics: latest metrics keyword value used by this routine (type `dict`).
-        thresholds: thresholds keyword value used by this routine (type `dict[str, float]`).
-        expected_alerts: expected alerts keyword value used by this routine (type `dict`).
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
     api_metric = latest_metrics.get((device.id, "mikrotik_api"))
     if api_metric is not None and (
         str(api_metric.status or "").lower() == "error" or str(api_metric.metric_value or "") == "connection_failed"
@@ -359,7 +308,7 @@ def _evaluate_mikrotik_alerts(*, device, latest_metrics: dict, thresholds: dict[
         )
 
     client_metric = latest_metrics.get((device.id, "connected_clients"))
-    client_count = _safe_float(client_metric.metric_value) if client_metric is not None else None
+    client_count = safe_float(client_metric.metric_value) if client_metric is not None else None
     if client_count is not None and client_count >= thresholds["mikrotik_connected_clients_warning"]:
         expected_alerts[(device.id, "mikrotik_connected_clients_high")] = _build_alert_payload(
             device_id=device.id,
@@ -375,7 +324,7 @@ def _evaluate_mikrotik_alerts(*, device, latest_metrics: dict, thresholds: dict[
     )
     if interface_spike is not None:
         metric_name, metric = interface_spike
-        value = _safe_float(metric.metric_value)
+        value = safe_float(metric.metric_value)
         if value is not None and value >= thresholds["mikrotik_interface_mbps_warning"]:
             expected_alerts[(device.id, "mikrotik_interface_traffic_high")] = _build_alert_payload(
                 device_id=device.id,
@@ -391,7 +340,7 @@ def _evaluate_mikrotik_alerts(*, device, latest_metrics: dict, thresholds: dict[
     )
     if firewall_spike is not None:
         metric_name, metric = firewall_spike
-        value = _safe_float(metric.metric_value)
+        value = safe_float(metric.metric_value)
         threshold = (
             thresholds["mikrotik_firewall_spike_pps_warning"]
             if metric_name.endswith(":pps")
@@ -406,17 +355,6 @@ def _evaluate_mikrotik_alerts(*, device, latest_metrics: dict, thresholds: dict[
 
 
 def _highest_dynamic_metric(latest_metrics: dict, *, device_id: int, prefix: str, suffixes: tuple[str, ...]):
-    """Handle the internal highest dynamic metric helper logic for alert evaluation and notification workflows.
-
-    Args:
-        latest_metrics: latest metrics value used by this routine (type `dict`).
-        device_id: device id keyword value used by this routine (type `int`).
-        prefix: prefix keyword value used by this routine (type `str`).
-        suffixes: suffixes keyword value used by this routine (type `tuple[str, ...]`).
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
     matches = [
         (metric_name, metric)
         for (current_device_id, metric_name), metric in latest_metrics.items()
@@ -425,7 +363,7 @@ def _highest_dynamic_metric(latest_metrics: dict, *, device_id: int, prefix: str
     numeric_matches = [
         (metric_name, metric, value)
         for metric_name, metric in matches
-        if (value := _safe_float(metric.metric_value)) is not None
+        if (value := safe_float(metric.metric_value)) is not None
     ]
     if not numeric_matches:
         return None
@@ -434,16 +372,6 @@ def _highest_dynamic_metric(latest_metrics: dict, *, device_id: int, prefix: str
 
 
 def _build_alert_payload(device_id: int | None, alert_type: str, message: str) -> dict:
-    """Build alert payload for alert evaluation and notification workflows.
-
-    Args:
-        device_id: device id value used by this routine (type `int | None`).
-        alert_type: alert type value used by this routine (type `str`).
-        message: message value used by this routine (type `str`).
-
-    Returns:
-        `dict` result produced by the routine.
-    """
     rule = ALERT_RULES[alert_type]
     return {
         "device_id": device_id,
@@ -461,17 +389,6 @@ async def _ensure_incident_for_alert(
     device_id: int | None,
     message: str,
 ) -> str | None:
-    """Ensure incident for alert for alert evaluation and notification workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        incident_repository: incident repository value used by this routine (type `IncidentRepository`).
-        active_incidents_by_device: active incidents by device value used by this routine (type `dict[int | None, object]`).
-        device_id: device id value used by this routine (type `int | None`).
-        message: message value used by this routine (type `str`).
-
-    Returns:
-        `str | None` result produced by the routine.
-    """
     active_incident = active_incidents_by_device.get(device_id)
     if active_incident is not None:
         return None
@@ -495,18 +412,6 @@ async def _resolve_incident_if_cleared(
     device_id: int | None,
     resolved_at,
 ) -> str | None:
-    """Resolve incident if cleared for alert evaluation and notification workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        incident_repository: incident repository value used by this routine (type `IncidentRepository`).
-        active_incidents_by_device: active incidents by device value used by this routine (type `dict[int | None, object]`).
-        active_alert_count_by_device: active alert count by device value used by this routine (type `dict[int | None, int]`).
-        device_id: device id value used by this routine (type `int | None`).
-        resolved_at: resolved at value used by this routine.
-
-    Returns:
-        `str | None` result produced by the routine.
-    """
     remaining_count = max(active_alert_count_by_device.get(device_id, 0) - 1, 0)
     active_alert_count_by_device[device_id] = remaining_count
     if remaining_count:
