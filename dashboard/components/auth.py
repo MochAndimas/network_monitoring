@@ -314,7 +314,7 @@ def require_dashboard_login() -> None:
                 st.write(str(st.session_state.get("auth_role", "-")))
                 st.caption("Kedaluwarsa")
                 st.write(session_expiry_label())
-            if st.button("Keluar", use_container_width=True):
+            if st.button("Keluar", width="stretch"):
                 start_auth_bridge_request(
                     "logout",
                     {"access_token": str(st.session_state.get("auth_token") or "")},
@@ -348,7 +348,7 @@ def require_dashboard_login() -> None:
         username = st.text_input("Username", value="")
         password = st.text_input("Password", value="", type="password")
         remember = st.checkbox("Tetap masuk selama 7 hari")
-        submitted = st.form_submit_button("Masuk", use_container_width=True)
+        submitted = st.form_submit_button("Masuk", width="stretch")
 
     if submitted:
         username = username.strip()

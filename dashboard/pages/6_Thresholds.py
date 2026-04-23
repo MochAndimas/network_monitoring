@@ -132,7 +132,7 @@ if thresholds:
             st.altair_chart(category_chart, width="stretch")
             st.dataframe(
                 summary_frame,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "Kategori": st.column_config.TextColumn("Kategori", width="small"),
@@ -146,7 +146,7 @@ if thresholds:
             st.markdown("### Detail Threshold")
             st.dataframe(
                 detail_frame.head(int(max_rows)),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "Kategori": st.column_config.TextColumn("Kategori", width="small"),
@@ -177,7 +177,7 @@ if thresholds:
             format="%.4f",
         )
 
-        update_threshold_clicked = st.button("Simpan Perubahan Threshold", use_container_width=True)
+        update_threshold_clicked = st.button("Simpan Perubahan Threshold", width="stretch")
         if is_admin() and (update_threshold_clicked or has_pending_action("update_threshold")):
             result = put_json(
                 f"/thresholds/{selected_key}",

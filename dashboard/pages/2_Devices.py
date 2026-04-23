@@ -110,7 +110,7 @@ def _render_edit_device_dialog(device: dict) -> None:
             key=f"{edit_key_prefix}_description",
         )
         edit_active = st.checkbox("Aktif", value=bool(device["is_active"]), key=f"{edit_key_prefix}_active")
-        submitted = st.form_submit_button("Simpan Perubahan", use_container_width=True)
+        submitted = st.form_submit_button("Simpan Perubahan", width="stretch")
 
     if submitted:
         update_payload = {
@@ -142,13 +142,13 @@ def _render_delete_device_dialog(device: dict) -> None:
     st.caption("Metric device ini akan ikut dihapus. Alert dan incident lama tetap disimpan tanpa relasi device.")
     confirm = st.text_input("Ketik DELETE untuk konfirmasi", key=f"delete_device_{device['id']}_confirm")
     left, right = st.columns(2)
-    if left.button("Hapus Device", type="primary", use_container_width=True, disabled=confirm != "DELETE"):
+    if left.button("Hapus Device", type="primary", width="stretch", disabled=confirm != "DELETE"):
         result = delete_json(f"/devices/{device['id']}", False, action_key=f"delete_device_{device['id']}")
         if result:
             _clear_cached_gets()
             st.success(f"Device `{device['name']}` berhasil dihapus.")
             st.rerun()
-    if right.button("Batal", use_container_width=True):
+    if right.button("Batal", width="stretch"):
         st.rerun()
 
 
@@ -227,7 +227,7 @@ with inventory_tab:
         )
         st.dataframe(
             inventory_view,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "Nama Device": st.column_config.TextColumn("Nama Device", width="medium"),
@@ -258,7 +258,7 @@ with manage_tab:
                 create_site = st.text_input("Lokasi", placeholder="WAN")
                 create_description = st.text_area("Deskripsi", placeholder="Target monitoring ISP utama")
                 create_active = st.checkbox("Aktif", value=True)
-                create_submitted = st.form_submit_button("Tambah Device", use_container_width=True)
+                create_submitted = st.form_submit_button("Tambah Device", width="stretch")
 
             if create_submitted:
                 payload = {
@@ -348,7 +348,7 @@ with manage_tab:
                     )
                     st.dataframe(
                         view_frame,
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                         column_config={
                             "Nama Device": st.column_config.TextColumn("Nama Device", width="medium"),
@@ -371,7 +371,7 @@ with manage_tab:
                     selected_device = selector_map[selected_label]
 
                     action_col1, action_col2 = st.columns([1, 1])
-                    if action_col1.button("Ubah Device Terpilih", use_container_width=True):
+                    if action_col1.button("Ubah Device Terpilih", width="stretch"):
                         _render_edit_device_dialog(selected_device)
-                    if action_col2.button("Hapus Device Terpilih", type="primary", use_container_width=True):
+                    if action_col2.button("Hapus Device Terpilih", type="primary", width="stretch"):
                         _render_delete_device_dialog(selected_device)

@@ -1,6 +1,6 @@
 """Provide shared Streamlit dashboard UI and API helpers for the network monitoring project."""
 
-import streamlit.components.v1 as components
+import streamlit as st
 
 
 def collapse_sidebar_on_page_load() -> None:
@@ -9,7 +9,7 @@ def collapse_sidebar_on_page_load() -> None:
     Returns:
         None. The routine is executed for its side effects.
     """
-    components.html(
+    st.iframe(
         """
         <script>
         const findCollapseButton = () => (
@@ -32,6 +32,6 @@ def collapse_sidebar_on_page_load() -> None:
         }, 80);
         </script>
         """,
-        height=0,
-        width=0,
+        width="content",
+        height="content",
     )

@@ -1583,16 +1583,19 @@ def _render_history_body() -> None:
         return prepared
 
     default_device_label = _default_device_option_label(devices)
-    if "history_selected_device" not in st.session_state:
-        st.session_state["history_selected_device"] = default_device_label
-    if "history_chart_window" not in st.session_state:
-        st.session_state["history_chart_window"] = "1 jam"
     device_option_labels = list(device_options.keys())
+    if "history_selected_device" not in st.session_state or st.session_state["history_selected_device"] not in device_option_labels:
+        fallback_device = default_device_label if default_device_label in device_option_labels else device_option_labels[0]
+        st.session_state["history_selected_device"] = fallback_device
+    if (
+        "history_chart_window" not in st.session_state
+        or st.session_state["history_chart_window"] not in CHART_WINDOW_OPTIONS
+    ):
+        st.session_state["history_chart_window"] = "1 jam"
     filter_col1, filter_col2, filter_col3 = st.columns(3)
     selected_device = filter_col1.selectbox(
         "Device",
         options=device_option_labels,
-        index=device_option_labels.index(default_device_label),
         key="history_selected_device",
     )
     selected_device_id = device_options[selected_device]
@@ -1611,7 +1614,6 @@ def _render_history_body() -> None:
         chart_window_label = advanced_col2.selectbox(
             "Rentang Chart",
             options=list(CHART_WINDOW_OPTIONS.keys()),
-            index=list(CHART_WINDOW_OPTIONS.keys()).index("1 jam"),
             help="Pilih rentang waktu yang dipakai untuk chart tren.",
             key="history_chart_window",
         )
