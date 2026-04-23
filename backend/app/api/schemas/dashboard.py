@@ -1,6 +1,6 @@
 """Provide API response and request schemas for the network monitoring project."""
 
-from datetime import datetime
+from datetime import date, datetime
 from ipaddress import ip_address
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -166,6 +166,38 @@ class MetricHistoryPage(BaseModel):
     Inherits from `BaseModel` to match the surrounding framework or persistence model.
     """
     items: list["MetricHistoryItem"]
+    meta: PageMeta
+
+
+class MetricDailySummaryItem(BaseModel):
+    """Represent metric daily summary item behavior and data for API response and request schemas.
+
+    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    """
+    id: int
+    device_id: int
+    device_name: str
+    device_type: str | None = None
+    rollup_date: date
+    total_samples: int
+    ping_samples: int
+    down_count: int
+    uptime_percentage: float | None = None
+    average_ping_ms: float | None = None
+    min_ping_ms: float | None = None
+    max_ping_ms: float | None = None
+    average_packet_loss_percent: float | None = None
+    average_jitter_ms: float | None = None
+    max_jitter_ms: float | None = None
+    updated_at: datetime
+
+
+class MetricDailySummaryPage(BaseModel):
+    """Represent metric daily summary page behavior and data for API response and request schemas.
+
+    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    """
+    items: list["MetricDailySummaryItem"]
     meta: PageMeta
 
 

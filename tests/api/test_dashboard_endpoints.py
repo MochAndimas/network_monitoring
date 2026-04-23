@@ -2,7 +2,7 @@
 
 from contextlib import contextmanager
 import asyncio
-from datetime import timedelta
+from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -14,6 +14,7 @@ from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.models.scheduler_job_status import SchedulerJobStatus
 from backend.app.models.alert import Alert
+from backend.app.models.metric_daily_rollup import MetricDailyRollup
 from backend.app.models.user import AuthSession
 from backend.app.models.user import User
 from backend.app.core.security import AuthConfigurationError, create_access_token, decode_access_token, hash_password, validate_auth_configuration
@@ -1396,6 +1397,125 @@ def test_metrics_history_paged_supports_bulk_metric_names_with_per_metric_limit(
         assert metric_names == ["cpu_percent", "memory_percent"]
 
 
+def test_metrics_daily_summary_reads_rollup_table_with_filters():
+    """Handle test metrics daily summary reads rollup table with filters for automated regression tests.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
+    with client_context() as (client, session_factory):
+        async def scenario():
+            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+            Returns:
+                The computed result, response payload, or side-effect outcome for the caller.
+            """
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [
+                        {"name": "ISP Utama", "ip_address": "8.8.8.8", "device_type": "internet_target"},
+                        {"name": "AP Lobby", "ip_address": "192.168.1.40", "device_type": "access_point"},
+                    ]
+                )
+                db.add_all(
+                    [
+                        MetricDailyRollup(
+                            device_id=devices[0].id,
+                            rollup_date=date(2026, 4, 21),
+                            total_samples=100,
+                            ping_samples=90,
+                            down_count=2,
+                            uptime_percentage=97.78,
+                            average_ping_ms=15.5,
+                            min_ping_ms=10.0,
+                            max_ping_ms=30.0,
+                            average_packet_loss_percent=1.25,
+                            average_jitter_ms=3.5,
+                            max_jitter_ms=8.0,
+                        ),
+                        MetricDailyRollup(
+                            device_id=devices[1].id,
+                            rollup_date=date(2026, 4, 21),
+                            total_samples=80,
+                            ping_samples=75,
+                            down_count=0,
+                            uptime_percentage=100.0,
+                            average_ping_ms=4.5,
+                            min_ping_ms=2.0,
+                            max_ping_ms=9.0,
+                            average_packet_loss_percent=0.0,
+                            average_jitter_ms=1.0,
+                            max_jitter_ms=2.0,
+                        ),
+                    ]
+                )
+                await db.commit()
+                return devices[0].id
+
+        device_id = run(scenario())
+        response = client.get(
+            f"/metrics/daily-summary?device_id={device_id}&rollup_from=2026-04-20&rollup_to=2026-04-22&limit=50&offset=0",
+            headers=API_HEADERS,
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["meta"]["total"] == 1
+        assert payload["items"][0]["device_name"] == "ISP Utama"
+        assert payload["items"][0]["rollup_date"] == "2026-04-21"
+        assert payload["items"][0]["average_ping_ms"] == 15.5
+        assert payload["items"][0]["average_packet_loss_percent"] == 1.25
+
+
+def test_metrics_daily_summary_supports_pagination():
+    """Handle test metrics daily summary supports pagination for automated regression tests.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
+    with client_context() as (client, session_factory):
+        async def scenario():
+            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+            Returns:
+                The computed result, response payload, or side-effect outcome for the caller.
+            """
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [{"name": "ISP Utama", "ip_address": "8.8.8.8", "device_type": "internet_target"}]
+                )
+                db.add_all(
+                    [
+                        MetricDailyRollup(
+                            device_id=devices[0].id,
+                            rollup_date=date(2026, 4, 22),
+                            total_samples=100,
+                            ping_samples=90,
+                            down_count=2,
+                        ),
+                        MetricDailyRollup(
+                            device_id=devices[0].id,
+                            rollup_date=date(2026, 4, 21),
+                            total_samples=80,
+                            ping_samples=70,
+                            down_count=0,
+                        ),
+                    ]
+                )
+                await db.commit()
+
+        run(scenario())
+        response = client.get("/metrics/daily-summary?limit=1&offset=1", headers=API_HEADERS)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["meta"]["total"] == 2
+        assert payload["meta"]["limit"] == 1
+        assert payload["meta"]["offset"] == 1
+        assert len(payload["items"]) == 1
+        assert payload["items"][0]["rollup_date"] == "2026-04-21"
+
+
 def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
     """Handle test latest snapshot endpoint is unfiltered and paged for automated regression tests.
 
@@ -1532,6 +1652,128 @@ def test_metrics_history_context_endpoint():
         assert "latest_snapshot" in payload
         assert "latest_snapshot_status_summary" in payload
         assert "snapshot_uptime_map" in payload
+
+
+def test_metrics_history_live_endpoint_returns_lightweight_sample():
+    """Handle test metrics history live endpoint returns lightweight sample for automated regression tests.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
+    with client_context() as (client, session_factory):
+        async def scenario():
+            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+            Returns:
+                The computed result, response payload, or side-effect outcome for the caller.
+            """
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [{"name": "ISP Utama", "ip_address": "8.8.8.8", "device_type": "internet_target"}]
+                )
+                current_time = utcnow()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "ping",
+                            "metric_value": "10.00",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": current_time - timedelta(days=2),
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "ping",
+                            "metric_value": "12.00",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": current_time - timedelta(minutes=15),
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "packet_loss",
+                            "metric_value": "0.00",
+                            "status": "ok",
+                            "unit": "%",
+                            "checked_at": current_time - timedelta(minutes=10),
+                        },
+                    ]
+                )
+                return devices[0].id
+
+        device_id = run(scenario())
+        response = client.get(
+            f"/metrics/history/live?device_id={device_id}&limit=1&selected_device_limit=2&snapshot_limit=10"
+            "&checked_from=2000-01-01T00:00:00&checked_to=2099-01-01T00:00:00",
+            headers=API_HEADERS,
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["history"]["meta"]["sampled"] is True
+        assert payload["history"]["meta"]["total"] == 1
+        assert len(payload["history"]["items"]) == 1
+        assert len(payload["selected_device_history"]["items"]) == 2
+        assert {item["metric_value"] for item in payload["selected_device_history"]["items"]} == {"12.00", "0.00"}
+        assert payload["latest_snapshot"]["meta"]["sampled"] is False
+        assert len(payload["latest_snapshot"]["items"]) == 2
+
+
+def test_metrics_history_live_global_snapshot_summary_remains_representative_when_paged():
+    """Handle test metrics history live global snapshot summary remains representative when paged for automated regression tests.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
+    with client_context() as (client, session_factory):
+        async def scenario():
+            """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+
+            Returns:
+                The computed result, response payload, or side-effect outcome for the caller.
+            """
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [
+                        {"name": "ISP A", "ip_address": "8.8.8.8", "device_type": "internet_target"},
+                        {"name": "ISP B", "ip_address": "1.1.1.1", "device_type": "internet_target"},
+                    ]
+                )
+                current_time = utcnow()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "ping",
+                            "metric_value": "11.00",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": current_time - timedelta(minutes=5),
+                        },
+                        {
+                            "device_id": devices[1].id,
+                            "metric_name": "ping",
+                            "metric_value": "timeout",
+                            "status": "down",
+                            "unit": None,
+                            "checked_at": current_time - timedelta(minutes=5),
+                        },
+                    ]
+                )
+
+        run(scenario())
+        response = client.get(
+            "/metrics/history/live?limit=50&selected_device_limit=50&snapshot_limit=1&snapshot_offset=0",
+            headers=API_HEADERS,
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["latest_snapshot"]["meta"]["total"] == 2
+        assert payload["latest_snapshot"]["meta"]["sampled"] is True
+        assert len(payload["latest_snapshot"]["items"]) == 1
+        assert payload["latest_snapshot_status_summary"] == {"down": 1, "up": 1}
 
 
 def test_latest_snapshot_status_summary_preserves_fallback_first_status_behavior():
@@ -2483,6 +2725,76 @@ def test_observability_metrics_use_route_templates_for_http_paths():
         observability_module._http_request_duration_ms.update(original_request_duration)
         observability_module._http_request_errors.clear()
         observability_module._http_request_errors.update(original_request_errors)
+
+
+def test_observability_metrics_include_history_payload_counters():
+    """Handle test observability metrics include history payload counters for automated regression tests.
+
+    Returns:
+        The computed result, response payload, or side-effect outcome for the caller.
+    """
+    import backend.app.services.observability_service as observability_module
+
+    original_payload_request_count = observability_module._api_payload_request_count.copy()
+    original_payload_rows = observability_module._api_payload_rows.copy()
+    original_payload_total_rows = observability_module._api_payload_total_rows.copy()
+    original_payload_sampled = observability_module._api_payload_sampled.copy()
+
+    observability_module._api_payload_request_count.clear()
+    observability_module._api_payload_rows.clear()
+    observability_module._api_payload_total_rows.clear()
+    observability_module._api_payload_sampled.clear()
+
+    try:
+        observability_module.record_api_payload_request(endpoint="/metrics/history/live", scope="global")
+        observability_module.record_api_payload_section(
+            endpoint="/metrics/history/live",
+            scope="global",
+            section="history",
+            rows=120,
+            total_rows=120,
+            sampled=True,
+        )
+        observability_module.record_api_payload_section(
+            endpoint="/metrics/history/live",
+            scope="global",
+            section="latest_snapshot",
+            rows=10,
+            total_rows=99,
+            sampled=True,
+        )
+        metrics = observability_module.render_prometheus_metrics(
+            database_up=True,
+            scheduler_alert_count=0,
+            scheduler_statuses=[],
+        )
+        assert (
+            'network_monitoring_api_payload_requests_total{endpoint="/metrics/history/live",scope="global"} 1'
+            in metrics
+        )
+        assert (
+            'network_monitoring_api_payload_rows_total{endpoint="/metrics/history/live",scope="global",section="history"} 120'
+            in metrics
+        )
+        assert (
+            'network_monitoring_api_payload_total_rows_sum'
+            '{endpoint="/metrics/history/live",scope="global",section="latest_snapshot"} 99'
+            in metrics
+        )
+        assert (
+            'network_monitoring_api_payload_sampled_total'
+            '{endpoint="/metrics/history/live",scope="global",section="latest_snapshot"} 1'
+            in metrics
+        )
+    finally:
+        observability_module._api_payload_request_count.clear()
+        observability_module._api_payload_request_count.update(original_payload_request_count)
+        observability_module._api_payload_rows.clear()
+        observability_module._api_payload_rows.update(original_payload_rows)
+        observability_module._api_payload_total_rows.clear()
+        observability_module._api_payload_total_rows.update(original_payload_total_rows)
+        observability_module._api_payload_sampled.clear()
+        observability_module._api_payload_sampled.update(original_payload_sampled)
 
 
 def test_observability_summary_endpoint():

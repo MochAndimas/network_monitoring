@@ -14,7 +14,7 @@ from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp, wib_date_boundary_to_utc_iso
 from components.ui import normalize_status_label, render_meta_row, render_page_header, status_priority
 
-st.set_page_config(page_title="History", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Live Monitoring", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
 require_dashboard_login()
 
@@ -27,7 +27,6 @@ CHART_WINDOW_OPTIONS = {
     "24 jam": 24,
     "7 hari": 24 * 7,
 }
-
 METRIC_LABELS = {
     "ping": ("Ping Latency", "Waktu respon ping ke device/target."),
     "packet_loss": ("Packet Loss", "Persentase paket ping yang gagal sampai ke target."),
@@ -1526,8 +1525,8 @@ def _render_printer_history_section(
                 st.caption(meta)
 
 render_page_header(
-    "History",
-    "Histori metrik untuk analisis tren dan investigasi insiden.",
+    "Live Monitoring",
+    "Monitoring metrik live untuk analisis tren dan investigasi insiden.",
 )
 
 devices = get_json("/devices/options?active_only=false&limit=300&offset=0", [])
@@ -1548,8 +1547,106 @@ for device in devices:
     device_options[_format_device_label(device)] = device["id"]
 
 today = datetime.now().date()
-default_start_date = today - timedelta(days=7)
+default_start_date = today - timedelta(days=1)
 auto_refresh, interval_seconds = refresh_controls("history", default_enabled=True, default_interval=15)
+
+
+def _render_history_filters() -> dict:
+    """Render history filters near page header for Streamlit dashboard page rendering.
+
+    Returns:
+        `dict` result produced by the routine.
+    """
+    default_device_label = _default_device_option_label(devices)
+    device_option_labels = list(device_options.keys())
+    if "history_selected_device" not in st.session_state or st.session_state["history_selected_device"] not in device_option_labels:
+        fallback_device = default_device_label if default_device_label in device_option_labels else device_option_labels[0]
+        st.session_state["history_selected_device"] = fallback_device
+    if (
+        "history_chart_window" not in st.session_state
+        or st.session_state["history_chart_window"] not in CHART_WINDOW_OPTIONS
+    ):
+        st.session_state["history_chart_window"] = "1 jam"
+
+    filter_col1, filter_col2, filter_col3 = st.columns(3)
+    selected_device = filter_col1.selectbox(
+        "Device",
+        options=device_option_labels,
+        key="history_selected_device",
+    )
+    selected_device_id = device_options[selected_device]
+    selected_device_record = device_by_id.get(int(selected_device_id)) if selected_device_id is not None else None
+    selected_device_type = str(selected_device_record.get("device_type")) if selected_device_record else None
+    status_value = filter_col3.selectbox(
+        "Status",
+        options=STATUS_OPTIONS,
+        index=0,
+        format_func=lambda value: "Semua" if value == "All" else normalize_status_label(str(value)),
+    )
+    metric_names_path = "/metrics/names"
+    if selected_device_id is not None:
+        metric_names_path = f"/metrics/names?device_id={selected_device_id}"
+    metric_name_options = _filter_metric_names(
+        get_json(metric_names_path, []),
+        selected_device_type,
+        selected_device_record.get("name") if selected_device_record else None,
+    )
+    if (
+        _is_mikrotik_device(
+            selected_device_type,
+            selected_device_record.get("name") if selected_device_record else None,
+        )
+        and st.session_state.get("history_selected_metric") in INTERNET_ONLY_METRICS
+    ):
+        st.session_state["history_selected_metric"] = "All Metrics"
+    metric_select_options = ["All Metrics"] + metric_name_options
+    if st.session_state.get("history_selected_metric") not in metric_select_options:
+        st.session_state["history_selected_metric"] = "All Metrics"
+    metric_filter_labels = {
+        metric_name: _metric_filter_label(metric_name)
+        for metric_name in metric_select_options
+    }
+    selected_metric = filter_col2.selectbox(
+        "Nama Metrik",
+        options=metric_select_options,
+        index=0,
+        format_func=lambda metric_name: metric_filter_labels.get(metric_name, str(metric_name)),
+        help="Daftar metrik yang sudah tersimpan di history.",
+        key="history_selected_metric",
+    )
+    with st.expander("Filter Lanjutan"):
+        advanced_col1, advanced_col2, advanced_col3, advanced_col4 = st.columns(4)
+        limit_value = advanced_col1.selectbox("Baris", options=[50, 100, 200, 300, 500], index=2)
+        chart_window_label = advanced_col2.selectbox(
+            "Rentang Chart",
+            options=list(CHART_WINDOW_OPTIONS.keys()),
+            help="Pilih rentang waktu yang dipakai untuk chart tren.",
+            key="history_chart_window",
+        )
+        if auto_refresh:
+            checked_from_date = today - timedelta(days=1)
+            checked_to_date = today
+            advanced_col3.date_input("Dicek Dari", value=checked_from_date, disabled=True)
+            advanced_col4.date_input("Dicek Sampai", value=checked_to_date, disabled=True)
+            st.caption("Live mode mengunci rentang ke 24 jam terakhir.")
+        else:
+            checked_from_date = advanced_col3.date_input("Dicek Dari", value=default_start_date)
+            checked_to_date = advanced_col4.date_input("Dicek Sampai", value=today)
+    return {
+        "limit_value": limit_value,
+        "chart_window_label": chart_window_label,
+        "checked_from_date": checked_from_date,
+        "checked_to_date": checked_to_date,
+        "selected_device": selected_device,
+        "selected_device_id": selected_device_id,
+        "selected_device_record": selected_device_record,
+        "selected_device_type": selected_device_type,
+        "status_value": status_value,
+        "selected_metric": selected_metric,
+    }
+
+
+history_filters = _render_history_filters()
 
 
 def _render_history_body() -> None:
@@ -1582,43 +1679,16 @@ def _render_history_body() -> None:
         prepared_history_frame_cache[key] = prepared
         return prepared
 
-    default_device_label = _default_device_option_label(devices)
-    device_option_labels = list(device_options.keys())
-    if "history_selected_device" not in st.session_state or st.session_state["history_selected_device"] not in device_option_labels:
-        fallback_device = default_device_label if default_device_label in device_option_labels else device_option_labels[0]
-        st.session_state["history_selected_device"] = fallback_device
-    if (
-        "history_chart_window" not in st.session_state
-        or st.session_state["history_chart_window"] not in CHART_WINDOW_OPTIONS
-    ):
-        st.session_state["history_chart_window"] = "1 jam"
-    filter_col1, filter_col2, filter_col3 = st.columns(3)
-    selected_device = filter_col1.selectbox(
-        "Device",
-        options=device_option_labels,
-        key="history_selected_device",
-    )
-    selected_device_id = device_options[selected_device]
-    selected_device_record = device_by_id.get(int(selected_device_id)) if selected_device_id is not None else None
-    selected_device_type = str(selected_device_record.get("device_type")) if selected_device_record else None
-    current_selected_metric = str(st.session_state.get("history_selected_metric", "All Metrics"))
-    status_value = filter_col3.selectbox(
-        "Status",
-        options=STATUS_OPTIONS,
-        index=0,
-        format_func=lambda value: "Semua" if value == "All" else normalize_status_label(str(value)),
-    )
-    with st.expander("Filter Lanjutan"):
-        advanced_col1, advanced_col2, advanced_col3, advanced_col4 = st.columns(4)
-        limit_value = advanced_col1.selectbox("Baris", options=[50, 100, 200, 300, 500], index=2)
-        chart_window_label = advanced_col2.selectbox(
-            "Rentang Chart",
-            options=list(CHART_WINDOW_OPTIONS.keys()),
-            help="Pilih rentang waktu yang dipakai untuk chart tren.",
-            key="history_chart_window",
-        )
-        checked_from_date = advanced_col3.date_input("Dicek Dari", value=default_start_date)
-        checked_to_date = advanced_col4.date_input("Dicek Sampai", value=today)
+    limit_value = int(history_filters["limit_value"])
+    chart_window_label = str(history_filters["chart_window_label"])
+    checked_from_date = history_filters["checked_from_date"]
+    checked_to_date = history_filters["checked_to_date"]
+    selected_device = str(history_filters["selected_device"])
+    selected_device_id = history_filters["selected_device_id"]
+    selected_device_record = history_filters["selected_device_record"]
+    selected_device_type = history_filters["selected_device_type"]
+    status_value = str(history_filters["status_value"])
+    selected_metric = str(history_filters["selected_metric"])
 
     snapshot_page_size = int(st.session_state.get("history_snapshot_page_size", 10))
     snapshot_page = int(st.session_state.get("history_snapshot_page", 1))
@@ -1636,20 +1706,21 @@ def _render_history_body() -> None:
         selected_device_record.get("name") if selected_device_record else None,
     ):
         context_query_params["include_selected_device_snapshot"] = "true"
-    if current_selected_metric != "All Metrics" and not _should_hide_metric_for_device(
-        current_selected_metric,
+    if selected_metric != "All Metrics" and not _should_hide_metric_for_device(
+        selected_metric,
         selected_device_type,
         selected_device_record.get("name") if selected_device_record else None,
     ):
-        context_query_params["metric_name"] = current_selected_metric
+        context_query_params["metric_name"] = selected_metric
     if checked_from_date:
         context_query_params["checked_from"] = wib_date_boundary_to_utc_iso(checked_from_date)
     if checked_to_date:
         context_query_params["checked_to"] = wib_date_boundary_to_utc_iso(checked_to_date, end_of_day=True)
     if status_value != "All":
         context_query_params["status"] = status_value
+    history_context_endpoint = "/metrics/history/live" if auto_refresh else "/metrics/history/context"
     history_context = get_json(
-        f"/metrics/history/context?{urlencode(context_query_params)}",
+        f"{history_context_endpoint}?{urlencode(context_query_params)}",
         {
             "metric_names": [],
             "history": {"items": [], "meta": {}},
@@ -1665,27 +1736,8 @@ def _render_history_body() -> None:
         selected_device_type,
         selected_device_record.get("name") if selected_device_record else None,
     )
-    if (
-        _is_mikrotik_device(
-            selected_device_type,
-            selected_device_record.get("name") if selected_device_record else None,
-        )
-        and st.session_state.get("history_selected_metric") in INTERNET_ONLY_METRICS
-    ):
-        st.session_state["history_selected_metric"] = "All Metrics"
-    metric_select_options = ["All Metrics"] + metric_name_options
-    metric_filter_labels = {
-        metric_name: _metric_filter_label(metric_name)
-        for metric_name in metric_select_options
-    }
-    selected_metric = filter_col2.selectbox(
-        "Nama Metrik",
-        options=metric_select_options,
-        index=0,
-        format_func=lambda metric_name: metric_filter_labels.get(metric_name, str(metric_name)),
-        help="Daftar metrik yang sudah tersimpan di history.",
-        key="history_selected_metric",
-    )
+    if selected_metric != "All Metrics" and selected_metric not in metric_name_options:
+        selected_metric = "All Metrics"
     history_payload = history_context.get("history", {"items": [], "meta": {}})
     selected_device_history_payload = history_context.get("selected_device_history", {"items": [], "meta": {}})
     selected_device_history_raw = paged_items(selected_device_history_payload)
@@ -1698,7 +1750,41 @@ def _render_history_body() -> None:
         selected_device_record.get("name") if selected_device_record else None,
     )
     full_device_history = selected_device_history
-    if selected_device_id is not None:
+    if selected_device_id is not None and auto_refresh:
+        if selected_metric == "All Metrics":
+            live_metric_names = metric_name_options
+            if selected_is_mikrotik:
+                live_metric_names = _default_mikrotik_trend_metrics(metric_name_options)
+            if not live_metric_names:
+                live_metric_names = metric_name_options
+            full_device_history = _filter_history_rows(
+                _fetch_device_history_rows(
+                    device_id=selected_device_id,
+                    checked_from_date=checked_from_date,
+                    checked_to_date=checked_to_date,
+                    metric_names=live_metric_names,
+                    status=status_value,
+                    max_pages=1,
+                ),
+                device_type_by_id,
+                device_name_by_id,
+            )
+        elif selected_metric != "All Metrics":
+            full_device_history = _filter_history_rows(
+                _fetch_device_history_rows(
+                    device_id=selected_device_id,
+                    checked_from_date=checked_from_date,
+                    checked_to_date=checked_to_date,
+                    metric_names=[selected_metric],
+                    status=status_value,
+                    max_pages=1,
+                ),
+                device_type_by_id,
+                device_name_by_id,
+            )
+        else:
+            full_device_history = selected_device_history
+    elif selected_device_id is not None:
         if selected_is_mikrotik and selected_metric == "All Metrics":
             metric_names = _default_mikrotik_trend_metrics(metric_name_options)
             max_history_pages = 1
@@ -1737,9 +1823,9 @@ def _render_history_body() -> None:
                 ("Refresh Otomatis", live_status_text(auto_refresh, interval_seconds)),
                 ("Terakhir Diperbarui", rendered_at_label()),
                 ("Device", selected_device),
-                ("Rentang", f"{checked_from_date} s/d {checked_to_date}"),
+                ("Rentang", "24 jam terakhir (live)" if auto_refresh else f"{checked_from_date} s/d {checked_to_date}"),
                 ("Jendela Grafik", chart_window_label),
-                ("Total Data Sesuai", int(history_meta.get("total", 0) or 0)),
+                ("Sampel Live" if auto_refresh else "Total Data Sesuai", int(history_meta.get("total", 0) or 0)),
             ]
         )
 
@@ -1760,13 +1846,22 @@ def _render_history_body() -> None:
     latest_per_series["uptime"] = uptime_values.map(
         lambda value: _format_duration(pd.Timedelta(seconds=float(value))) if value not in {"", "-"} else "-"
     )
-    metric_insight_snapshot = latest_per_series
+    summary_rows = full_device_history if selected_device_id is not None else history
+    summary_frame = _prepare_history_frame_cached(summary_rows, sort_desc=False)
+    if summary_frame.empty:
+        summary_frame = dataframe
+    summary_latest_timestamp = summary_frame["checked_at"].max()
+    if selected_device_id is not None:
+        summary_latest_per_series = _latest_snapshot_frame(summary_frame)
+    else:
+        summary_latest_per_series = latest_per_series
+    metric_insight_snapshot = summary_latest_per_series
     if selected_metric != "All Metrics":
-        metric_insight_snapshot = latest_per_series[
-            latest_per_series["metric_name"].astype(str) == str(selected_metric)
+        metric_insight_snapshot = summary_latest_per_series[
+            summary_latest_per_series["metric_name"].astype(str) == str(selected_metric)
         ].copy()
     status_counts = _status_counts_frame(
-        latest_snapshot_status_summary if selected_metric == "All Metrics" else {},
+        latest_snapshot_status_summary if selected_metric == "All Metrics" and selected_device_id is None else {},
         metric_insight_snapshot,
     )
     health_score = _health_score_percent(status_counts)
@@ -1778,14 +1873,17 @@ def _render_history_body() -> None:
 
     with summary_container:
         st.markdown("### Ringkasan Eksekutif")
-        st.caption("Ringkasan cepat untuk melihat kondisi keseluruhan sebelum masuk ke investigasi detail.")
+        if selected_device_id is not None:
+            st.caption(f"Ringkasan cepat untuk device terpilih: {selected_device}.")
+        else:
+            st.caption("Ringkasan cepat untuk melihat kondisi keseluruhan sebelum masuk ke investigasi detail.")
         summary_col1, summary_col2, summary_col3, summary_col4, summary_col5 = st.columns(5)
-        _render_stat_card(summary_col1, "Total Data", int(len(dataframe)))
-        _render_stat_card(summary_col2, "Device Terpantau", int(dataframe["device_name"].nunique()))
-        _render_stat_card(summary_col3, "Metrik Aktif", int(dataframe["metric_name"].nunique()))
+        _render_stat_card(summary_col1, "Total Data", int(len(summary_frame)))
+        _render_stat_card(summary_col2, "Device Terpantau", int(summary_frame["device_name"].nunique()))
+        _render_stat_card(summary_col3, "Metrik Aktif", int(summary_frame["metric_name"].nunique()))
         _render_stat_card(summary_col4, "Anomali Aktif", anomaly_count)
         _render_stat_card(summary_col5, "Skor Kesehatan", f"{health_score}%")
-        st.caption(f"Pengecekan terakhir pada {format_wib_timestamp(latest_timestamp)} WIB.")
+        st.caption(f"Pengecekan terakhir pada {format_wib_timestamp(summary_latest_timestamp)} WIB.")
 
     with snapshot_container:
         st.markdown("### Snapshot Terbaru")
@@ -1912,10 +2010,8 @@ def _render_history_body() -> None:
             )
 
         anomaly_frame = _recent_anomaly_frame(insight_base_frame)
-        st.markdown("#### Anomali Terbaru")
-        if anomaly_frame.empty:
-            st.info("Tidak ada status Warning/Down/Error pada rentang data ini.")
-        else:
+        if not anomaly_frame.empty:
+            st.markdown("#### Anomali Terbaru")
             anomaly_view = anomaly_frame[
                 ["checked_at_wib", "device_name", "metric_label", "display_value", "status"]
             ].rename(

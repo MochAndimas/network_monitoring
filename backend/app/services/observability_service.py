@@ -27,6 +27,10 @@ _scheduler_job_runs = Counter()
 _scheduler_job_failures = Counter()
 _scheduler_job_duration_ms = Counter()
 _exception_count = Counter()
+_api_payload_request_count = Counter()
+_api_payload_rows = Counter()
+_api_payload_total_rows = Counter()
+_api_payload_sampled = Counter()
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -154,6 +158,52 @@ def record_exception(*, source: str) -> None:
         None. The routine is executed for its side effects.
     """
     _exception_count[source] += 1
+
+
+def record_api_payload_request(*, endpoint: str, scope: str) -> None:
+    """Record api payload request for business services that coordinate repositories and domain workflows.
+
+    Args:
+        endpoint: endpoint keyword value used by this routine (type `str`).
+        scope: scope keyword value used by this routine (type `str`).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
+    _api_payload_request_count[(str(endpoint or "/unknown"), str(scope or "unknown"))] += 1
+
+
+def record_api_payload_section(
+    *,
+    endpoint: str,
+    scope: str,
+    section: str,
+    rows: int,
+    total_rows: int | None = None,
+    sampled: bool = False,
+) -> None:
+    """Record api payload section for business services that coordinate repositories and domain workflows.
+
+    Args:
+        endpoint: endpoint keyword value used by this routine (type `str`).
+        scope: scope keyword value used by this routine (type `str`).
+        section: section keyword value used by this routine (type `str`).
+        rows: rows keyword value used by this routine (type `int`).
+        total_rows: total rows keyword value used by this routine (type `int | None`, optional).
+        sampled: sampled keyword value used by this routine (type `bool`, optional).
+
+    Returns:
+        None. The routine is executed for its side effects.
+    """
+    metric_endpoint = str(endpoint or "/unknown")
+    metric_scope = str(scope or "unknown")
+    metric_section = str(section or "unknown")
+    section_key = (metric_endpoint, metric_scope, metric_section)
+    _api_payload_rows[section_key] += max(int(rows), 0)
+    if total_rows is not None:
+        _api_payload_total_rows[section_key] += max(int(total_rows), 0)
+    if sampled:
+        _api_payload_sampled[section_key] += 1
 
 
 async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str) -> None:
@@ -316,6 +366,25 @@ def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, 
     for (method, path), total_ms in sorted(_http_request_duration_ms.items()):
         lines.append(
             f'network_monitoring_http_request_duration_ms_sum{{method="{method}",path="{path}"}} {total_ms}'
+        )
+    for (endpoint, scope), count in sorted(_api_payload_request_count.items()):
+        lines.append(
+            f'network_monitoring_api_payload_requests_total{{endpoint="{endpoint}",scope="{scope}"}} {count}'
+        )
+    for (endpoint, scope, section), count in sorted(_api_payload_rows.items()):
+        lines.append(
+            "network_monitoring_api_payload_rows_total"
+            f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
+        )
+    for (endpoint, scope, section), count in sorted(_api_payload_total_rows.items()):
+        lines.append(
+            "network_monitoring_api_payload_total_rows_sum"
+            f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
+        )
+    for (endpoint, scope, section), count in sorted(_api_payload_sampled.items()):
+        lines.append(
+            "network_monitoring_api_payload_sampled_total"
+            f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
         )
     for source, count in sorted(_exception_count.items()):
         lines.append(f'network_monitoring_exceptions_total{{source="{source}"}} {count}')
