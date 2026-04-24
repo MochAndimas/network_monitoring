@@ -285,6 +285,11 @@ Metric:
 
 Resource server memakai `psutil` dari host/container tempat scheduler berjalan. Jika scheduler berjalan di container, resource yang terbaca adalah environment container/host sesuai akses container.
 
+Catatan multi-server:
+- Jika hanya ada satu device `server` aktif, metrik resource langsung dipetakan ke device tersebut.
+- Jika ada lebih dari satu device `server`, set `SERVER_RESOURCE_DEVICE_IP` supaya atribusi metrik resource tidak salah device.
+- Tanpa `SERVER_RESOURCE_DEVICE_IP`, metrik `cpu_percent`, `memory_percent`, `disk_percent`, `boot_time_epoch` akan di-skip untuk mencegah data salah label.
+
 ### Mikrotik
 
 Device type: `mikrotik`, atau nama device mengandung `mikrotik`.
@@ -521,6 +526,7 @@ Docs API (`/docs`, `/redoc`, `/openapi.json`) mati otomatis di production.
 | `CPU_WARNING_THRESHOLD` | Default threshold CPU |
 | `RAM_WARNING_THRESHOLD` | Default threshold RAM |
 | `DISK_WARNING_THRESHOLD` | Default threshold disk |
+| `SERVER_RESOURCE_DEVICE_IP` | IP device `server` yang menerima metrik resource lokal |
 | `PRINTER_SNMP_COMMUNITIES` | Map IP printer ke SNMP community |
 
 ### Scheduler Dan Retention

@@ -11,6 +11,7 @@ from backend.app.monitors import helpers
 from backend.app.monitors.device import service as device_service
 from backend.app.monitors.internet import service as internet_service
 from backend.app.monitors.mikrotik import service as mikrotik_service
+from backend.app.monitors.server import service as server_service
 from backend.app.repositories.device_repository import DeviceRepository
 from backend.app.repositories.metric_repository import MetricRepository
 from backend.app.core.time import utcnow
@@ -401,6 +402,132 @@ def test_mikrotik_dynamic_metric_controls_support_section_toggle_limits_and_allo
     assert not any(name.startswith("interface:ether2:") for name in metric_names)
     assert not any(name.startswith("queue:user-b:") for name in metric_names)
     assert not any(name.startswith("firewall:") for name in metric_names)
+
+
+def test_mikrotik_api_metrics_attach_to_configured_host_device(monkeypatch, session_factory):
+    class FakeApi:
+        def path(self, *parts):
+            if parts == ("system", "resource"):
+                return [{"cpu-load": "10", "total-memory": "1000", "free-memory": "500", "total-hdd-space": "1000", "free-hdd-space": "500"}]
+            if parts == ("interface",):
+                return []
+            if parts == ("ip", "dhcp-server", "lease"):
+                return []
+            if parts == ("ip", "arp"):
+                return []
+            if parts == ("ip", "firewall", "filter"):
+                return []
+            if parts == ("ip", "firewall", "nat"):
+                return []
+            if parts == ("queue", "simple"):
+                return []
+            return []
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.010, 0.010, 0.010, 0.010, 0.010])))
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_host", "192.168.88.2")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_username", "monitor")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_password", "secret")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_dynamic_sections", "")
+    monkeypatch.setattr(mikrotik_service, "connect", lambda **_kwargs: FakeApi())
+
+    async def scenario():
+        async with session_factory() as db:
+            devices = await DeviceRepository(db).upsert_devices(
+                [
+                    {"name": "Mikrotik Backup", "ip_address": "192.168.88.2", "device_type": "mikrotik"},
+                    {"name": "Mikrotik Primary", "ip_address": "192.168.88.1", "device_type": "mikrotik"},
+                ]
+            )
+            metrics = await mikrotik_service.run_mikrotik_checks(db)
+            backup = next(device for device in devices if device.ip_address == "192.168.88.2")
+            primary = next(device for device in devices if device.ip_address == "192.168.88.1")
+            return metrics, backup.id, primary.id
+
+    metrics, backup_id, primary_id = run(scenario())
+    api_metric_device_ids = {metric["device_id"] for metric in metrics if metric["metric_name"] == "mikrotik_api"}
+    assert api_metric_device_ids == {backup_id}
+    assert primary_id not in api_metric_device_ids
+
+
+def test_mikrotik_api_metrics_are_skipped_when_host_does_not_match_multiple_devices(monkeypatch, session_factory):
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.010, 0.010, 0.010, 0.010, 0.010])))
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_host", "192.168.88.99")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_username", "monitor")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_password", "secret")
+    monkeypatch.setattr(mikrotik_service, "connect", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("connect should not run")))
+
+    async def scenario():
+        async with session_factory() as db:
+            await DeviceRepository(db).upsert_devices(
+                [
+                    {"name": "Mikrotik Backup", "ip_address": "192.168.88.2", "device_type": "mikrotik"},
+                    {"name": "Mikrotik Primary", "ip_address": "192.168.88.1", "device_type": "mikrotik"},
+                ]
+            )
+            return await mikrotik_service.run_mikrotik_checks(db)
+
+    metrics = run(scenario())
+    metric_names = {metric["metric_name"] for metric in metrics}
+    assert "mikrotik_api" not in metric_names
+
+
+def test_server_resource_metrics_require_explicit_target_for_multiple_servers(monkeypatch, session_factory):
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.020])))
+    monkeypatch.setattr(server_service.settings, "server_resource_device_ip", "")
+
+    async def scenario():
+        async with session_factory() as db:
+            devices = await DeviceRepository(db).upsert_devices(
+                [
+                    {"name": "Server A", "ip_address": "192.168.1.10", "device_type": "server"},
+                    {"name": "Server B", "ip_address": "192.168.1.11", "device_type": "server"},
+                ]
+            )
+            metrics = await server_service.run_server_checks(db)
+            return metrics, {device.id for device in devices}
+
+    metrics, server_ids = run(scenario())
+    ping_ids = {metric["device_id"] for metric in metrics if metric["metric_name"] == "ping"}
+    assert ping_ids == server_ids
+    assert not any(metric["metric_name"] == "cpu_percent" for metric in metrics)
+    assert not any(metric["metric_name"] == "memory_percent" for metric in metrics)
+    assert not any(metric["metric_name"] == "disk_percent" for metric in metrics)
+    assert not any(metric["metric_name"] == "boot_time_epoch" for metric in metrics)
+
+
+def test_server_resource_metrics_follow_configured_target_device_ip(monkeypatch, session_factory):
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.020])))
+    monkeypatch.setattr(server_service.settings, "server_resource_device_ip", "192.168.1.11")
+    monkeypatch.setattr(server_service.psutil, "cpu_percent", lambda *_args, **_kwargs: 10.0)
+    monkeypatch.setattr(server_service.psutil, "virtual_memory", lambda: type("Mem", (), {"percent": 20.0})())
+    monkeypatch.setattr(server_service.psutil, "disk_usage", lambda _path: type("Disk", (), {"percent": 30.0})())
+    monkeypatch.setattr(server_service.psutil, "boot_time", lambda: 1_700_000_000)
+
+    async def scenario():
+        async with session_factory() as db:
+            devices = await DeviceRepository(db).upsert_devices(
+                [
+                    {"name": "Server A", "ip_address": "192.168.1.10", "device_type": "server"},
+                    {"name": "Server B", "ip_address": "192.168.1.11", "device_type": "server"},
+                ]
+            )
+            metrics = await server_service.run_server_checks(db)
+            server_b = next(device for device in devices if device.ip_address == "192.168.1.11")
+            return metrics, server_b.id
+
+    metrics, server_b_id = run(scenario())
+    cpu_metric = next(metric for metric in metrics if metric["metric_name"] == "cpu_percent")
+    memory_metric = next(metric for metric in metrics if metric["metric_name"] == "memory_percent")
+    disk_metric = next(metric for metric in metrics if metric["metric_name"] == "disk_percent")
+    boot_metric = next(metric for metric in metrics if metric["metric_name"] == "boot_time_epoch")
+
+    assert cpu_metric["device_id"] == server_b_id
+    assert memory_metric["device_id"] == server_b_id
+    assert disk_metric["device_id"] == server_b_id
+    assert boot_metric["device_id"] == server_b_id
 
 
 @pytest.fixture

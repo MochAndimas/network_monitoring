@@ -14,8 +14,8 @@ from ..repositories.metric_repository import MetricRepository
 
 logger = logging.getLogger("network_monitoring.service")
 
-async def persist_metrics(db: AsyncSession, metrics: list[dict]) -> list:
-    return await MetricRepository(db).create_metrics(metrics)
+async def persist_metrics(db: AsyncSession, metrics: list[dict], *, commit: bool = True) -> list:
+    return await MetricRepository(db).create_metrics(metrics, commit=commit)
 
 
 async def build_dashboard_summary(db: AsyncSession) -> dict:

@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     cpu_warning_threshold: float = 90.0
     ram_warning_threshold: float = 90.0
     disk_warning_threshold: float = 85.0
+    server_resource_device_ip: str = ""
     internal_api_key: str = ""
     internal_api_keys: str = ""
     auth_password_secret: str = ""

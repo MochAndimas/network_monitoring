@@ -273,7 +273,7 @@ async def clear_failed_login_attempts(db: AsyncSession, *, username: str, client
     )
 
 
-async def cleanup_auth_data(db: AsyncSession) -> dict[str, int]:
+async def cleanup_auth_data(db: AsyncSession, *, commit: bool = True) -> dict[str, int]:
     now = utcnow()
     session_cutoff = now - timedelta(days=settings.auth_session_retention_days)
     attempt_cutoff = now - timedelta(days=settings.auth_login_attempt_retention_days)
@@ -287,7 +287,10 @@ async def cleanup_auth_data(db: AsyncSession) -> dict[str, int]:
     deleted_attempts = await db.execute(
         delete(AuthLoginAttempt).where(AuthLoginAttempt.attempted_at < attempt_cutoff)
     )
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return {
         "auth_sessions_deleted": int(deleted_sessions.rowcount or 0),
         "auth_login_attempts_deleted": int(deleted_attempts.rowcount or 0),

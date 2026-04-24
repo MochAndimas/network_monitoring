@@ -122,15 +122,20 @@ def record_api_payload_section(
         _api_payload_sampled[section_key] += 1
 
 
-async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str) -> None:
+async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str, commit: bool = True) -> None:
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     status.last_started_at = utcnow()
     status.is_running = True
     status.updated_at = utcnow()
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
 
 
-async def mark_scheduler_job_succeeded(db: AsyncSession, *, job_name: str, duration_ms: float) -> None:
+async def mark_scheduler_job_succeeded(
+    db: AsyncSession, *, job_name: str, duration_ms: float, commit: bool = True
+) -> None:
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     now = utcnow()
     status.last_finished_at = now
@@ -142,10 +147,15 @@ async def mark_scheduler_job_succeeded(db: AsyncSession, *, job_name: str, durat
     status.updated_at = now
     _scheduler_job_runs[job_name] += 1
     _scheduler_job_duration_ms[job_name] += int(duration_ms)
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
 
 
-async def mark_scheduler_job_failed(db: AsyncSession, *, job_name: str, duration_ms: float, error: str) -> None:
+async def mark_scheduler_job_failed(
+    db: AsyncSession, *, job_name: str, duration_ms: float, error: str, commit: bool = True
+) -> None:
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     now = utcnow()
     status.last_finished_at = now
@@ -159,7 +169,10 @@ async def mark_scheduler_job_failed(db: AsyncSession, *, job_name: str, duration
     _scheduler_job_failures[job_name] += 1
     _scheduler_job_duration_ms[job_name] += int(duration_ms)
     record_exception(source=f"scheduler:{job_name}")
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
 
 
 async def list_scheduler_job_statuses(db: AsyncSession) -> list[SchedulerJobStatus]:

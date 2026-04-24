@@ -28,7 +28,7 @@ DEFAULT_THRESHOLDS = {
 }
 
 
-async def ensure_default_thresholds(db: AsyncSession) -> list:
+async def ensure_default_thresholds(db: AsyncSession, *, commit: bool = True) -> list:
     repository = ThresholdRepository(db)
     existing_thresholds = {threshold.key: threshold for threshold in await repository.list_thresholds()}
     thresholds = list(existing_thresholds.values())
@@ -44,21 +44,24 @@ async def ensure_default_thresholds(db: AsyncSession) -> list:
         created_any = True
 
     if created_any:
-        await db.commit()
+        if commit:
+            await db.commit()
+        else:
+            await db.flush()
 
     return sorted(thresholds, key=lambda threshold: threshold.key)
 
 
 async def list_threshold_rows(db: AsyncSession) -> list[dict]:
-    await ensure_default_thresholds(db)
+    await ensure_default_thresholds(db, commit=True)
     return [
         {"id": threshold.id, "key": threshold.key, "value": threshold.value, "description": threshold.description}
         for threshold in await ThresholdRepository(db).list_thresholds()
     ]
 
 
-async def get_threshold_map(db: AsyncSession) -> dict[str, float]:
-    await ensure_default_thresholds(db)
+async def get_threshold_map(db: AsyncSession, *, commit: bool = True) -> dict[str, float]:
+    await ensure_default_thresholds(db, commit=commit)
     return {threshold.key: threshold.value for threshold in await ThresholdRepository(db).list_thresholds()}
 
 

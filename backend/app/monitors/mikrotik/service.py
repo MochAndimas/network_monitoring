@@ -7,6 +7,7 @@ import logging
 import re
 from datetime import datetime
 
+from shared.device_utils import is_mikrotik_device
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.config import settings
@@ -42,6 +43,14 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
     if not devices or not settings.mikrotik_host or connect is None:
         return metrics
 
+    target_device = _resolve_api_target_device(devices)
+    if target_device is None:
+        logger.warning(
+            "Skipping Mikrotik API metrics because MIKROTIK_HOST=%s does not match any active Mikrotik device",
+            settings.mikrotik_host,
+        )
+        return metrics
+
     api = None
     try:
         api = await asyncio.to_thread(
@@ -60,7 +69,6 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
         simple_queues = await asyncio.to_thread(lambda: list(api.path("queue", "simple")))
         resource = resources[0] if resources else {}
         checked_at = utcnow()
-        target_device = devices[0]
         previous_metrics = await _latest_metric_map(db, target_device.id)
         dynamic_sections = settings.normalized_mikrotik_dynamic_sections
 
@@ -205,7 +213,6 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
     except Exception:
         logger.exception("Mikrotik API check failed for host %s", settings.mikrotik_host)
         checked_at = utcnow()
-        target_device = devices[0]
         metrics.append(
             {
                 "device_id": target_device.id,
@@ -225,15 +232,23 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
 
 async def _list_mikrotik_devices(db: AsyncSession) -> list:
     devices = await DeviceRepository(db).list_devices(active_only=True)
-    return [
-        device
-        for device in devices
-        if str(device.device_type or "").lower() == "mikrotik" or "mikrotik" in str(device.name or "").lower()
-    ]
+    return [device for device in devices if is_mikrotik_device(device.device_type, device.name)]
 
 
 def _should_collect_ping(device) -> bool:
-    return str(device.device_type or "").lower() == "mikrotik"
+    return is_mikrotik_device(device.device_type, device.name)
+
+
+def _resolve_api_target_device(devices: list):
+    host = str(settings.mikrotik_host or "").strip().lower()
+    if not host:
+        return None
+    for device in devices:
+        if str(device.ip_address or "").strip().lower() == host:
+            return device
+    if len(devices) == 1:
+        return devices[0]
+    return None
 
 
 async def _build_ping_metrics(device_id: int, ip_address: str) -> list[dict]:

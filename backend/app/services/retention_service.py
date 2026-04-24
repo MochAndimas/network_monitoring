@@ -22,13 +22,16 @@ from ..core.time import utcnow
 UP_STATUSES = {"up", "ok"}
 
 
-async def cleanup_monitoring_data(db: AsyncSession) -> dict[str, int]:
+async def cleanup_monitoring_data(db: AsyncSession, *, commit: bool = True) -> dict[str, int]:
     rolled_up_days = await rollup_completed_raw_metrics(db, commit=False)
     archived_metric_groups = await archive_expired_raw_metrics(db, commit=False)
     deleted_metrics = await delete_expired_raw_metrics(db, commit=False)
     deleted_alerts = await delete_expired_alerts(db, commit=False)
     deleted_incidents = await delete_expired_incidents(db, commit=False)
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return {
         "rolled_up_days": rolled_up_days,
         "archived_metric_groups": archived_metric_groups,

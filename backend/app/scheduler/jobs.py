@@ -116,10 +116,10 @@ async def _persist_runner(runner, db) -> None:
     # Metric jobs share one pipeline lock so they don't trample each other,
     # but they should queue instead of being dropped when schedules overlap.
     async with monitoring_pipeline_guard(wait=True):
-        await persist_metrics(db, await runner(db))
+        await persist_metrics(db, await runner(db), commit=False)
         # Re-evaluate alerts immediately after fresh metrics land so alerting
         # doesn't get starved by the separate scheduler tick.
-        await evaluate_alerts(db)
+        await evaluate_alerts(db, commit=False)
 
 
 async def _run_alert_job_inner(db) -> None:
@@ -127,7 +127,7 @@ async def _run_alert_job_inner(db) -> None:
         if not acquired:
             logger.info("Skipping alert evaluation because another monitoring pipeline run is active")
             return
-        await evaluate_alerts(db)
+        await evaluate_alerts(db, commit=False)
 
 
 async def _run_cleanup_job_inner(db) -> None:
@@ -135,8 +135,8 @@ async def _run_cleanup_job_inner(db) -> None:
         if not acquired:
             logger.info("Skipping retention cleanup because another monitoring pipeline run is active")
             return
-        await cleanup_monitoring_data(db)
-        await cleanup_auth_data(db)
+        await cleanup_monitoring_data(db, commit=False)
+        await cleanup_auth_data(db, commit=False)
 
 
 async def _run_scheduler_job(job_name: str, operation) -> None:
@@ -145,7 +145,8 @@ async def _run_scheduler_job(job_name: str, operation) -> None:
         with job_logging_context(job_name):
             await mark_scheduler_job_started(db, job_name=job_name)
             try:
-                await operation(db)
+                async with db.begin():
+                    await operation(db)
             except Exception as exc:
                 duration_ms = (perf_counter() - started_at) * 1000
                 await mark_scheduler_job_failed(db, job_name=job_name, duration_ms=duration_ms, error=str(exc))

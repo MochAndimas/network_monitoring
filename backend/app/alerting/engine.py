@@ -17,7 +17,7 @@ from .notifiers.telegram_notifier import send_telegram_alert
 from .rules import ALERT_RULES
 
 
-async def evaluate_alerts(db) -> list[dict]:
+async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
     alert_repository = AlertRepository(db)
     incident_repository = IncidentRepository(db)
     metric_repository = MetricRepository(db)
@@ -26,7 +26,7 @@ async def evaluate_alerts(db) -> list[dict]:
     devices = await device_repository.list_devices(active_only=True)
     notifications: list[dict] = []
     telegram_messages: list[str] = []
-    thresholds = await get_threshold_map(db)
+    thresholds = await get_threshold_map(db, commit=commit)
     active_alerts = {(alert.device_id, alert.alert_type): alert for alert in await alert_repository.list_active_alerts()}
     active_incidents_by_device = {
         incident.device_id: incident for incident in await incident_repository.list_active_incidents()
@@ -276,7 +276,10 @@ async def evaluate_alerts(db) -> list[dict]:
         )
 
     if has_pending_writes:
-        await db.commit()
+        if commit:
+            await db.commit()
+        else:
+            await db.flush()
     if telegram_messages:
         await asyncio.gather(
             *(send_telegram_alert(message) for message in telegram_messages),

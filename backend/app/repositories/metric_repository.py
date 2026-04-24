@@ -107,7 +107,7 @@ class MetricRepository:
             query = query.where(*conditions)
         return query
 
-    async def create_metrics(self, payloads: Iterable[dict]) -> list[Metric]:
+    async def create_metrics(self, payloads: Iterable[dict], *, commit: bool = True) -> list[Metric]:
         metrics = [
                 Metric(
                     **payload,
@@ -121,7 +121,8 @@ class MetricRepository:
         self.db.add_all(metrics)
         await self.db.flush()
         await self._upsert_latest_metrics(metrics)
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
         return metrics
 
     async def _upsert_latest_metrics(self, metrics: list[Metric]) -> None:

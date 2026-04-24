@@ -26,8 +26,9 @@ async def run_monitoring_cycle(db: AsyncSession) -> dict:
     started_at = perf_counter()
     metrics = await collect_monitoring_metrics()
 
-    persisted = await persist_metrics(db, metrics)
-    alert_events = await evaluate_alerts(db)
+    async with db.begin():
+        persisted = await persist_metrics(db, metrics, commit=False)
+        alert_events = await evaluate_alerts(db, commit=False)
 
     result = {
         "metrics_collected": len(persisted),

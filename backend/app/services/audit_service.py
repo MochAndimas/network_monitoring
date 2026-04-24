@@ -20,6 +20,7 @@ async def record_admin_audit_log(
     ip_address: str = "",
     user_agent: str = "",
     details: dict | None = None,
+    commit: bool = True,
 ) -> AdminAuditLog:
     user = getattr(actor, "user", None)
     entry = AdminAuditLog(
@@ -36,8 +37,10 @@ async def record_admin_audit_log(
         details_json=json.dumps(details or {}, ensure_ascii=True, default=str),
     )
     db.add(entry)
-    await db.commit()
-    await db.refresh(entry)
+    await db.flush()
+    if commit:
+        await db.commit()
+        await db.refresh(entry)
     return entry
 
 
