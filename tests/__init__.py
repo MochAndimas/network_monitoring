@@ -1,2 +1,1 @@
-"""Test package for the network monitoring project."""
-
+"""Tests package."""

@@ -1,11 +1,13 @@
 """Provide Streamlit dashboard page rendering for the network monitoring project."""
 
+from urllib.parse import quote_plus
+
 import altair as alt
 import pandas as pd
 import streamlit as st
 
 from components.auth import require_dashboard_login
-from components.api import get_json
+from components.api import get_json, paged_items, paged_meta
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
@@ -28,23 +30,66 @@ severity_filter = filter_col1.selectbox(
 )
 search_filter = filter_col2.text_input("Cari", placeholder="Filter berdasarkan device atau pesan")
 with st.expander("Filter Lanjutan"):
-    adv_col1, adv_col2 = st.columns(2)
+    adv_col1, adv_col2, adv_col3 = st.columns(3)
     sort_mode = adv_col1.selectbox("Urutkan", options=["Terbaru", "Tingkat Tertinggi"], index=0)
     max_rows = adv_col2.selectbox("Maks. Baris Detail", options=[25, 50, 100, 200], index=1)
+    alerts_page_size = adv_col3.selectbox("Baris per Halaman", options=[25, 50, 100, 200], index=1)
 
 auto_refresh, interval_seconds = refresh_controls("alerts", default_enabled=True, default_interval=15)
+alerts_page_key = "alerts_page"
+alerts_filter_signature_key = "alerts_filter_signature"
+alerts_filter_signature = (
+    str(severity_filter),
+    search_filter.strip().lower(),
+    str(sort_mode),
+    int(alerts_page_size),
+)
+if st.session_state.get(alerts_filter_signature_key) != alerts_filter_signature:
+    st.session_state[alerts_page_key] = 1
+    st.session_state[alerts_filter_signature_key] = alerts_filter_signature
+current_alerts_page = max(int(st.session_state.get(alerts_page_key, 1) or 1), 1)
+alerts_offset = (current_alerts_page - 1) * int(alerts_page_size)
 
 
 def _render_alerts_body() -> None:
-    alerts = get_json("/alerts/active", [])
+    query_parts = [f"limit={int(alerts_page_size)}", f"offset={alerts_offset}"]
+    if severity_filter != "All":
+        query_parts.append(f"severity={quote_plus(str(severity_filter).strip().lower())}")
+    normalized_search_filter = search_filter.strip()
+    if normalized_search_filter:
+        query_parts.append(f"search={quote_plus(normalized_search_filter)}")
+    alerts_payload = get_json(
+        f"/alerts/active/paged?{'&'.join(query_parts)}",
+        {"items": [], "meta": {"total": 0, "limit": int(alerts_page_size), "offset": alerts_offset}},
+    )
+    alerts = paged_items(alerts_payload, [])
+    alerts_meta = paged_meta(alerts_payload)
+    alerts_total = int(alerts_meta.get("total") or 0)
+    alerts_total_pages = max((alerts_total - 1) // int(alerts_page_size) + 1, 1)
+    if current_alerts_page > alerts_total_pages:
+        st.session_state[alerts_page_key] = alerts_total_pages
+        st.rerun()
+    start_row = 0 if alerts_total == 0 else alerts_offset + 1
+    end_row = min(alerts_offset + len(alerts), alerts_total)
     render_meta_row(
         [
             ("Refresh Otomatis", live_status_text(auto_refresh, interval_seconds)),
             ("Terakhir Diperbarui", rendered_at_label()),
             ("Filter Tingkat", severity_filter),
             ("Urutan", sort_mode),
+            ("Cakupan Data", f"{start_row}-{end_row} / {alerts_total} alerts"),
         ]
     )
+    page_col, page_meta_col = st.columns([1, 4])
+    page_col.number_input(
+        "Halaman Alerts",
+        min_value=1,
+        max_value=alerts_total_pages,
+        value=min(current_alerts_page, alerts_total_pages),
+        step=1,
+        key=alerts_page_key,
+    )
+    page_meta_col.caption(f"Menampilkan {start_row}-{end_row} dari {alerts_total} alerts aktif.")
 
     if not alerts:
         st.success("Tidak ada alert aktif. Pantau kembali pada siklus monitoring berikutnya.")
@@ -72,14 +117,6 @@ def _render_alerts_body() -> None:
     dataframe["message"] = dataframe["message"].fillna("-") if "message" in dataframe.columns else "-"
 
     filtered_frame = dataframe.copy()
-    if severity_filter != "All":
-        filtered_frame = filtered_frame[filtered_frame["severity"].str.lower() == severity_filter.lower()]
-    if search_filter.strip():
-        needle = search_filter.strip().lower()
-        filtered_frame = filtered_frame[
-            filtered_frame["device_name"].str.lower().str.contains(needle, na=False)
-            | filtered_frame["message"].str.lower().str.contains(needle, na=False)
-        ]
 
     if filtered_frame.empty:
         st.info("Tidak ada alert yang cocok dengan filter. Ubah severity atau kata kunci pencarian.")

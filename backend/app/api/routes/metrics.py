@@ -2,10 +2,11 @@
 
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.schemas import MetricDailySummaryItem, MetricDailySummaryPage, MetricHistoryItem, MetricHistoryPage, PageMeta
+from ...api.lifecycle import apply_legacy_deprecation_headers
 from ...core.time import now
 from ...db.session import get_db
 from ...repositories.metric_repository import MetricRepository
@@ -22,8 +23,9 @@ async def get_metric_names(
     return await MetricRepository(db).list_metric_names(device_id=device_id)
 
 
-@router.get("/history", response_model=list[MetricHistoryItem])
+@router.get("/history", response_model=list[MetricHistoryItem], deprecated=True)
 async def get_metrics_history(
+    response: Response,
     limit: int = Query(default=100, ge=1, le=500),
     device_id: int | None = Query(default=None),
     metric_name: str | None = Query(default=None),
@@ -32,6 +34,7 @@ async def get_metrics_history(
     checked_to: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[MetricHistoryItem]:
+    apply_legacy_deprecation_headers(response, legacy_endpoint="/metrics/history")
     metrics = await MetricRepository(db).list_recent_metric_rows(
         limit=limit,
         offset=0,
@@ -68,6 +71,16 @@ async def get_metrics_history_paged(
         status=status,
         checked_from=checked_from,
         checked_to=checked_to,
+    )
+    payload_scope = "device" if device_id is not None else "global"
+    record_api_payload_request(endpoint="/metrics/history/paged", scope=payload_scope)
+    record_api_payload_section(
+        endpoint="/metrics/history/paged",
+        scope=payload_scope,
+        section="items",
+        rows=len(metrics),
+        total_rows=total,
+        sampled=total > len(metrics),
     )
     return MetricHistoryPage(
         items=[
@@ -365,6 +378,16 @@ async def get_metrics_daily_summary(
         rollup_from=rollup_from,
         rollup_to=rollup_to,
     )
+    payload_scope = "device" if device_id is not None else "global"
+    record_api_payload_request(endpoint="/metrics/daily-summary", scope=payload_scope)
+    record_api_payload_section(
+        endpoint="/metrics/daily-summary",
+        scope=payload_scope,
+        section="items",
+        rows=len(rows),
+        total_rows=total,
+        sampled=total > len(rows),
+    )
     return MetricDailySummaryPage(
         items=[MetricDailySummaryItem(**row) for row in rows],
         meta=PageMeta(total=total, limit=limit, offset=offset),
@@ -380,6 +403,16 @@ async def get_latest_metrics_snapshot_paged(
 ) -> MetricHistoryPage:
     repository = MetricRepository(db)
     metrics, total = await repository.list_latest_metric_rows_paged(limit=limit, offset=offset, device_id=device_id)
+    payload_scope = "device" if device_id is not None else "global"
+    record_api_payload_request(endpoint="/metrics/latest-snapshot/paged", scope=payload_scope)
+    record_api_payload_section(
+        endpoint="/metrics/latest-snapshot/paged",
+        scope=payload_scope,
+        section="items",
+        rows=len(metrics),
+        total_rows=total,
+        sampled=total > len(metrics),
+    )
     return MetricHistoryPage(
         items=_metric_history_response_items(metrics),
         meta=PageMeta(total=total, limit=limit, offset=offset),

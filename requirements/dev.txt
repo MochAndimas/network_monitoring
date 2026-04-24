@@ -2,5 +2,9 @@
 -r dashboard.txt
 
 pip-audit==2.9.0
+bandit==1.8.6
+semgrep==1.89.0
 pytest==9.0.3
 ruff==0.14.0
+mypy==1.18.2
+pyright==1.1.405

@@ -1,9 +1,10 @@
 """Provide FastAPI route handlers and HTTP helpers for the network monitoring project."""
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.deps import require_write_access
+from ...api.lifecycle import apply_legacy_deprecation_headers
 from ...api.schemas import DeviceCreate, DeviceListItem, DeviceListPage, DeviceOption, DeviceTypeOption, PageMeta, DeviceUpdate
 from ...core.constants import DEVICE_TYPE_CHOICES
 from ...db.session import get_db
@@ -16,6 +17,7 @@ from ...services.device_service import (
     list_device_rows_filtered,
     update_device,
 )
+from ...services.observability_service import record_api_payload_request, record_api_payload_section
 
 router = APIRouter()
 
@@ -55,8 +57,9 @@ async def list_device_options(
     ]
 
 
-@router.get("", response_model=list[DeviceListItem])
+@router.get("", response_model=list[DeviceListItem], deprecated=True)
 async def list_devices(
+    response: Response,
     active_only: bool = Query(default=False),
     device_type: str | None = Query(default=None),
     latest_status: str | None = Query(default=None),
@@ -65,6 +68,7 @@ async def list_devices(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[DeviceListItem]:
+    apply_legacy_deprecation_headers(response, legacy_endpoint="/devices")
     rows = await list_device_rows_filtered(
         db,
         active_only=active_only,
@@ -94,6 +98,16 @@ async def list_devices_paged(
         search=search,
         limit=limit,
         offset=offset,
+    )
+    payload_scope = "filtered" if active_only or device_type or latest_status or search else "all"
+    record_api_payload_request(endpoint="/devices/paged", scope=payload_scope)
+    record_api_payload_section(
+        endpoint="/devices/paged",
+        scope=payload_scope,
+        section="items",
+        rows=len(rows),
+        total_rows=total,
+        sampled=total > len(rows),
     )
     return DeviceListPage(
         items=[DeviceListItem(**row) for row in rows],

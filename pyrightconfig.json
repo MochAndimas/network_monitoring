@@ -1,0 +1,17 @@
+{
+  "include": [
+    "backend/app/services/auth",
+    "backend/app/repositories/alert_repository.py",
+    "backend/app/repositories/incident_repository.py"
+  ],
+  "exclude": [
+    "**/__pycache__"
+  ],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
+  "reportMissingTypeStubs": "none",
+  "reportUnknownParameterType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownArgumentType": "none"
+}

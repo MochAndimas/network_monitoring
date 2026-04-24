@@ -18,7 +18,7 @@ Project ini cocok untuk:
 - SQLAlchemy async + Alembic untuk persistence dan migration
 - APScheduler untuk worker monitoring periodik
 - `ping3`, `httpx`, `psutil`, `librouteros`, dan `pysnmp` untuk collector
-- Ruff, pytest, pip-audit, dan GitHub Actions untuk quality gate
+- Ruff, pytest, mypy/pyright, pip-audit, Bandit, Semgrep, Gitleaks, dan GitHub Actions untuk quality gate
 
 ## Arsitektur Singkat
 
@@ -557,6 +557,7 @@ Docs API (`/docs`, `/redoc`, `/openapi.json`) mati otomatis di production.
 | `LOG_AS_JSON` | Output log structured JSON |
 | `OBSERVABILITY_ENABLE_METRICS` | Enable metrics observability |
 | `REQUEST_SLOW_LOG_THRESHOLD_MS` | Threshold slow request log |
+| `PROMETHEUS_MULTIPROC_DIR` | Direktori shared metrics untuk mode multi-worker Prometheus |
 
 ### File-Backed Secret
 
@@ -569,6 +570,21 @@ Settings juga mendukung secret dari file:
 - `PRINTER_SNMP_COMMUNITIES_FILE`
 - `BOOTSTRAP_ADMIN_PASSWORD_FILE`
 - `AUTH_JWT_SECRET_FILE`
+
+Policy:
+- `*_FILE` hanya boleh dipakai saat `APP_ENV=production`.
+- Jika `*_FILE` dipakai di `development`/`test`, backend akan fail-fast saat load settings.
+- Saat `*_FILE` aktif, nilai file akan override nilai env biasa (`AUTH_JWT_SECRET`, dll) untuk field yang sama.
+
+Contoh konfigurasi production:
+
+```env
+APP_ENV=production
+AUTH_JWT_SECRET_FILE=/run/secrets/auth_jwt_secret
+AUTH_PASSWORD_SECRET_FILE=/run/secrets/auth_password_secret
+BOOTSTRAP_ADMIN_PASSWORD_FILE=/run/secrets/bootstrap_admin_password
+INTERNAL_API_KEY_FILE=/run/secrets/internal_api_key
+```
 
 ## API Utama
 
@@ -632,10 +648,39 @@ Semua endpoint operasional selain `/health/*` membutuhkan bearer token atau API 
 ### Alerts, Incidents, Thresholds, System
 
 - `GET /alerts/active`
+- `GET /alerts/active/paged`
 - `GET /incidents`
+- `GET /incidents/paged`
 - `GET /thresholds`
 - `PUT /thresholds/{key}`
 - `POST /system/run-cycle`
+
+Query filter paged yang umum dipakai dashboard:
+- `/alerts/active/paged`: `severity`, `search`, `limit`, `offset`
+- `/incidents/paged`: `status`, `search`, `limit`, `offset`
+
+### API Lifecycle (Legacy Non-Paged Endpoint)
+
+Untuk konsistensi kontrak API jangka panjang, endpoint list non-paged berikut masuk fase deprecasi:
+- `/devices` -> migrasi ke `/devices/paged`
+- `/alerts/active` -> migrasi ke `/alerts/active/paged`
+- `/incidents` -> migrasi ke `/incidents/paged`
+- `/metrics/history` -> migrasi ke `/metrics/history/paged`
+
+Timeline Wave 6:
+1. Announce date: `2026-04-24`
+2. Warning window mulai: `2026-05-01`
+3. Removal date target: `2026-10-31`
+
+Selama warning window, response endpoint legacy akan menyertakan header:
+- `Deprecation: true`
+- `Sunset: Sat, 31 Oct 2026 00:00:00 GMT`
+- `Warning: 299 ...`
+- `X-API-Replacement-Endpoint`
+- `X-API-Deprecation-Announced-On`
+- `X-API-Deprecation-Warning-Window-Starts-On`
+- `X-API-Deprecation-Removal-On`
+- `X-API-Deprecation-Phase`
 
 ### Observability
 
@@ -807,19 +852,57 @@ python scripts/backfill_metric_numeric.py --dry-run
 ### Benchmark endpoint
 
 ```bash
-python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --api-key dev-internal-key --runs 10
+python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --api-key dev-internal-key --profile ci --runs 10
 ```
+
+Default benchmark path sudah fokus ke endpoint paged utama:
+- `/devices/paged`
+- `/alerts/active/paged`
+- `/incidents/paged`
+- `/metrics/history/paged`
+- `/metrics/latest-snapshot/paged`
+- `/metrics/daily-summary`
 
 Opsional:
 
 ```bash
-python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --api-key dev-internal-key --runs 10 --max-p95-ms 1500 --max-max-ms 2500
+python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --api-key dev-internal-key --profile custom --runs 10 --max-p95-ms 1500 --max-max-ms 2500
+```
+
+Simpan artifact JSON:
+
+```bash
+python scripts/benchmark_endpoints.py --base-url http://localhost:8000 --api-key dev-internal-key --profile ci --runs 10 --output-json .ci_artifacts/benchmark.json
 ```
 
 ### Concurrency smoke
 
 ```bash
-python scripts/concurrency_smoke.py --base-url http://localhost:8000 --path /health/live --requests 20 --concurrency 5 --max-p95-ms 1000
+python scripts/concurrency_smoke.py --base-url http://localhost:8000 --api-key dev-internal-key --profile ci --requests 10 --concurrency 5
+```
+
+Opsional path spesifik (bisa diulang):
+
+```bash
+python scripts/concurrency_smoke.py --base-url http://localhost:8000 --api-key dev-internal-key --profile custom --path /health/live --path /devices/paged?limit=50\&offset=0 --requests 20 --concurrency 5 --max-p95-ms 1500 --max-max-ms 2500
+```
+
+### Observability payload smoke
+
+```bash
+python scripts/observability_payload_smoke.py --base-url http://localhost:8000 --api-key dev-internal-key
+```
+
+Opsional endpoint ekspektasi custom (bisa diulang):
+
+```bash
+python scripts/observability_payload_smoke.py --base-url http://localhost:8000 --api-key dev-internal-key --expect-endpoint /devices/paged --expect-endpoint /metrics/history/paged
+```
+
+Simpan artifact JSON:
+
+```bash
+python scripts/observability_payload_smoke.py --base-url http://localhost:8000 --api-key dev-internal-key --output-json .ci_artifacts/observability_payload.json
 ```
 
 ## Testing, Lint, Dan Audit
@@ -830,10 +913,29 @@ Test:
 python -m pytest
 ```
 
+MySQL integration test (butuh DATABASE_URL mysql yang sudah dimigrasi):
+
+```bash
+python -m pytest tests/services/test_mysql_integration.py -q
+```
+
 Lint:
 
 ```bash
 ruff check backend dashboard scripts tests
+```
+
+Lint staged quality-gate (Wave 3):
+
+```bash
+ruff check --select B,I,UP,SIM backend/app/services/auth backend/app/repositories/alert_repository.py backend/app/repositories/incident_repository.py
+```
+
+Type check staged quality-gate (Wave 3):
+
+```bash
+mypy --config-file mypy.ini
+pyright
 ```
 
 Dependency audit:
@@ -845,12 +947,42 @@ pip-audit -r requirements/dashboard.txt
 
 CI GitHub Actions menjalankan:
 - Ruff lint
+- Ruff staged rules (`B`, `I`, `UP`, `SIM`) untuk `backend/app/services/auth` dan repository yang sudah ditargetkan
+- mypy staged type-check untuk `backend/app/services/auth` dan repository yang sudah ditargetkan
+- pyright staged type-check untuk `backend/app/services/auth` dan repository yang sudah ditargetkan
 - pytest
 - Alembic migration smoke test ke MySQL
+- MySQL integration test (pipeline lock + rollback retention)
 - benchmark regression gate
 - concurrency smoke test
+- concurrency failure scenario (expected fail-path)
+- observability payload smoke test
+- non-functional triage summary artifact (`nonfunctional_triage.md`)
+- weekly SLA baseline artifact (`weekly_sla_baseline.md` + `.json`)
 - Docker build backend dan dashboard
 - pip-audit untuk backend/dashboard dependencies
+- Bandit + Semgrep SAST
+- Gitleaks secret scan
+
+Catatan developer velocity:
+- `actions/setup-python` di workflow CI sudah mengaktifkan `cache: pip` untuk mempercepat install dependency di tiap job.
+- Workflow CI juga dijadwalkan mingguan (setiap Senin UTC) untuk menghasilkan baseline SLA report dari artifact smoke terbaru.
+
+### Triage gate non-functional
+
+Jika job `non-functional-smoke` gagal:
+- Download artifact `non-functional-smoke-artifacts`.
+- Buka `nonfunctional_triage.md` sebagai template triage standar run tersebut.
+- Cek `benchmark.json`: endpoint mana dengan `p95_ms`/`max_ms` tertinggi dan apakah melebihi threshold.
+- Cek `concurrency.json`: lihat endpoint dengan `failures` non-empty atau latency outlier.
+- Cek `observability_payload.json`: lihat `missing_requests` dan `missing_rows`.
+- Cek `uvicorn.log` untuk error backend saat benchmark/smoke berjalan.
+
+Generate manual report dari artifact lokal:
+
+```bash
+python scripts/nonfunctional_report.py --artifacts-dir .ci_artifacts --triage-output .ci_artifacts/nonfunctional_triage.md --sla-output .ci_artifacts/weekly_sla_baseline.md --sla-json-output .ci_artifacts/weekly_sla_baseline.json
+```
 
 ## Operasional Harian
 
@@ -867,6 +999,12 @@ curl -H "x-api-key: dev-internal-key" http://localhost:8000/observability/summar
 ```bash
 curl -H "x-api-key: dev-internal-key" http://localhost:8000/observability/metrics
 ```
+
+Untuk payload observability endpoint paged, cek metrik:
+- `network_monitoring_api_payload_requests_total`
+- `network_monitoring_api_payload_rows_total`
+- `network_monitoring_api_payload_total_rows_sum`
+- `network_monitoring_api_payload_sampled_total`
 
 ### Jalankan manual cycle
 
@@ -981,6 +1119,22 @@ Cek:
 - Untuk reverse proxy, isi `TRUSTED_PROXY_IPS` agar `X-Forwarded-For` hanya dipercaya dari proxy yang dikontrol.
 - Simpan secret production di secret manager atau environment deployment, bukan di git.
 
+## Security Scan Dan Rotasi Key
+
+CI menjalankan security scan berikut:
+- `pip-audit` untuk dependency vulnerability Python.
+- `bandit` untuk SAST Python backend + script ops.
+- `semgrep` untuk ruleset security tambahan.
+- `gitleaks` untuk deteksi kebocoran secret di git history.
+
+Checklist rotasi key production (berkala, minimal per 90 hari):
+1. Generate key baru untuk `AUTH_JWT_SECRET`, `AUTH_PASSWORD_SECRET`, dan API key internal.
+2. Simpan key baru di secret manager / file secret runtime (jangan commit ke git).
+3. Deploy dengan dual-key window jika dibutuhkan (tambahkan key baru dulu, lalu cutover traffic).
+4. Restart backend + scheduler terkontrol, lalu verifikasi login, refresh session, dan endpoint internal.
+5. Revoke key lama, hapus file secret lama, dan catat waktu rotasi di runbook.
+6. Jalankan smoke check: `/health/ready`, `/health/dependencies`, `/observability/summary`, serta alur login dashboard.
+
 ## Posisi Streamlit
 
 Dashboard Streamlit di project ini diposisikan sebagai frontend internal ops, bukan public web app multi-user skala besar.
@@ -1022,6 +1176,17 @@ python -m pytest
 
 # Lint
 ruff check backend dashboard scripts tests
+
+# Type check
+mypy backend scripts
+pyright
+
+# Security scan (dependency + SAST + secret)
+pip-audit -r requirements/backend.txt
+pip-audit -r requirements/dashboard.txt
+bandit -q -r backend scripts -x tests,venv
+semgrep scan --config p/security-audit --config p/python --error --metrics=off --exclude venv --exclude tests backend scripts dashboard
+gitleaks detect --source . --no-git
 
 # Backend lokal
 uvicorn backend.app.main:app --reload

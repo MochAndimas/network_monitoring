@@ -141,6 +141,11 @@ class AlertItem(BaseModel):
     resolved_at: datetime | None = None
 
 
+class AlertPage(BaseModel):
+    items: list["AlertItem"]
+    meta: PageMeta
+
+
 class IncidentItem(BaseModel):
     id: int
     device_id: int | None = None
@@ -149,6 +154,11 @@ class IncidentItem(BaseModel):
     summary: str
     started_at: datetime
     ended_at: datetime | None = None
+
+
+class IncidentPage(BaseModel):
+    items: list["IncidentItem"]
+    meta: PageMeta
 
 
 class RunCycleResult(BaseModel):

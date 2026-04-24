@@ -116,11 +116,27 @@ class Settings(BaseSettings):
             "bootstrap_admin_password": self.bootstrap_admin_password_file,
             "auth_jwt_secret": self.auth_jwt_secret_file,
         }
+        configured_file_backed_fields = {
+            field_name: str(raw_file_path).strip()
+            for field_name, raw_file_path in secret_fields.items()
+            if str(raw_file_path or "").strip()
+        }
+        if configured_file_backed_fields and not self.is_production:
+            configured_names = ", ".join(sorted(configured_file_backed_fields))
+            raise ValueError(
+                f"File-backed secret fields ({configured_names}) are only allowed when APP_ENV=production."
+            )
         for field_name, raw_file_path in secret_fields.items():
             if not raw_file_path:
                 continue
             file_path = Path(raw_file_path)
-            object.__setattr__(self, field_name, file_path.read_text(encoding="utf-8").strip())
+            try:
+                file_value = file_path.read_text(encoding="utf-8").strip()
+            except OSError as exc:
+                raise ValueError(
+                    f"Unable to read file-backed secret for `{field_name}` from `{file_path}`."
+                ) from exc
+            object.__setattr__(self, field_name, file_value)
         return self
 
     @property

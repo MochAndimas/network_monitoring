@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -15,6 +16,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.config import settings
 from ..core.time import utcnow
 from ..models.scheduler_job_status import SchedulerJobStatus
+
+try:  # pragma: no cover - optional dependency wiring
+    from prometheus_client import CollectorRegistry, Counter as PromCounter, Summary, generate_latest, multiprocess
+except ImportError:  # pragma: no cover - fallback path when dependency is unavailable
+    CollectorRegistry = None
+    PromCounter = None
+    Summary = None
+    generate_latest = None
+    multiprocess = None
 
 
 request_id_context: ContextVar[str] = ContextVar("request_id", default="")
@@ -31,6 +41,62 @@ _api_payload_request_count = Counter()
 _api_payload_rows = Counter()
 _api_payload_total_rows = Counter()
 _api_payload_sampled = Counter()
+
+_prometheus_multiproc_dir = str(os.getenv("PROMETHEUS_MULTIPROC_DIR") or "").strip()
+_prometheus_multiprocess_enabled = bool(
+    _prometheus_multiproc_dir and PromCounter is not None and Summary is not None and multiprocess is not None
+)
+
+if _prometheus_multiprocess_enabled:
+    _prom_http_request_count = PromCounter(
+        "network_monitoring_http_requests",
+        "HTTP requests processed by the application",
+        ["method", "path", "status"],
+    )
+    _prom_http_request_duration_ms = Summary(
+        "network_monitoring_http_request_duration_ms",
+        "Sum of HTTP request duration in milliseconds",
+        ["method", "path"],
+    )
+    _prom_http_request_errors = PromCounter(
+        "network_monitoring_http_request_errors",
+        "HTTP requests that ended with status >= 500",
+        ["method", "path"],
+    )
+    _prom_api_payload_request_count = PromCounter(
+        "network_monitoring_api_payload_requests",
+        "Payload responses observed by endpoint and scope",
+        ["endpoint", "scope"],
+    )
+    _prom_api_payload_rows = PromCounter(
+        "network_monitoring_api_payload_rows",
+        "Rows returned in payload sections",
+        ["endpoint", "scope", "section"],
+    )
+    _prom_api_payload_total_rows = Summary(
+        "network_monitoring_api_payload_total_rows",
+        "Total rows represented by payload sections",
+        ["endpoint", "scope", "section"],
+    )
+    _prom_api_payload_sampled = PromCounter(
+        "network_monitoring_api_payload_sampled",
+        "Payload sections that were sampled/paged",
+        ["endpoint", "scope", "section"],
+    )
+    _prom_exception_count = PromCounter(
+        "network_monitoring_exceptions",
+        "Exceptions captured by source",
+        ["source"],
+    )
+else:
+    _prom_http_request_count = None
+    _prom_http_request_duration_ms = None
+    _prom_http_request_errors = None
+    _prom_api_payload_request_count = None
+    _prom_api_payload_rows = None
+    _prom_api_payload_total_rows = None
+    _prom_api_payload_sampled = None
+    _prom_exception_count = None
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -90,16 +156,25 @@ def record_http_request(*, path: str, method: str, status_code: int, duration_ms
     key = (method.upper(), metric_path, str(status_code))
     _http_request_count[key] += 1
     _http_request_duration_ms[(method.upper(), metric_path)] += int(duration_ms)
+    if _prom_http_request_count is not None and _prom_http_request_duration_ms is not None:
+        _prom_http_request_count.labels(method.upper(), metric_path, str(status_code)).inc()
+        _prom_http_request_duration_ms.labels(method.upper(), metric_path).observe(float(duration_ms))
     if status_code >= 500:
         _http_request_errors[(method.upper(), metric_path)] += 1
+        if _prom_http_request_errors is not None:
+            _prom_http_request_errors.labels(method.upper(), metric_path).inc()
 
 
 def record_exception(*, source: str) -> None:
     _exception_count[source] += 1
+    if _prom_exception_count is not None:
+        _prom_exception_count.labels(source).inc()
 
 
 def record_api_payload_request(*, endpoint: str, scope: str) -> None:
     _api_payload_request_count[(str(endpoint or "/unknown"), str(scope or "unknown"))] += 1
+    if _prom_api_payload_request_count is not None:
+        _prom_api_payload_request_count.labels(str(endpoint or "/unknown"), str(scope or "unknown")).inc()
 
 
 def record_api_payload_section(
@@ -116,10 +191,18 @@ def record_api_payload_section(
     metric_section = str(section or "unknown")
     section_key = (metric_endpoint, metric_scope, metric_section)
     _api_payload_rows[section_key] += max(int(rows), 0)
+    if _prom_api_payload_rows is not None:
+        _prom_api_payload_rows.labels(metric_endpoint, metric_scope, metric_section).inc(max(int(rows), 0))
     if total_rows is not None:
         _api_payload_total_rows[section_key] += max(int(total_rows), 0)
+        if _prom_api_payload_total_rows is not None:
+            _prom_api_payload_total_rows.labels(metric_endpoint, metric_scope, metric_section).observe(
+                max(int(total_rows), 0)
+            )
     if sampled:
         _api_payload_sampled[section_key] += 1
+        if _prom_api_payload_sampled is not None:
+            _prom_api_payload_sampled.labels(metric_endpoint, metric_scope, metric_section).inc()
 
 
 async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str, commit: bool = True) -> None:
@@ -216,43 +299,51 @@ def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -
 
 
 def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, scheduler_statuses: list[SchedulerJobStatus]) -> str:
-    lines = [
+    lines = []
+    if _prometheus_multiprocess_enabled and CollectorRegistry is not None and generate_latest is not None and multiprocess is not None:
+        registry = CollectorRegistry()
+        multiprocess.MultiProcessCollector(registry)
+        lines.extend(generate_latest(registry).decode("utf-8").splitlines())
+    lines.extend(
+        [
         "# HELP network_monitoring_database_up Database connectivity status",
         "# TYPE network_monitoring_database_up gauge",
         f"network_monitoring_database_up {1 if database_up else 0}",
         "# HELP network_monitoring_scheduler_operational_alerts Active operational alerts for scheduler jobs",
         "# TYPE network_monitoring_scheduler_operational_alerts gauge",
         f"network_monitoring_scheduler_operational_alerts {scheduler_alert_count}",
-    ]
-    for (method, path, status_code), count in sorted(_http_request_count.items()):
-        lines.append(
-            f'network_monitoring_http_requests_total{{method="{method}",path="{path}",status="{status_code}"}} {count}'
-        )
-    for (method, path), total_ms in sorted(_http_request_duration_ms.items()):
-        lines.append(
-            f'network_monitoring_http_request_duration_ms_sum{{method="{method}",path="{path}"}} {total_ms}'
-        )
-    for (endpoint, scope), count in sorted(_api_payload_request_count.items()):
-        lines.append(
-            f'network_monitoring_api_payload_requests_total{{endpoint="{endpoint}",scope="{scope}"}} {count}'
-        )
-    for (endpoint, scope, section), count in sorted(_api_payload_rows.items()):
-        lines.append(
-            "network_monitoring_api_payload_rows_total"
-            f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
-        )
-    for (endpoint, scope, section), count in sorted(_api_payload_total_rows.items()):
-        lines.append(
-            "network_monitoring_api_payload_total_rows_sum"
-            f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
-        )
-    for (endpoint, scope, section), count in sorted(_api_payload_sampled.items()):
-        lines.append(
-            "network_monitoring_api_payload_sampled_total"
-            f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
-        )
-    for source, count in sorted(_exception_count.items()):
-        lines.append(f'network_monitoring_exceptions_total{{source="{source}"}} {count}')
+        ]
+    )
+    if not _prometheus_multiprocess_enabled:
+        for (method, path, status_code), count in sorted(_http_request_count.items()):
+            lines.append(
+                f'network_monitoring_http_requests_total{{method="{method}",path="{path}",status="{status_code}"}} {count}'
+            )
+        for (method, path), total_ms in sorted(_http_request_duration_ms.items()):
+            lines.append(
+                f'network_monitoring_http_request_duration_ms_sum{{method="{method}",path="{path}"}} {total_ms}'
+            )
+        for (endpoint, scope), count in sorted(_api_payload_request_count.items()):
+            lines.append(
+                f'network_monitoring_api_payload_requests_total{{endpoint="{endpoint}",scope="{scope}"}} {count}'
+            )
+        for (endpoint, scope, section), count in sorted(_api_payload_rows.items()):
+            lines.append(
+                "network_monitoring_api_payload_rows_total"
+                f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
+            )
+        for (endpoint, scope, section), count in sorted(_api_payload_total_rows.items()):
+            lines.append(
+                "network_monitoring_api_payload_total_rows_sum"
+                f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
+            )
+        for (endpoint, scope, section), count in sorted(_api_payload_sampled.items()):
+            lines.append(
+                "network_monitoring_api_payload_sampled_total"
+                f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
+            )
+        for source, count in sorted(_exception_count.items()):
+            lines.append(f'network_monitoring_exceptions_total{{source="{source}"}} {count}')
     for job in scheduler_statuses:
         lines.append(
             f'network_monitoring_scheduler_job_consecutive_failures{{job_name="{job.job_name}"}} {job.consecutive_failures}'

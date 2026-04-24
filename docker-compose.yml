@@ -74,6 +74,7 @@ services:
       PRINTER_SNMP_COMMUNITIES: ${PRINTER_SNMP_COMMUNITIES:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      PROMETHEUS_MULTIPROC_DIR: ${PROMETHEUS_MULTIPROC_DIR:-/tmp/network_monitoring_prometheus}
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
@@ -158,6 +159,7 @@ services:
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
       PRINTER_SNMP_COMMUNITIES: ${PRINTER_SNMP_COMMUNITIES:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PROMETHEUS_MULTIPROC_DIR: ${PROMETHEUS_MULTIPROC_DIR:-/tmp/network_monitoring_prometheus}
     command: ["python", "-m", "backend.app.scheduler.worker"]
 
   dashboard:
