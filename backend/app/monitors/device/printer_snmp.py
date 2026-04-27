@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import cast
 
 from pysnmp.hlapi.asyncio import (
     CommunityData,
@@ -202,7 +203,7 @@ async def _snmp_get_value(ip_address: str, community: str, oid: str) -> object |
         )
         if error_indication or error_status or not var_binds:
             return None
-        return var_binds[0][1]
+        return cast(object, var_binds[0][1])
     except Exception:
         return None
     finally:
@@ -239,7 +240,7 @@ def _build_printer_status_metric(raw_values: dict[str, object | None]) -> SnmpPr
 
     """
     status_code = _safe_int(raw_values.get("printer_status_code"))
-    status_label = PRINTER_STATUS_LABELS.get(status_code, "unknown")
+    status_label = PRINTER_STATUS_LABELS.get(status_code, "unknown") if status_code is not None else "unknown"
     metric_status = "up" if status_label in {"idle", "printing", "warmup"} else "warning"
     return SnmpPrinterMetric("printer_status", status_label, metric_status)
 
@@ -296,7 +297,7 @@ def _build_paper_status_metric(raw_values: dict[str, object | None]) -> SnmpPrin
         return SnmpPrinterMetric("printer_paper_status", "low", "warning")
 
     input_status_code = _safe_int(raw_values.get("printer_input_status_code"))
-    input_status_label = PAPER_STATUS_LABELS.get(input_status_code, "ok")
+    input_status_label = PAPER_STATUS_LABELS.get(input_status_code, "ok") if input_status_code is not None else "ok"
     metric_status = "ok" if input_status_label in {"available", "ok"} else "warning"
     normalized_label = "ok" if input_status_label == "available" else input_status_label
     return SnmpPrinterMetric("printer_paper_status", normalized_label, metric_status)
@@ -359,6 +360,6 @@ def _safe_int(raw_value: object | None) -> int | None:
     try:
         if raw_value is None:
             return None
-        return int(raw_value)
+        return int(str(raw_value))
     except (TypeError, ValueError):
         return None

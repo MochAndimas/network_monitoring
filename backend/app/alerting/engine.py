@@ -15,6 +15,7 @@ from ..repositories.device_repository import DeviceRepository
 from ..repositories.incident_repository import IncidentRepository
 from ..repositories.metric_repository import MetricRepository
 from ..core.time import utcnow
+from ..models.incident import Incident
 from ..services.threshold_service import get_threshold_map
 from .notifiers.telegram_notifier import send_telegram_alert
 from .rules import ALERT_RULES
@@ -442,7 +443,7 @@ def _build_alert_payload(device_id: int | None, alert_type: str, message: str) -
 
 async def _ensure_incident_for_alert(
     incident_repository: IncidentRepository,
-    active_incidents_by_device: dict[int | None, object],
+    active_incidents_by_device: dict[int | None, Incident],
     device_id: int | None,
     message: str,
 ) -> str | None:
@@ -476,7 +477,7 @@ async def _ensure_incident_for_alert(
 
 async def _resolve_incident_if_cleared(
     incident_repository: IncidentRepository,
-    active_incidents_by_device: dict[int | None, object],
+    active_incidents_by_device: dict[int | None, Incident],
     active_alert_count_by_device: dict[int | None, int],
     device_id: int | None,
     resolved_at,

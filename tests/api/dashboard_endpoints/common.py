@@ -4,7 +4,9 @@ This module contains automated regression and validation scenarios.
 """
 
 from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import date, timedelta
+from typing import Any
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -111,7 +113,11 @@ def client_context():
         app.dependency_overrides.clear()
         run(drop_all(engine))
 
-async def _seed_devices_and_metrics(session_factory, devices_payload: list[dict], metrics_payload: list[dict]):
+async def _seed_devices_and_metrics(
+    session_factory,
+    devices_payload: list[dict],
+    metrics_payload: list[dict] | Callable[[list], list[dict[str, Any]]],
+):
     """Perform seed devices and metrics.
 
     Args:

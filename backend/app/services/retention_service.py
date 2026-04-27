@@ -102,17 +102,18 @@ async def delete_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -
 
     """
     cutoff = _raw_metric_cutoff()
-    await db.execute(
-        delete(LatestMetric).where(
-            LatestMetric.metric_id.in_(select(Metric.id).where(Metric.checked_at < cutoff))
+    retained_latest_metric_ids = select(LatestMetric.metric_id).where(LatestMetric.metric_id.is_not(None))
+    result = await db.execute(
+        delete(Metric).where(
+            Metric.checked_at < cutoff,
+            Metric.id.not_in(retained_latest_metric_ids),
         )
     )
-    result = await db.execute(delete(Metric).where(Metric.checked_at < cutoff))
     if commit:
         await db.commit()
     else:
         await db.flush()
-    return int(result.rowcount or 0)
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def archive_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:
@@ -175,7 +176,7 @@ async def delete_expired_alerts(db: AsyncSession, *, commit: bool = True) -> int
         await db.commit()
     else:
         await db.flush()
-    return int(result.rowcount or 0)
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def delete_expired_incidents(db: AsyncSession, *, commit: bool = True) -> int:
@@ -203,7 +204,7 @@ async def delete_expired_incidents(db: AsyncSession, *, commit: bool = True) -> 
         await db.commit()
     else:
         await db.flush()
-    return int(result.rowcount or 0)
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 def _raw_metric_cutoff() -> datetime:
@@ -259,6 +260,7 @@ async def _iter_rollup_payloads(db: AsyncSession, cutoff: datetime):
                 yield current_key, current_accumulator.to_payload()
             current_key = key
             current_accumulator = _RollupAccumulator(device_id=key[0], rollup_date=key[1])
+        assert current_accumulator is not None
         current_accumulator.add(metric_name, metric_value, status)
 
     if current_accumulator is not None and current_key is not None:
@@ -315,6 +317,7 @@ async def _iter_archive_payloads(db: AsyncSession, cutoff: datetime):
                 status=normalized_status,
                 unit=normalized_unit,
             )
+        assert current_accumulator is not None
         current_accumulator.add(metric_value=str(metric_value), checked_at=checked_at)
 
     if current_accumulator is not None and current_key is not None:

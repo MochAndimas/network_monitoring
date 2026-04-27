@@ -4,6 +4,7 @@ This module contains project-specific implementation details.
 """
 
 from datetime import datetime, timedelta
+from typing import Any, cast
 
 import streamlit as st
 
@@ -225,7 +226,7 @@ def _render_history_body() -> None:
     snapshot_page_size = int(st.session_state.get("history_snapshot_page_size", 10))
     snapshot_page = int(st.session_state.get("history_snapshot_page", 1))
     snapshot_offset = (snapshot_page - 1) * snapshot_page_size
-    context_query_params = {
+    context_query_params: dict[str, Any] = {
         "limit": limit_value,
         "selected_device_limit": limit_value,
         "snapshot_limit": snapshot_page_size,
@@ -318,7 +319,7 @@ def _render_history_body() -> None:
             full_device_history = selected_device_history
     elif selected_device_id is not None:
         if selected_is_mikrotik and selected_metric == "All Metrics":
-            metric_names = _default_mikrotik_trend_metrics(metric_name_options)
+            metric_names: list[str] | None = _default_mikrotik_trend_metrics(metric_name_options)
             max_history_pages = 1
             initial_history_payload = None
         else:
@@ -671,22 +672,31 @@ def _render_history_body() -> None:
             _render_stat_card(
                 selected_col2,
                 "Arah Tren",
-                _trend_direction_text(selected_metric_summary.get("delta")),
+                _trend_direction_text(cast(float | None, selected_metric_summary.get("delta"))),
             )
             _render_stat_card(
                 selected_col3,
                 "Rata-rata",
-                _format_metric_numeric(selected_metric_summary.get("avg"), selected_metric_summary.get("unit")),
+                _format_metric_numeric(
+                    cast(float | int | None, selected_metric_summary.get("avg")),
+                    str(selected_metric_summary.get("unit") or ""),
+                ),
             )
             _render_stat_card(
                 selected_col4,
                 "Minimum",
-                _format_metric_numeric(selected_metric_summary.get("min"), selected_metric_summary.get("unit")),
+                _format_metric_numeric(
+                    cast(float | int | None, selected_metric_summary.get("min")),
+                    str(selected_metric_summary.get("unit") or ""),
+                ),
             )
             _render_stat_card(
                 selected_col5,
                 "Maksimum",
-                _format_metric_numeric(selected_metric_summary.get("max"), selected_metric_summary.get("unit")),
+                _format_metric_numeric(
+                    cast(float | int | None, selected_metric_summary.get("max")),
+                    str(selected_metric_summary.get("unit") or ""),
+                ),
             )
             _render_stat_card(selected_col6, "Status Terakhir", str(selected_metric_summary["status"]))
 

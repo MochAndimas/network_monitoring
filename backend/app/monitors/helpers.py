@@ -127,7 +127,7 @@ async def safe_ping(ip_address: str) -> float | None:
     """
     try:
         async with PING_SEMAPHORE:
-            return await asyncio.to_thread(ping, ip_address, timeout=settings.ping_timeout_seconds)
+            return await asyncio.to_thread(ping, ip_address, timeout=int(settings.ping_timeout_seconds))
     except OSError:
         return None
 

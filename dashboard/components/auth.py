@@ -174,7 +174,7 @@ def consume_auth_bridge_response(*, component_key: str) -> dict | None:
     if response.get("request_id") != pending_request.get("id"):
         return None
     st.session_state["auth_bridge_request"] = None
-    return response
+    return dict(response)
 
 
 def _restore_not_needed() -> bool:

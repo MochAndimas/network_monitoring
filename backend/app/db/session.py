@@ -32,7 +32,7 @@ def _async_database_url(database_url: str) -> str:
     return database_url
 
 
-def _engine_options(database_url: str) -> dict:
+def _engine_options(database_url: str) -> dict[str, object]:
     """Perform engine options.
 
     Args:
@@ -42,7 +42,7 @@ def _engine_options(database_url: str) -> dict:
         Nilai balik routine atau efek samping yang dihasilkan.
 
     """
-    options = {
+    options: dict[str, object] = {
         "future": True,
         "pool_pre_ping": True,
     }

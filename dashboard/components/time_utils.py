@@ -47,7 +47,7 @@ def format_wib_timestamp(value) -> str:
     """
     if pd.isna(value):
         return "-"
-    return pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S WIB")
+    return str(pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S WIB"))
 
 
 def wib_date_boundary_to_utc_iso(value, *, end_of_day: bool = False) -> str:

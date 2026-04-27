@@ -12,7 +12,7 @@ from ...core.config import settings
 try:
     from telegram import Bot
 except ImportError:  # pragma: no cover
-    Bot = None
+    Bot = None  # type: ignore[assignment, misc]
 
 
 logger = logging.getLogger("network_monitoring.telegram")

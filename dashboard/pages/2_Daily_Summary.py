@@ -4,6 +4,8 @@ This module contains project-specific implementation details.
 """
 
 from datetime import datetime, timedelta
+from collections.abc import Sequence
+from typing import cast
 from urllib.parse import urlencode
 
 import altair as alt
@@ -168,11 +170,13 @@ date_range = filter_col2.date_input(
     "Rentang Tanggal",
     value=(default_start_date, today),
 )
-if isinstance(date_range, tuple):
+if isinstance(date_range, tuple) and len(date_range) == 2:
     date_from, date_to = date_range
+elif isinstance(date_range, Sequence) and len(date_range) == 2:
+    date_from, date_to = date_range[0], date_range[1]
 else:
-    date_from = date_range
-    date_to = date_range
+    date_from = cast(datetime, date_range)
+    date_to = cast(datetime, date_range)
 limit_value = filter_col3.selectbox("Baris", options=[50, 100, 200, 500], index=1)
 page_key = "daily_summary_page"
 current_page = max(int(st.session_state.get(page_key, 1) or 1), 1)

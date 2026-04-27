@@ -27,7 +27,7 @@ def test_file_backed_secret_paths_are_rejected_outside_production(tmp_path: Path
     secret_file.write_text("jwt-secret-from-file\n", encoding="utf-8")
 
     with pytest.raises(ValidationError) as exc_info:
-        Settings(
+        Settings(  # type: ignore[call-arg]
             _env_file=None,
             app_env="development",
             auth_jwt_secret_file=str(secret_file),
@@ -51,7 +51,7 @@ def test_file_backed_secrets_are_loaded_in_production(tmp_path: Path):
     jwt_secret_file.write_text("jwt-secret-from-file\n", encoding="utf-8")
     password_secret_file.write_text("password-secret-from-file\n", encoding="utf-8")
 
-    settings = Settings(
+    settings = Settings(  # type: ignore[call-arg]
         _env_file=None,
         app_env="production",
         auth_jwt_secret_file=str(jwt_secret_file),

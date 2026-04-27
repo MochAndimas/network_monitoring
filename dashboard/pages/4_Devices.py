@@ -4,6 +4,7 @@ This module contains project-specific implementation details.
 """
 
 from urllib.parse import urlencode
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -54,7 +55,7 @@ def _device_type_label(device_type: str) -> str:
         Nilai balik routine atau efek samping yang dihasilkan.
 
     """
-    return type_label_by_value.get(device_type, device_type.replace("_", " ").title())
+    return str(type_label_by_value.get(device_type, device_type.replace("_", " ").title()))
 
 
 def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
@@ -178,7 +179,7 @@ with inventory_tab:
         inventory_page_size = advanced_col3.selectbox("Baris per Halaman", options=[25, 50, 100, 200], index=1)
         inventory_page_number = advanced_col4.number_input("Halaman", min_value=1, value=1, step=1)
 
-    inventory_query_params = {
+    inventory_query_params: dict[str, Any] = {
         "limit": inventory_page_size,
         "offset": (int(inventory_page_number) - 1) * inventory_page_size,
     }

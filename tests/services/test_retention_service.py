@@ -14,6 +14,7 @@ from backend.app.models.incident import Incident
 from backend.app.models.metric import Metric
 from backend.app.models.metric_cold_archive import MetricColdArchive
 from backend.app.models.metric_daily_rollup import MetricDailyRollup
+from backend.app.alerting.engine import evaluate_alerts
 from backend.app.repositories.device_repository import DeviceRepository
 from backend.app.repositories.metric_repository import MetricRepository
 from backend.app.core.time import utcnow
@@ -62,7 +63,7 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
 
         assert result["rolled_up_days"] == 2
         assert result["archived_metric_groups"] == 5
-        assert result["deleted_metrics"] == 7
+        assert result["deleted_metrics"] == 5
         assert result["deleted_alerts"] == 1
         assert result["deleted_incidents"] == 1
         assert set(rollup_by_date) == {old_timestamp.date(), recent_timestamp.date()}
@@ -85,8 +86,12 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
         assert ping_archive.numeric_sample_count == 2
         assert ping_archive.last_metric_value == "20.00"
         assert ping_archive.avg_numeric_value == 15.0
-        assert len(remaining_metrics) == 1
-        assert remaining_metrics[0].metric_value == "5.00"
+        assert len(remaining_metrics) == 3
+        assert {(metric.metric_name, metric.metric_value) for metric in remaining_metrics} == {
+            ("jitter", "8.00"),
+            ("packet_loss", "0.00"),
+            ("ping", "5.00"),
+        }
         assert [alert.status for alert in remaining_alerts] == ["active"]
         assert [incident.status for incident in remaining_incidents] == ["active"]
     finally:
@@ -156,6 +161,43 @@ def test_latest_metric_map_uses_latest_metric_for_each_device_metric_pair():
         run(drop_all(engine))
 
 
+def test_cleanup_keeps_latest_snapshot_metric_for_active_alert(monkeypatch):
+    """Validate retention does not resolve active alerts without a recovery metric.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    run(create_all(engine))
+
+    monkeypatch.setattr("backend.app.services.retention_service.settings.raw_metric_retention_days", 7)
+    monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", _noop_send_telegram_alert)
+
+    old_timestamp = utcnow() - timedelta(days=9)
+
+    try:
+        deleted_metrics, alert_statuses, latest_metric = run(
+            _cleanup_with_active_down_alert(SessionLocal, old_timestamp)
+        )
+
+        assert deleted_metrics == 0
+        assert alert_statuses == ["active"]
+        assert latest_metric is not None
+        assert latest_metric.status == "down"
+        assert latest_metric.checked_at == old_timestamp
+    finally:
+        run(drop_all(engine))
+
+
 def _metric(device_id: int, name: str, value: str, status: str, unit: str | None, checked_at):
     """Perform metric.
 
@@ -179,6 +221,16 @@ def _metric(device_id: int, name: str, value: str, status: str, unit: str | None
         "unit": unit,
         "checked_at": checked_at,
     }
+
+
+async def _noop_send_telegram_alert(_message: str) -> None:
+    """Perform noop send telegram alert.
+
+    Args:
+        _message: Parameter input untuk routine ini.
+
+    """
+
 
 async def _cleanup_old_metrics(session_factory, old_timestamp, recent_timestamp, very_old_timestamp):
     """Perform cleanup old metrics.
@@ -317,3 +369,40 @@ async def _latest_metric_map_for_device(session_factory, now):
         )
         latest_metrics = await MetricRepository(db).latest_metric_map()
         return device_id, latest_metrics
+
+
+async def _cleanup_with_active_down_alert(session_factory, old_timestamp):
+    """Perform cleanup with active down alert.
+
+    Args:
+        session_factory: Parameter input untuk routine ini.
+        old_timestamp: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    async with session_factory() as db:
+        device = (
+            await DeviceRepository(db).upsert_devices(
+                [{"name": "AP Hallway", "ip_address": "192.168.1.41", "device_type": "access_point"}]
+            )
+        )[0]
+        await MetricRepository(db).create_metrics(
+            [_metric(device.id, "ping", "timeout", "down", None, old_timestamp)]
+        )
+
+        created_notifications = await evaluate_alerts(db)
+        assert [notification["action"] for notification in created_notifications] == ["created"]
+
+        result = await cleanup_monitoring_data(db)
+        second_notifications = await evaluate_alerts(db)
+        assert second_notifications == []
+
+        alerts = list((await db.scalars(select(Alert).where(Alert.device_id == device.id))).all())
+        latest_metrics = await MetricRepository(db).latest_metric_map()
+        return (
+            result["deleted_metrics"],
+            [alert.status for alert in alerts],
+            latest_metrics.get((device.id, "ping")),
+        )

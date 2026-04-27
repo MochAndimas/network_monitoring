@@ -60,7 +60,7 @@ def render_kpi_cards(
         columns = st.columns(len(row_items))
         for column, (label, value, delta) in zip(columns, row_items, strict=False):
             with column.container(border=True):
-                st.metric(label, value, delta=delta)
+                st.metric(label, str(value), delta=delta)
 
 
 def normalize_status_label(value: object) -> str:

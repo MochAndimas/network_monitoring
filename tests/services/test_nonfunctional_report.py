@@ -42,7 +42,7 @@ def test_build_triage_markdown_includes_gate_table_and_checklist():
         "results": [{"path": "/health/live", "p95_ms": 20.0, "max_ms": 35.0, "failures": []}],
         "failures": [],
     }
-    observability_payload = {
+    observability_payload: dict[str, list] = {
         "missing_requests": [],
         "missing_rows": [],
     }

@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 import altair as alt
 import pandas as pd
 import streamlit as st
+from typing import Any
 
 from shared.device_utils import format_device_label, is_mikrotik_device
 from components.api import get_json, paged_items, paged_meta
@@ -616,7 +617,7 @@ def _fetch_history_rows_bulk(
         per_metric_limit=per_metric_limit,
     )
     payload = get_json(f"/metrics/history/paged?{urlencode(query_params, doseq=True)}", {"items": [], "meta": {}})
-    return paged_items(payload)
+    return list(paged_items(payload))
 
 
 def _fetch_latest_device_snapshot(device_id: int, limit: int = 500) -> list[dict]:
@@ -634,7 +635,7 @@ def _fetch_latest_device_snapshot(device_id: int, limit: int = 500) -> list[dict
         f"/metrics/latest-snapshot/paged?{urlencode({'device_id': device_id, 'limit': limit, 'offset': 0})}",
         {"items": [], "meta": {}},
     )
-    return paged_items(payload)
+    return list(paged_items(payload))
 
 
 def _latest_snapshot_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -1239,9 +1240,10 @@ def _dynamic_mikrotik_metric_table(dataframe: pd.DataFrame, prefix: str) -> pd.D
     if rows.empty:
         return pd.DataFrame()
 
-    parsed_rows = []
+    parsed_rows: list[dict[str, Any]] = []
     for _, row in rows.iterrows():
         parts = str(row["metric_name"]).split(":")
+        group_key: str | tuple[str, str]
         if prefix == "firewall":
             if len(parts) < 4:
                 continue

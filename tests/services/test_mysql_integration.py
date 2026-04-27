@@ -9,7 +9,7 @@ from datetime import timedelta
 import uuid
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from backend.app.core.config import settings
 from backend.app.core.time import utcnow
@@ -124,8 +124,8 @@ def test_mysql_cleanup_monitoring_data_rolls_back_when_transaction_fails():
             assert rollup_rows == baseline_rollup_rows
             assert archive_rows == baseline_archive_rows
 
-            await db.execute(Metric.__table__.delete().where(Metric.id == metric_id))
-            await db.execute(Device.__table__.delete().where(Device.name == f"MySQL Retention Device {unique_suffix}"))
+            await db.execute(delete(Metric).where(Metric.id == metric_id))
+            await db.execute(delete(Device).where(Device.name == f"MySQL Retention Device {unique_suffix}"))
             await db.commit()
 
     try:

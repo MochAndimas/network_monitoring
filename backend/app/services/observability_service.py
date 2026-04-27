@@ -12,6 +12,7 @@ from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,27 +24,27 @@ from ..models.scheduler_job_status import SchedulerJobStatus
 try:  # pragma: no cover - optional dependency wiring
     from prometheus_client import CollectorRegistry, Counter as PromCounter, Summary, generate_latest, multiprocess
 except ImportError:  # pragma: no cover - fallback path when dependency is unavailable
-    CollectorRegistry = None
-    PromCounter = None
-    Summary = None
-    generate_latest = None
-    multiprocess = None
+    CollectorRegistry = None  # type: ignore[assignment, misc]
+    PromCounter = None  # type: ignore[assignment, misc]
+    Summary = None  # type: ignore[assignment, misc]
+    generate_latest = None  # type: ignore[assignment]
+    multiprocess = None  # type: ignore[assignment]
 
 
 request_id_context: ContextVar[str] = ContextVar("request_id", default="")
 job_name_context: ContextVar[str] = ContextVar("job_name", default="")
 
-_http_request_count = Counter()
-_http_request_errors = Counter()
-_http_request_duration_ms = Counter()
-_scheduler_job_runs = Counter()
-_scheduler_job_failures = Counter()
-_scheduler_job_duration_ms = Counter()
-_exception_count = Counter()
-_api_payload_request_count = Counter()
-_api_payload_rows = Counter()
-_api_payload_total_rows = Counter()
-_api_payload_sampled = Counter()
+_http_request_count: Counter = Counter()
+_http_request_errors: Counter = Counter()
+_http_request_duration_ms: Counter = Counter()
+_scheduler_job_runs: Counter = Counter()
+_scheduler_job_failures: Counter = Counter()
+_scheduler_job_duration_ms: Counter = Counter()
+_exception_count: Counter = Counter()
+_api_payload_request_count: Counter = Counter()
+_api_payload_rows: Counter = Counter()
+_api_payload_total_rows: Counter = Counter()
+_api_payload_sampled: Counter = Counter()
 
 _prometheus_multiproc_dir = str(os.getenv("PROMETHEUS_MULTIPROC_DIR") or "").strip()
 _prometheus_multiprocess_enabled = bool(
@@ -51,42 +52,44 @@ _prometheus_multiprocess_enabled = bool(
 )
 
 if _prometheus_multiprocess_enabled:
-    _prom_http_request_count = PromCounter(
+    assert PromCounter is not None
+    assert Summary is not None
+    _prom_http_request_count: Any = PromCounter(
         "network_monitoring_http_requests",
         "HTTP requests processed by the application",
         ["method", "path", "status"],
     )
-    _prom_http_request_duration_ms = Summary(
+    _prom_http_request_duration_ms: Any = Summary(
         "network_monitoring_http_request_duration_ms",
         "Sum of HTTP request duration in milliseconds",
         ["method", "path"],
     )
-    _prom_http_request_errors = PromCounter(
+    _prom_http_request_errors: Any = PromCounter(
         "network_monitoring_http_request_errors",
         "HTTP requests that ended with status >= 500",
         ["method", "path"],
     )
-    _prom_api_payload_request_count = PromCounter(
+    _prom_api_payload_request_count: Any = PromCounter(
         "network_monitoring_api_payload_requests",
         "Payload responses observed by endpoint and scope",
         ["endpoint", "scope"],
     )
-    _prom_api_payload_rows = PromCounter(
+    _prom_api_payload_rows: Any = PromCounter(
         "network_monitoring_api_payload_rows",
         "Rows returned in payload sections",
         ["endpoint", "scope", "section"],
     )
-    _prom_api_payload_total_rows = Summary(
+    _prom_api_payload_total_rows: Any = Summary(
         "network_monitoring_api_payload_total_rows",
         "Total rows represented by payload sections",
         ["endpoint", "scope", "section"],
     )
-    _prom_api_payload_sampled = PromCounter(
+    _prom_api_payload_sampled: Any = PromCounter(
         "network_monitoring_api_payload_sampled",
         "Payload sections that were sampled/paged",
         ["endpoint", "scope", "section"],
     )
-    _prom_exception_count = PromCounter(
+    _prom_exception_count: Any = PromCounter(
         "network_monitoring_exceptions",
         "Exceptions captured by source",
         ["source"],

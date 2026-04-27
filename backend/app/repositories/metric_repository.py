@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from shared.collection_utils import chunked
 from shared.number_utils import safe_float
 from sqlalchemy import Select, and_, case, desc, distinct, func, select, tuple_
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,7 +88,7 @@ class MetricRepository:
         status: str | None = None,
         checked_from=None,
         checked_to=None,
-    ) -> list[object]:
+    ) -> list[ColumnElement[bool]]:
         """Perform recent metric filter conditions.
 
         Args:
@@ -102,7 +103,7 @@ class MetricRepository:
             Nilai balik routine atau efek samping yang dihasilkan.
 
         """
-        conditions: list[object] = []
+        conditions: list[ColumnElement[bool]] = []
         if device_id is not None:
             conditions.append(Metric.device_id == device_id)
         if metric_name:
