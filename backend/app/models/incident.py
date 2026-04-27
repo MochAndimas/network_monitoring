@@ -1,4 +1,7 @@
-"""Provide SQLAlchemy ORM models for the network monitoring project."""
+"""Define module logic for `backend/app/models/incident.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import datetime
 
@@ -10,6 +13,10 @@ from ..core.time import now
 
 
 class Incident(Base):
+    """Perform Incident.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
     __tablename__ = "incidents"
     __table_args__ = (
         Index("ix_incidents_status_started_at", "status", "started_at"),

@@ -1,4 +1,7 @@
-"""Provide FastAPI route handlers and HTTP helpers for the network monitoring project."""
+"""Define module logic for `backend/app/api/routes/dashboard.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +24,18 @@ async def _build_overview_panels(
     alerts_limit: int,
     incidents_limit: int,
 ) -> dict:
+    """Build overview panels.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        snapshot_limit: Parameter input untuk routine ini.
+        alerts_limit: Parameter input untuk routine ini.
+        incidents_limit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     device_repository = DeviceRepository(db)
     metric_repository = MetricRepository(db)
     summary = await build_dashboard_summary(db)
@@ -52,6 +67,15 @@ async def _build_overview_panels(
 
 @router.get("/summary", response_model=DashboardSummary)
 async def get_summary(db: AsyncSession = Depends(get_db)) -> DashboardSummary:
+    """Return high-level dashboard summary counters and status rollups.
+
+    Args:
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return DashboardSummary(**await build_dashboard_summary(db))
 
 
@@ -62,6 +86,18 @@ async def get_overview_panels(
     incidents_limit: int = Query(default=5, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    """Return dashboard overview panel payloads for UI cards.
+
+    Args:
+        snapshot_limit: Parameter input untuk routine ini.
+        alerts_limit: Parameter input untuk routine ini.
+        incidents_limit: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return await _build_overview_panels(
         db,
         snapshot_limit=snapshot_limit,
@@ -75,6 +111,16 @@ async def get_problem_devices(
     limit: int = Query(default=25, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
+    """Return device rows currently in degraded or failing states.
+
+    Args:
+        limit: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return await DeviceRepository(db).list_device_status_rows(
         active_only=True,
         latest_status=["down", "warning", "error"],
@@ -85,12 +131,30 @@ async def get_problem_devices(
 
 @router.get("/overview-data")
 async def get_overview_data(db: AsyncSession = Depends(get_db)) -> dict:
+    """Return combined dashboard overview dataset for legacy consumers.
+
+    Args:
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     payload = await _build_overview_panels(db, snapshot_limit=12, alerts_limit=5, incidents_limit=5)
     payload["problem_devices"] = await get_problem_devices(limit=25, db=db)
     return payload
 
 
 def _metric_history_items(rows: list[dict]) -> list[dict]:
+    """Perform metric history items.
+
+    Args:
+        rows: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return [
         {
             "id": metric["id"],

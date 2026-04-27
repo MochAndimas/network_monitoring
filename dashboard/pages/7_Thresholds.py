@@ -1,4 +1,7 @@
-"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+"""Define module logic for `dashboard/pages/7_Thresholds.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import altair as alt
 import pandas as pd
@@ -21,6 +24,15 @@ thresholds = get_json("/thresholds", [])
 
 
 def _threshold_category(key: str) -> str:
+    """Perform threshold category.
+
+    Args:
+        key: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     normalized = str(key or "").strip()
     if not normalized:
         return "uncategorized"

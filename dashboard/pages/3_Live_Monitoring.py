@@ -1,4 +1,7 @@
-"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+"""Define module logic for `dashboard/pages/3_Live_Monitoring.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import datetime, timedelta
 
@@ -44,6 +47,12 @@ auto_refresh, interval_seconds = refresh_controls("history", default_enabled=Tru
 
 
 def _render_history_filters() -> dict:
+    """Render history filters.
+
+    Returns:
+        TODO describe return value.
+
+    """
     default_device_label = _default_device_option_label(devices)
     device_option_labels = list(device_options.keys())
     if "history_selected_device" not in st.session_state or st.session_state["history_selected_device"] not in device_option_labels:
@@ -137,6 +146,12 @@ history_filters = _render_history_filters()
 
 
 def _render_history_body() -> None:
+    """Render history body.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     meta_container = st.container()
     summary_container = st.container()
     snapshot_container = st.container()

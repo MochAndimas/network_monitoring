@@ -1,4 +1,7 @@
-"""Provide automated regression tests for the network monitoring project."""
+"""Define test module behavior for `tests/api/dashboard_endpoints/common.py`.
+
+This module contains automated regression and validation scenarios.
+"""
 
 from contextlib import contextmanager
 from datetime import date, timedelta
@@ -29,6 +32,12 @@ API_HEADERS = {"x-api-key": TEST_API_KEY}
 @contextmanager
 
 def client_context():
+    """Perform client context.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -103,6 +112,17 @@ def client_context():
         run(drop_all(engine))
 
 async def _seed_devices_and_metrics(session_factory, devices_payload: list[dict], metrics_payload: list[dict]):
+    """Perform seed devices and metrics.
+
+    Args:
+        session_factory: Parameter input untuk routine ini.
+        devices_payload: Parameter input untuk routine ini.
+        metrics_payload: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     async with session_factory() as db:
         devices = await DeviceRepository(db).upsert_devices(devices_payload)
         if metrics_payload:
@@ -110,6 +130,19 @@ async def _seed_devices_and_metrics(session_factory, devices_payload: list[dict]
         return devices
 
 async def _create_user(session_factory, *, username: str, password: str, role: str = "viewer", full_name: str = "Test User"):
+    """Perform create user.
+
+    Args:
+        session_factory: Parameter input untuk routine ini.
+        username: Parameter input untuk routine ini.
+        password: Parameter input untuk routine ini.
+        role: Parameter input untuk routine ini.
+        full_name: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     async with session_factory() as db:
         user = User(
             username=username,

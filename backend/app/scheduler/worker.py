@@ -1,4 +1,7 @@
-"""Provide background scheduler and worker jobs for the network monitoring project."""
+"""Define module logic for `backend/app/scheduler/worker.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +21,12 @@ logger = logging.getLogger("network_monitoring.scheduler.worker")
 
 
 def _install_signal_handlers(stop_event: asyncio.Event) -> None:
+    """Perform install signal handlers.
+
+    Args:
+        stop_event: Parameter input untuk routine ini.
+
+    """
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
@@ -28,6 +37,12 @@ def _install_signal_handlers(stop_event: asyncio.Event) -> None:
 
 
 async def run_scheduler_worker() -> None:
+    """Run scheduler worker for scheduler execution workflows.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     configure_logging()
     validate_auth_configuration()
     if settings.app_env.lower() != "production":
@@ -53,6 +68,12 @@ async def run_scheduler_worker() -> None:
 
 
 def main() -> None:
+    """Return main for scheduler execution workflows.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     asyncio.run(run_scheduler_worker())
 
 

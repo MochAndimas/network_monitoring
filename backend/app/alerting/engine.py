@@ -1,4 +1,7 @@
-"""Provide alert evaluation and notification workflows for the network monitoring project."""
+"""Define module logic for `backend/app/alerting/engine.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +21,16 @@ from .rules import ALERT_RULES
 
 
 async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
+    """Return evaluate alerts.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        commit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     alert_repository = AlertRepository(db)
     incident_repository = IncidentRepository(db)
     metric_repository = MetricRepository(db)
@@ -290,6 +303,15 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
 
 
 def _metric_numeric_value(metric) -> float | None:
+    """Perform metric numeric value.
+
+    Args:
+        metric: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     numeric_value = getattr(metric, "metric_value_numeric", None)
     if numeric_value is not None:
         try:
@@ -300,6 +322,15 @@ def _metric_numeric_value(metric) -> float | None:
 
 
 def _evaluate_mikrotik_alerts(*, device, latest_metrics: dict, thresholds: dict[str, float], expected_alerts: dict) -> None:
+    """Perform evaluate mikrotik alerts.
+
+    Args:
+        device: Parameter input untuk routine ini.
+        latest_metrics: Parameter input untuk routine ini.
+        thresholds: Parameter input untuk routine ini.
+        expected_alerts: Parameter input untuk routine ini.
+
+    """
     api_metric = latest_metrics.get((device.id, "mikrotik_api"))
     if api_metric is not None and (
         str(api_metric.status or "").lower() == "error" or str(api_metric.metric_value or "") == "connection_failed"
@@ -358,6 +389,18 @@ def _evaluate_mikrotik_alerts(*, device, latest_metrics: dict, thresholds: dict[
 
 
 def _highest_dynamic_metric(latest_metrics: dict, *, device_id: int, prefix: str, suffixes: tuple[str, ...]):
+    """Perform highest dynamic metric.
+
+    Args:
+        latest_metrics: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        prefix: Parameter input untuk routine ini.
+        suffixes: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     matches = [
         (metric_name, metric)
         for (current_device_id, metric_name), metric in latest_metrics.items()
@@ -375,6 +418,17 @@ def _highest_dynamic_metric(latest_metrics: dict, *, device_id: int, prefix: str
 
 
 def _build_alert_payload(device_id: int | None, alert_type: str, message: str) -> dict:
+    """Build alert payload.
+
+    Args:
+        device_id: Parameter input untuk routine ini.
+        alert_type: Parameter input untuk routine ini.
+        message: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     rule = ALERT_RULES[alert_type]
     return {
         "device_id": device_id,
@@ -392,6 +446,18 @@ async def _ensure_incident_for_alert(
     device_id: int | None,
     message: str,
 ) -> str | None:
+    """Ensure incident for alert.
+
+    Args:
+        incident_repository: Parameter input untuk routine ini.
+        active_incidents_by_device: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        message: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     active_incident = active_incidents_by_device.get(device_id)
     if active_incident is not None:
         return None
@@ -415,6 +481,19 @@ async def _resolve_incident_if_cleared(
     device_id: int | None,
     resolved_at,
 ) -> str | None:
+    """Resolve incident if cleared.
+
+    Args:
+        incident_repository: Parameter input untuk routine ini.
+        active_incidents_by_device: Parameter input untuk routine ini.
+        active_alert_count_by_device: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        resolved_at: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     remaining_count = max(active_alert_count_by_device.get(device_id, 0) - 1, 0)
     active_alert_count_by_device[device_id] = remaining_count
     if remaining_count:

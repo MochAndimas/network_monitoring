@@ -1,4 +1,7 @@
-"""Provide monitoring collectors for network, device, server, and Mikrotik metrics for the network monitoring project."""
+"""Define module logic for `backend/app/monitors/device/service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +15,15 @@ QUALITY_CHECK_TYPES = {"access_point", "voip", "printer"}
 
 
 async def run_device_checks(db: AsyncSession) -> list[dict]:
+    """Run device checks as part of monitoring collection workflows.
+
+    Args:
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     devices = await DeviceRepository(db).list_by_types(DEVICE_TYPES, active_only=True)
     return [
         metric
@@ -21,6 +33,15 @@ async def run_device_checks(db: AsyncSession) -> list[dict]:
 
 
 async def _build_device_metrics(device) -> list[dict]:
+    """Build device metrics.
+
+    Args:
+        device: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if device.device_type == "printer":
         samples = await collect_ping_samples(device.ip_address)
         printer_snmp_metrics = await collect_printer_snmp_metrics(device.id, device.ip_address)

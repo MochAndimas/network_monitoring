@@ -1,4 +1,7 @@
-"""Provide FastAPI route handlers and HTTP helpers for the network monitoring project."""
+"""Define module logic for `backend/app/api/routes/incidents.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +23,19 @@ async def list_incidents(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[IncidentItem]:
+    """Return incidents using the legacy non-paginated contract.
+
+    Args:
+        response: Parameter input untuk routine ini.
+        status: Parameter input untuk routine ini.
+        limit: Parameter input untuk routine ini.
+        offset: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     apply_legacy_deprecation_headers(response, legacy_endpoint="/incidents")
     return [
         IncidentItem(**row)
@@ -35,6 +51,19 @@ async def list_incidents_paged(
     search: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> IncidentPage:
+    """Return incidents with filtering and pagination metadata.
+
+    Args:
+        status: Parameter input untuk routine ini.
+        limit: Parameter input untuk routine ini.
+        offset: Parameter input untuk routine ini.
+        search: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     rows, total = await IncidentRepository(db).list_incident_rows_paged(
         status=status,
         limit=limit,

@@ -1,4 +1,7 @@
-"""Integration tests that validate MySQL-specific locking and transaction behavior."""
+"""Define test module behavior for `tests/services/test_mysql_integration.py`.
+
+This module contains automated regression and validation scenarios.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +23,12 @@ from tests.test_utils import run
 
 
 def _require_mysql() -> None:
+    """Perform require mysql.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     if engine.dialect.name != "mysql":
         pytest.skip("MySQL integration tests require mysql dialect")
     try:
@@ -29,6 +38,12 @@ def _require_mysql() -> None:
 
 
 def test_mysql_monitoring_pipeline_guard_is_exclusive_for_nonblocking_acquire():
+    """Validate that mysql monitoring pipeline guard is exclusive for nonblocking acquire.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     _require_mysql()
 
     async def scenario() -> None:
@@ -41,6 +56,12 @@ def test_mysql_monitoring_pipeline_guard_is_exclusive_for_nonblocking_acquire():
 
 
 def test_mysql_cleanup_monitoring_data_rolls_back_when_transaction_fails():
+    """Validate that mysql cleanup monitoring data rolls back when transaction fails.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     _require_mysql()
 
     async def scenario() -> None:

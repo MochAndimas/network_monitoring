@@ -1,4 +1,7 @@
-"""Provide SQLAlchemy ORM models for the network monitoring project."""
+"""Define module logic for `backend/app/models/device.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from sqlalchemy import Boolean, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -7,6 +10,10 @@ from ..db.base import Base
 
 
 class Device(Base):
+    """Perform Device.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
     __tablename__ = "devices"
     __table_args__ = (
         Index("ix_devices_active_type_name", "is_active", "device_type", "name"),

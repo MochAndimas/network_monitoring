@@ -1,4 +1,7 @@
-"""Provide monitoring collectors for network, device, server, and Mikrotik metrics for the network monitoring project."""
+"""Define module logic for `backend/app/monitors/device/printer_snmp.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -95,6 +98,10 @@ WARNING_ERROR_FLAGS = {
 
 @dataclass(slots=True)
 class SnmpPrinterMetric:
+    """Perform SnmpPrinterMetric.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
     metric_name: str
     metric_value: str
     status: str
@@ -102,6 +109,16 @@ class SnmpPrinterMetric:
 
 
 async def collect_printer_snmp_metrics(device_id: int, ip_address: str) -> list[dict]:
+    """Collect printer snmp metrics as part of monitoring collection workflows.
+
+    Args:
+        device_id: Parameter input untuk routine ini.
+        ip_address: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     community = printer_snmp_community_for_ip(ip_address)
     if not community:
         return []
@@ -144,6 +161,17 @@ async def collect_printer_snmp_metrics(device_id: int, ip_address: str) -> list[
 
 
 async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str]) -> dict[str, object | None]:
+    """Perform fetch oid values.
+
+    Args:
+        ip_address: Parameter input untuk routine ini.
+        community: Parameter input untuk routine ini.
+        oids: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     tasks = {
         key: asyncio.create_task(_snmp_get_value(ip_address, community, oid))
         for key, oid in oids.items()
@@ -152,6 +180,17 @@ async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str
 
 
 async def _snmp_get_value(ip_address: str, community: str, oid: str) -> object | None:
+    """Perform snmp get value.
+
+    Args:
+        ip_address: Parameter input untuk routine ini.
+        community: Parameter input untuk routine ini.
+        oid: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     engine = SnmpEngine()
     try:
         error_indication, error_status, _, var_binds = await get_cmd(
@@ -174,6 +213,15 @@ async def _snmp_get_value(ip_address: str, community: str, oid: str) -> object |
 
 
 def _build_uptime_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
+    """Build uptime metric.
+
+    Args:
+        raw_values: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     uptime_ticks = _safe_int(raw_values.get("printer_uptime_ticks"))
     if uptime_ticks is None:
         return SnmpPrinterMetric("printer_uptime_seconds", "unavailable", "warning")
@@ -181,6 +229,15 @@ def _build_uptime_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMet
 
 
 def _build_printer_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
+    """Build printer status metric.
+
+    Args:
+        raw_values: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     status_code = _safe_int(raw_values.get("printer_status_code"))
     status_label = PRINTER_STATUS_LABELS.get(status_code, "unknown")
     metric_status = "up" if status_label in {"idle", "printing", "warmup"} else "warning"
@@ -188,6 +245,15 @@ def _build_printer_status_metric(raw_values: dict[str, object | None]) -> SnmpPr
 
 
 def _build_error_state_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
+    """Build error state metric.
+
+    Args:
+        raw_values: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     flags = _decode_error_state(raw_values.get("printer_error_state_raw"))
     if not flags:
         return SnmpPrinterMetric("printer_error_state", "none", "ok")
@@ -196,6 +262,15 @@ def _build_error_state_metric(raw_values: dict[str, object | None]) -> SnmpPrint
 
 
 def _build_ink_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
+    """Build ink status metric.
+
+    Args:
+        raw_values: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     flags = set(_decode_error_state(raw_values.get("printer_error_state_raw")))
     if "no_toner" in flags:
         return SnmpPrinterMetric("printer_ink_status", "empty", "error")
@@ -205,6 +280,15 @@ def _build_ink_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinte
 
 
 def _build_paper_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
+    """Build paper status metric.
+
+    Args:
+        raw_values: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     flags = set(_decode_error_state(raw_values.get("printer_error_state_raw")))
     if "no_paper" in flags or "input_tray_empty" in flags:
         return SnmpPrinterMetric("printer_paper_status", "empty", "error")
@@ -219,6 +303,15 @@ def _build_paper_status_metric(raw_values: dict[str, object | None]) -> SnmpPrin
 
 
 def _build_total_pages_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
+    """Build total pages metric.
+
+    Args:
+        raw_values: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     total_pages = _safe_int(raw_values.get("printer_total_pages"))
     if total_pages is None:
         return SnmpPrinterMetric("printer_total_pages", "unavailable", "warning")
@@ -226,6 +319,15 @@ def _build_total_pages_metric(raw_values: dict[str, object | None]) -> SnmpPrint
 
 
 def _decode_error_state(raw_value: object | None) -> list[str]:
+    """Decode error state.
+
+    Args:
+        raw_value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if raw_value is None:
         return []
     payload = getattr(raw_value, "asOctets", lambda: b"")()
@@ -245,6 +347,15 @@ def _decode_error_state(raw_value: object | None) -> list[str]:
 
 
 def _safe_int(raw_value: object | None) -> int | None:
+    """Perform safe int.
+
+    Args:
+        raw_value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     try:
         if raw_value is None:
             return None

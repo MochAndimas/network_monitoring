@@ -1,4 +1,7 @@
-"""Provide shared Streamlit dashboard UI and API helpers for the network monitoring project."""
+"""Define module logic for `dashboard/components/auth.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +21,12 @@ WIB = ZoneInfo("Asia/Jakarta")
 
 
 def _initialize_auth_state() -> None:
+    """Perform initialize auth state.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     defaults = {
         "auth_token": None,
         "auth_role": None,
@@ -35,6 +44,12 @@ def _initialize_auth_state() -> None:
 
 
 def _hide_sidebar_navigation() -> None:
+    """Perform hide sidebar navigation.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     st.markdown(
         """
         <style>
@@ -52,6 +67,12 @@ def _hide_sidebar_navigation() -> None:
 
 
 def _clear_auth_state(*, restore_completed: bool = False) -> None:
+    """Perform clear auth state.
+
+    Args:
+        restore_completed: Parameter input untuk routine ini.
+
+    """
     for key in (
         "auth_token",
         "auth_role",
@@ -68,6 +89,12 @@ def _clear_auth_state(*, restore_completed: bool = False) -> None:
 
 
 def _apply_auth_payload(payload: dict) -> None:
+    """Perform apply auth payload.
+
+    Args:
+        payload: Parameter input untuk routine ini.
+
+    """
     user = payload.get("user", {})
     st.session_state["auth_token"] = payload.get("access_token")
     st.session_state["auth_role"] = user.get("role")
@@ -79,10 +106,26 @@ def _apply_auth_payload(payload: dict) -> None:
     st.session_state["auth_login_error"] = None
 
 def _resolve_bridge_host() -> str:
+    """Resolve bridge host.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return PUBLIC_API_BASE_URL or API_BASE_URL
 
 
 def start_auth_bridge_request(action: str, payload: dict | None = None) -> str:
+    """Return start auth bridge request.
+
+    Args:
+        action: Parameter input untuk routine ini.
+        payload: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     request_id = str(uuid.uuid4())
     st.session_state["auth_bridge_request"] = {
         "id": request_id,
@@ -93,11 +136,29 @@ def start_auth_bridge_request(action: str, payload: dict | None = None) -> str:
 
 
 def _bridge_component_key(action: str) -> str:
+    """Perform bridge component key.
+
+    Args:
+        action: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     normalized = str(action or "").strip().lower() or "unknown"
     return f"auth_bridge_{normalized}"
 
 
 def consume_auth_bridge_response(*, component_key: str) -> dict | None:
+    """Return consume auth bridge response.
+
+    Args:
+        component_key: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     pending_request = st.session_state.get("auth_bridge_request")
     if not isinstance(pending_request, dict):
         return None
@@ -117,6 +178,12 @@ def consume_auth_bridge_response(*, component_key: str) -> dict | None:
 
 
 def _restore_not_needed() -> bool:
+    """Perform restore not needed.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if st.session_state.get("auth_restore_completed") is True and not st.session_state.get("dashboard_authenticated"):
         return True
     if not st.session_state.get("dashboard_authenticated"):
@@ -132,6 +199,12 @@ def _restore_not_needed() -> bool:
 
 
 def _parsed_auth_expiry() -> datetime | None:
+    """Perform parsed auth expiry.
+
+    Returns:
+        TODO describe return value.
+
+    """
     raw_value = st.session_state.get("auth_expires_at")
     if not raw_value:
         return None
@@ -145,6 +218,15 @@ def _parsed_auth_expiry() -> datetime | None:
 
 
 def _login_error_message(bridge_response: dict) -> str:
+    """Perform login error message.
+
+    Args:
+        bridge_response: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     status = int(bridge_response.get("status", 0) or 0)
     error = str(bridge_response.get("error") or "").strip()
     request_id = str(bridge_response.get("request_id") or "").strip()
@@ -167,6 +249,12 @@ def _login_error_message(bridge_response: dict) -> str:
     return f"Login gagal: HTTP {status}.{request_suffix}".rstrip()
 
 def _restore_login_state() -> bool:
+    """Perform restore login state.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if _restore_not_needed():
         return True
 
@@ -190,6 +278,12 @@ def _restore_login_state() -> bool:
 
 
 def _consume_logout_request() -> bool:
+    """Perform consume logout request.
+
+    Returns:
+        TODO describe return value.
+
+    """
     pending_request = st.session_state.get("auth_bridge_request")
     if not isinstance(pending_request, dict) or pending_request.get("action") != "logout":
         return False
@@ -205,6 +299,12 @@ def _consume_logout_request() -> bool:
 
 
 def require_dashboard_login() -> None:
+    """Enforce dashboard login requirements.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     _initialize_auth_state()
     _consume_logout_request()
 
@@ -277,14 +377,32 @@ def require_dashboard_login() -> None:
 
 
 def current_role() -> str | None:
+    """Return current role.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return st.session_state.get("auth_role")
 
 
 def is_admin() -> bool:
+    """Return is admin.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return current_role() == "admin"
 
 
 def session_expiry_label() -> str:
+    """Return session expiry label.
+
+    Returns:
+        TODO describe return value.
+
+    """
     raw_value = st.session_state.get("auth_expires_at")
     if not raw_value:
         return "-"

@@ -1,4 +1,7 @@
-"""Auth session management helpers."""
+"""Define module logic for `backend/app/services/auth/sessions.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +16,17 @@ from ...models.user import AuthLoginAttempt, AuthSession, User
 
 
 async def list_active_sessions_for_user(db: AsyncSession, *, user_id: int, current_jwt_id: str | None) -> list[AuthSession]:
+    """List active sessions for one user ordered by recency.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        user_id: Parameter input untuk routine ini.
+        current_jwt_id: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     rows = await db.scalars(
         select(AuthSession)
         .where(
@@ -27,6 +41,17 @@ async def list_active_sessions_for_user(db: AsyncSession, *, user_id: int, curre
 
 
 async def revoke_other_sessions_for_user(db: AsyncSession, *, user_id: int, current_jwt_id: str | None) -> int:
+    """Revoke all sessions except the current one for a user.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        user_id: Parameter input untuk routine ini.
+        current_jwt_id: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     current_time = utcnow()
     result = await db.execute(
         select(AuthSession).where(
@@ -46,6 +71,16 @@ async def revoke_other_sessions_for_user(db: AsyncSession, *, user_id: int, curr
 
 
 async def cleanup_auth_data(db: AsyncSession, *, commit: bool = True) -> dict[str, int]:
+    """Delete expired session and login-attempt records by retention policy.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        commit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     now = utcnow()
     session_cutoff = now - timedelta(days=settings.auth_session_retention_days)
     attempt_cutoff = now - timedelta(days=settings.auth_login_attempt_retention_days)
@@ -75,6 +110,17 @@ async def list_sessions_for_admin(
     username: str | None = None,
     include_revoked: bool = False,
 ) -> list[tuple[AuthSession, User]]:
+    """List user sessions for admin management workflows.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        username: Parameter input untuk routine ini.
+        include_revoked: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     query = (
         select(AuthSession, User)
         .join(User, User.id == AuthSession.user_id)
@@ -89,6 +135,16 @@ async def list_sessions_for_admin(
 
 
 async def revoke_all_sessions_for_user(db: AsyncSession, *, user_id: int) -> int:
+    """Revoke every active session for a user.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        user_id: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     current_time = utcnow()
     result = await db.execute(
         select(AuthSession).where(

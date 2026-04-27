@@ -1,4 +1,7 @@
-"""Provide database engine, session, and initialization helpers for the network monitoring project."""
+"""Define module logic for `backend/app/db/session.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +14,15 @@ from ..core.config import settings
 
 
 def _async_database_url(database_url: str) -> str:
+    """Perform async database url.
+
+    Args:
+        database_url: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if database_url.startswith("sqlite:///") and not database_url.startswith("sqlite+aiosqlite:///"):
         return database_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
     if database_url.startswith("mysql+pymysql://"):
@@ -21,6 +33,15 @@ def _async_database_url(database_url: str) -> str:
 
 
 def _engine_options(database_url: str) -> dict:
+    """Perform engine options.
+
+    Args:
+        database_url: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     options = {
         "future": True,
         "pool_pre_ping": True,
@@ -45,11 +66,23 @@ SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, autoflush=Fa
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
+    """Yield a request-scoped async database session.
+
+    Returns:
+        TODO describe return value.
+
+    """
     async with SessionLocal() as db:
         yield db
 
 
 async def check_database_connection() -> bool:
+    """Return True when a simple database query succeeds.
+
+    Returns:
+        TODO describe return value.
+
+    """
     try:
         async with engine.connect() as connection:
             await connection.execute(text("SELECT 1"))

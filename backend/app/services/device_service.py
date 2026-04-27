@@ -1,4 +1,7 @@
-"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+"""Define module logic for `backend/app/services/device_service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +19,21 @@ async def list_device_rows_filtered(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[dict]:
+    """List devices using optional filters, ordering, and pagination controls.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        active_only: Parameter input untuk routine ini.
+        device_type: Parameter input untuk routine ini.
+        latest_status: Parameter input untuk routine ini.
+        search: Parameter input untuk routine ini.
+        limit: Parameter input untuk routine ini.
+        offset: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return await DeviceRepository(db).list_device_status_rows(
         active_only=active_only,
         device_type=device_type,
@@ -27,6 +45,16 @@ async def list_device_rows_filtered(
 
 
 async def get_device_row(db: AsyncSession, device_id: int) -> dict:
+    """Fetch one device row by identifier.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     rows = await DeviceRepository(db).list_device_status_rows(device_id=device_id)
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
@@ -34,6 +62,16 @@ async def get_device_row(db: AsyncSession, device_id: int) -> dict:
 
 
 async def create_device(db: AsyncSession, payload: dict):
+    """Create and persist a new managed device entity.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        payload: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     repository = DeviceRepository(db)
     existing = await repository.get_by_ip_address(payload["ip_address"])
     if existing is not None:
@@ -42,6 +80,17 @@ async def create_device(db: AsyncSession, payload: dict):
 
 
 async def update_device(db: AsyncSession, device_id: int, payload: dict):
+    """Update an existing managed device entity.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        payload: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     repository = DeviceRepository(db)
     device = await repository.get_by_id(device_id)
     if device is None:
@@ -57,6 +106,13 @@ async def update_device(db: AsyncSession, device_id: int, payload: dict):
 
 
 async def delete_device(db: AsyncSession, device_id: int) -> None:
+    """Delete a managed device entity by identifier.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+
+    """
     repository = DeviceRepository(db)
     device = await repository.get_by_id(device_id)
     if device is None:

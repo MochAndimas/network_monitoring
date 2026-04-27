@@ -1,4 +1,7 @@
-"""Provide operator and maintenance scripts for the network monitoring project."""
+"""Define module logic for `scripts/run_monitor_cycle.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import asyncio
 
@@ -8,6 +11,12 @@ from backend.app.services.run_cycle_service import run_monitoring_cycle
 
 
 async def main() -> None:
+    """Run the module entrypoint.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     await init_db()
     async with SessionLocal() as db:
         result = await run_monitoring_cycle(db)

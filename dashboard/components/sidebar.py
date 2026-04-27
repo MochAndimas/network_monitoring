@@ -1,9 +1,18 @@
-"""Provide shared Streamlit dashboard UI and API helpers for the network monitoring project."""
+"""Define module logic for `dashboard/components/sidebar.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import streamlit.components.v1 as components
 
 
 def collapse_sidebar_on_page_load() -> None:
+    """Collapse sidebar on initial page load.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     components.html(
         """
         <script>

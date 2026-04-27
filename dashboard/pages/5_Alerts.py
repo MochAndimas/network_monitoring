@@ -1,4 +1,7 @@
-"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+"""Define module logic for `dashboard/pages/5_Alerts.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from urllib.parse import quote_plus
 
@@ -52,6 +55,12 @@ alerts_offset = (current_alerts_page - 1) * int(alerts_page_size)
 
 
 def _render_alerts_body() -> None:
+    """Render alerts body.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     query_parts = [f"limit={int(alerts_page_size)}", f"offset={alerts_offset}"]
     if severity_filter != "All":
         query_parts.append(f"severity={quote_plus(str(severity_filter).strip().lower())}")

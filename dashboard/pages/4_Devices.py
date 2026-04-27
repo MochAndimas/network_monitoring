@@ -1,4 +1,7 @@
-"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+"""Define module logic for `dashboard/pages/4_Devices.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from urllib.parse import urlencode
 
@@ -32,14 +35,38 @@ type_label_by_value = {value: label for label, value in type_labels.items()}
 
 
 def _clear_cached_gets() -> None:
+    """Perform clear cached gets.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     st.cache_data.clear()
 
 
 def _device_type_label(device_type: str) -> str:
+    """Perform device type label.
+
+    Args:
+        device_type: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return type_label_by_value.get(device_type, device_type.replace("_", " ").title())
 
 
 def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
+    """Perform prepare manage frame.
+
+    Args:
+        rows: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     dataframe = pd.DataFrame(rows)
     if dataframe.empty:
         return dataframe
@@ -59,6 +86,12 @@ def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
 
 @st.dialog("Ubah Device")
 def _render_edit_device_dialog(device: dict) -> None:
+    """Render edit device dialog.
+
+    Args:
+        device: Parameter input untuk routine ini.
+
+    """
     edit_key_prefix = f"edit_device_{device['id']}"
     type_options = list(type_labels.keys())
     existing_type_label = _device_type_label(str(device.get("device_type") or ""))
@@ -101,6 +134,12 @@ def _render_edit_device_dialog(device: dict) -> None:
 
 @st.dialog("Hapus Device")
 def _render_delete_device_dialog(device: dict) -> None:
+    """Render delete device dialog.
+
+    Args:
+        device: Parameter input untuk routine ini.
+
+    """
     st.warning(f"Hapus device `{device['name']}` ({device['ip_address']})?")
     st.caption("Metric device ini akan ikut dihapus. Alert dan incident lama tetap disimpan tanpa relasi device.")
     confirm = st.text_input("Ketik DELETE untuk konfirmasi", key=f"delete_device_{device['id']}_confirm")

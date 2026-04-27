@@ -1,4 +1,7 @@
-"""Admin auth operations."""
+"""Define module logic for `backend/app/services/auth/admin.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +16,15 @@ from .sessions import revoke_all_sessions_for_user, revoke_other_sessions_for_us
 
 
 async def list_users_for_admin(db: AsyncSession) -> list[User]:
+    """Return paged user rows visible to administrative callers.
+
+    Args:
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     rows = await db.scalars(select(User).order_by(User.username.asc()))
     return list(rows.all())
 
@@ -25,6 +37,19 @@ async def create_user_for_admin(
     password: str,
     role: str,
 ) -> User:
+    """Create a user account and enforce role/password policy constraints.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        username: Parameter input untuk routine ini.
+        full_name: Parameter input untuk routine ini.
+        password: Parameter input untuk routine ini.
+        role: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     normalized_username = username.strip().lower()
     existing = await db.scalar(select(User).where(User.username == normalized_username))
     if existing is not None:
@@ -53,6 +78,20 @@ async def update_user_for_admin(
     is_active: bool | None = None,
     disabled_reason: str | None = None,
 ) -> User:
+    """Update account profile, role, and activation fields for a user.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        user_id: Parameter input untuk routine ini.
+        full_name: Parameter input untuk routine ini.
+        role: Parameter input untuk routine ini.
+        is_active: Parameter input untuk routine ini.
+        disabled_reason: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -77,6 +116,17 @@ async def update_user_for_admin(
 
 
 async def reset_user_password_for_admin(db: AsyncSession, *, user_id: int, new_password: str) -> User:
+    """Reset user password and rotate credential state as needed.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        user_id: Parameter input untuk routine ini.
+        new_password: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -97,6 +147,19 @@ async def change_password_for_user(
     new_password: str,
     current_jwt_id: str | None,
 ) -> User:
+    """Change password for a user after validating old credentials.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        user_id: Parameter input untuk routine ini.
+        current_password: Parameter input untuk routine ini.
+        new_password: Parameter input untuk routine ini.
+        current_jwt_id: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     user = await db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

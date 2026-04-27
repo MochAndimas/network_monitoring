@@ -1,4 +1,7 @@
-"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+"""Define module logic for `backend/app/services/threshold_service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +32,16 @@ DEFAULT_THRESHOLDS = {
 
 
 async def ensure_default_thresholds(db: AsyncSession, *, commit: bool = True) -> list:
+    """Ensure default threshold records exist in persistent storage.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        commit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     repository = ThresholdRepository(db)
     existing_thresholds = {threshold.key: threshold for threshold in await repository.list_thresholds()}
     thresholds = list(existing_thresholds.values())
@@ -53,6 +66,15 @@ async def ensure_default_thresholds(db: AsyncSession, *, commit: bool = True) ->
 
 
 async def list_threshold_rows(db: AsyncSession) -> list[dict]:
+    """List threshold rows sorted by key.
+
+    Args:
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     await ensure_default_thresholds(db, commit=True)
     return [
         {"id": threshold.id, "key": threshold.key, "value": threshold.value, "description": threshold.description}
@@ -61,11 +83,32 @@ async def list_threshold_rows(db: AsyncSession) -> list[dict]:
 
 
 async def get_threshold_map(db: AsyncSession, *, commit: bool = True) -> dict[str, float]:
+    """Return threshold values as a key-to-float mapping.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        commit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     await ensure_default_thresholds(db, commit=commit)
     return {threshold.key: threshold.value for threshold in await ThresholdRepository(db).list_thresholds()}
 
 
 async def update_threshold_value(db: AsyncSession, key: str, value: float) -> dict:
+    """Update one threshold key with a validated numeric value.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        key: Parameter input untuk routine ini.
+        value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if key not in DEFAULT_THRESHOLDS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Threshold not found")
     _, description = DEFAULT_THRESHOLDS[key]

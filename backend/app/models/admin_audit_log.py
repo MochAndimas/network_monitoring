@@ -1,4 +1,7 @@
-"""Provide SQLAlchemy ORM models for the network monitoring project."""
+"""Define module logic for `backend/app/models/admin_audit_log.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import datetime
 
@@ -10,6 +13,10 @@ from ..core.time import utcnow
 
 
 class AdminAuditLog(Base):
+    """Perform AdminAuditLog.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
     __tablename__ = "admin_audit_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

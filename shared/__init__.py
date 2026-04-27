@@ -1,2 +1,5 @@
-"""Shared helper utilities used by backend and dashboard modules."""
+"""Define module logic for `shared/__init__.py`.
+
+This module contains project-specific implementation details.
+"""
 

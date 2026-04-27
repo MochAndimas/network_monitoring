@@ -1,4 +1,7 @@
-"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+"""Define module logic for `backend/app/services/monitoring_service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -15,10 +18,30 @@ from ..repositories.metric_repository import MetricRepository
 logger = logging.getLogger("network_monitoring.service")
 
 async def persist_metrics(db: AsyncSession, metrics: list[dict], *, commit: bool = True) -> list:
+    """Persist one monitoring batch of metric samples.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        metrics: Parameter input untuk routine ini.
+        commit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return await MetricRepository(db).create_metrics(metrics, commit=commit)
 
 
 async def build_dashboard_summary(db: AsyncSession) -> dict:
+    """Build dashboard summary payload from latest monitoring data.
+
+    Args:
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     started_at = perf_counter()
     grouped_statuses = await DeviceRepository(db).summarize_active_device_statuses()
     active_alerts = await AlertRepository(db).count_active_alerts()
@@ -41,6 +64,15 @@ async def build_dashboard_summary(db: AsyncSession) -> dict:
 
 
 def status_rollup_from_counts(status_counts: dict[str, int] | None) -> str:
+    """Compute health rollup label from aggregated status counters.
+
+    Args:
+        status_counts: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if not status_counts:
         return "unknown"
 

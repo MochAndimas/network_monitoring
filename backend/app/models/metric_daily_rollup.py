@@ -1,4 +1,7 @@
-"""Provide SQLAlchemy ORM models for the network monitoring project."""
+"""Define module logic for `backend/app/models/metric_daily_rollup.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import date, datetime
 
@@ -9,6 +12,10 @@ from ..core.time import now
 from ..db.base import Base
 
 class MetricDailyRollup(Base):
+    """Perform MetricDailyRollup.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
     __tablename__ = "metric_daily_rollups"
     __table_args__ = (UniqueConstraint("device_id", "rollup_date", name="uq_metric_daily_rollups_device_date"),)
 

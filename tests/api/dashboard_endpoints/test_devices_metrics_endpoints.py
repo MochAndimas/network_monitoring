@@ -1,8 +1,17 @@
-"""Split tests from legacy test_dashboard_endpoints module."""
+"""Define test module behavior for `tests/api/dashboard_endpoints/test_devices_metrics_endpoints.py`.
+
+This module contains automated regression and validation scenarios.
+"""
 
 from .common import *  # noqa: F401,F403
 
 def test_devices_endpoint_returns_latest_status():
+    """Validate that devices endpoint returns latest status.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(
             _seed_devices_and_metrics(
@@ -43,6 +52,12 @@ def test_devices_endpoint_returns_latest_status():
         assert status_summary_response.json() == {"down": 1, "up": 1}
 
 def test_create_update_and_delete_device_endpoint():
+    """Validate that create update and delete device endpoint.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         create_response = client.post(
             "/devices",
@@ -117,6 +132,12 @@ def test_create_update_and_delete_device_endpoint():
         assert run(fetch_alert_device_id()) is None
 
 def test_device_type_metadata_and_validation():
+    """Validate that device type metadata and validation.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, _session_factory):
         types_response = client.get("/devices/meta/types", headers=API_HEADERS)
         invalid_ip_response = client.post(
@@ -139,6 +160,12 @@ def test_device_type_metadata_and_validation():
         assert invalid_type_response.status_code == 422
 
 def test_metrics_history_filters():
+    """Validate that metrics history filters.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -195,6 +222,12 @@ def test_metrics_history_filters():
         assert names_response.json() == ["cpu_percent", "memory_percent"]
 
 def test_devices_endpoint_supports_filters_and_pagination():
+    """Validate that devices endpoint supports filters and pagination.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(
             _seed_devices_and_metrics(
@@ -251,6 +284,12 @@ def test_devices_endpoint_supports_filters_and_pagination():
         assert len(paged_payload["items"]) == 1
 
 def test_metrics_history_supports_time_window_filters():
+    """Validate that metrics history supports time window filters.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -308,6 +347,12 @@ def test_metrics_history_supports_time_window_filters():
         assert len(paged_payload["items"]) == 1
 
 def test_metrics_history_paged_supports_bulk_metric_names_with_per_metric_limit():
+    """Validate that metrics history paged supports bulk metric names with per metric limit.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -367,6 +412,12 @@ def test_metrics_history_paged_supports_bulk_metric_names_with_per_metric_limit(
         assert metric_names == ["cpu_percent", "memory_percent"]
 
 def test_metrics_daily_summary_reads_rollup_table_with_filters():
+    """Validate that metrics daily summary reads rollup table with filters.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -426,6 +477,12 @@ def test_metrics_daily_summary_reads_rollup_table_with_filters():
         assert payload["items"][0]["average_packet_loss_percent"] == 1.25
 
 def test_metrics_daily_summary_supports_pagination():
+    """Validate that metrics daily summary supports pagination.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -464,6 +521,12 @@ def test_metrics_daily_summary_supports_pagination():
         assert payload["items"][0]["rollup_date"] == "2026-04-21"
 
 def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
+    """Validate that latest snapshot endpoint is unfiltered and paged.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -533,6 +596,12 @@ def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
         assert any(value == "300" for value in uptime_map.values())
 
 def test_metrics_history_context_endpoint():
+    """Validate that metrics history context endpoint.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -580,6 +649,12 @@ def test_metrics_history_context_endpoint():
         assert "snapshot_uptime_map" in payload
 
 def test_metrics_history_live_endpoint_returns_lightweight_sample():
+    """Validate that metrics history live endpoint returns lightweight sample.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -635,6 +710,12 @@ def test_metrics_history_live_endpoint_returns_lightweight_sample():
         assert len(payload["latest_snapshot"]["items"]) == 2
 
 def test_metrics_history_live_global_snapshot_summary_remains_representative_when_paged():
+    """Validate that metrics history live global snapshot summary remains representative when paged.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -680,6 +761,12 @@ def test_metrics_history_live_global_snapshot_summary_remains_representative_whe
         assert payload["latest_snapshot_status_summary"] == {"down": 1, "up": 1}
 
 def test_latest_snapshot_status_summary_preserves_fallback_first_status_behavior():
+    """Validate that latest snapshot status summary preserves fallback first status behavior.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -720,6 +807,12 @@ def test_latest_snapshot_status_summary_preserves_fallback_first_status_behavior
         assert context_summary == status_summary
 
 def test_threshold_endpoints_and_update():
+    """Validate that threshold endpoints and update.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, _session_factory):
         list_response = client.get("/thresholds", headers=API_HEADERS)
 

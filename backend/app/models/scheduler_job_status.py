@@ -1,4 +1,7 @@
-"""Provide SQLAlchemy ORM models for the network monitoring project."""
+"""Define module logic for `backend/app/models/scheduler_job_status.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import datetime
 
@@ -9,6 +12,10 @@ from ..core.time import now
 from ..db.base import Base
 
 class SchedulerJobStatus(Base):
+    """Perform SchedulerJobStatus.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
     __tablename__ = "scheduler_job_statuses"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

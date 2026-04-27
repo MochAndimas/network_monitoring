@@ -1,4 +1,7 @@
-"""Provide monitoring collectors for network, device, server, and Mikrotik metrics for the network monitoring project."""
+"""Define module logic for `backend/app/monitors/server/service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import asyncio
 import ipaddress
@@ -17,6 +20,15 @@ logger = logging.getLogger("network_monitoring.server")
 
 
 async def run_server_checks(db: AsyncSession) -> list[dict]:
+    """Run server checks as part of monitoring collection workflows.
+
+    Args:
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     servers = await DeviceRepository(db).list_by_type("server", active_only=True)
     metrics: list[dict] = []
     if not servers:
@@ -76,6 +88,15 @@ async def run_server_checks(db: AsyncSession) -> list[dict]:
 
 
 def _resolve_server_resource_target(servers: list):
+    """Resolve server resource target.
+
+    Args:
+        servers: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     configured_ip = str(settings.server_resource_device_ip or "").strip()
     if configured_ip:
         for server in servers:
@@ -105,6 +126,15 @@ def _resolve_server_resource_target(servers: list):
 
 
 def _is_loopback_ip(value: str) -> bool:
+    """Perform is loopback ip.
+
+    Args:
+        value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     try:
         return ipaddress.ip_address(str(value)).is_loopback
     except ValueError:

@@ -1,4 +1,7 @@
-"""Provide FastAPI route handlers and HTTP helpers for the network monitoring project."""
+"""Define module logic for `backend/app/api/routes/metrics.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import date, datetime, timedelta
 
@@ -20,6 +23,16 @@ async def get_metric_names(
     device_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[str]:
+    """Return known metric names available for querying.
+
+    Args:
+        device_id: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return await MetricRepository(db).list_metric_names(device_id=device_id)
 
 
@@ -34,6 +47,22 @@ async def get_metrics_history(
     checked_to: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[MetricHistoryItem]:
+    """Return metric history rows using the legacy response shape.
+
+    Args:
+        response: Parameter input untuk routine ini.
+        limit: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        metric_name: Parameter input untuk routine ini.
+        status: Parameter input untuk routine ini.
+        checked_from: Parameter input untuk routine ini.
+        checked_to: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     apply_legacy_deprecation_headers(response, legacy_endpoint="/metrics/history")
     metrics = await MetricRepository(db).list_recent_metric_rows(
         limit=limit,
@@ -60,6 +89,24 @@ async def get_metrics_history_paged(
     checked_to: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricHistoryPage:
+    """Return metric history rows with pagination and filters.
+
+    Args:
+        limit: Parameter input untuk routine ini.
+        offset: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        metric_name: Parameter input untuk routine ini.
+        metric_names: Parameter input untuk routine ini.
+        per_metric_limit: Parameter input untuk routine ini.
+        status: Parameter input untuk routine ini.
+        checked_from: Parameter input untuk routine ini.
+        checked_to: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     repository = MetricRepository(db)
     metrics, total = await repository.list_recent_metric_rows_paged(
         limit=limit,
@@ -116,6 +163,26 @@ async def get_metrics_history_context(
     include_selected_device_snapshot: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    """Return grouped context around metric history trends and status.
+
+    Args:
+        limit: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        metric_name: Parameter input untuk routine ini.
+        status: Parameter input untuk routine ini.
+        checked_from: Parameter input untuk routine ini.
+        checked_to: Parameter input untuk routine ini.
+        selected_device_limit: Parameter input untuk routine ini.
+        selected_device_offset: Parameter input untuk routine ini.
+        snapshot_limit: Parameter input untuk routine ini.
+        snapshot_offset: Parameter input untuk routine ini.
+        include_selected_device_snapshot: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     repository = MetricRepository(db)
     history_rows, history_total = await repository.list_recent_metric_rows_paged(
         limit=limit,
@@ -244,6 +311,25 @@ async def get_metrics_history_live(
     include_selected_device_snapshot: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    """Return latest metric-history window optimized for live dashboards.
+
+    Args:
+        limit: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        metric_name: Parameter input untuk routine ini.
+        status: Parameter input untuk routine ini.
+        checked_from: Parameter input untuk routine ini.
+        checked_to: Parameter input untuk routine ini.
+        selected_device_limit: Parameter input untuk routine ini.
+        snapshot_limit: Parameter input untuk routine ini.
+        snapshot_offset: Parameter input untuk routine ini.
+        include_selected_device_snapshot: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     repository = MetricRepository(db)
     # Live mode is intentionally fixed to the most recent 24 hours.
     live_checked_to = now()
@@ -371,6 +457,20 @@ async def get_metrics_daily_summary(
     rollup_to: date | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricDailySummaryPage:
+    """Return aggregated daily metric summaries with pagination.
+
+    Args:
+        limit: Parameter input untuk routine ini.
+        offset: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        rollup_from: Parameter input untuk routine ini.
+        rollup_to: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     rows, total = await MetricRepository(db).list_daily_summary_rows_paged(
         limit=limit,
         offset=offset,
@@ -401,6 +501,18 @@ async def get_latest_metrics_snapshot_paged(
     device_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricHistoryPage:
+    """Return latest-metric snapshot rows with pagination/filtering.
+
+    Args:
+        limit: Parameter input untuk routine ini.
+        offset: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     repository = MetricRepository(db)
     metrics, total = await repository.list_latest_metric_rows_paged(limit=limit, offset=offset, device_id=device_id)
     payload_scope = "device" if device_id is not None else "global"
@@ -423,6 +535,15 @@ async def get_latest_metrics_snapshot_paged(
 async def get_latest_snapshot_status_summary(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
+    """Return status distribution derived from latest metric snapshots.
+
+    Args:
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return await MetricRepository(db).summarize_latest_snapshot_status_counts()
 
 
@@ -432,14 +553,43 @@ async def get_latest_snapshot_uptime_map(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
+    """Return uptime streak mappings from latest snapshot data.
+
+    Args:
+        limit: Parameter input untuk routine ini.
+        offset: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return await MetricRepository(db).latest_snapshot_uptime_map(limit=limit, offset=offset)
 
 
 def _metric_history_response_items(metrics: list[dict]) -> list[MetricHistoryItem]:
+    """Perform metric history response items.
+
+    Args:
+        metrics: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return [MetricHistoryItem(**metric) for metric in _metric_history_dicts(metrics)]
 
 
 def _metric_history_dicts(metrics: list[dict]) -> list[dict]:
+    """Perform metric history dicts.
+
+    Args:
+        metrics: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return [
         {
             "id": metric["id"],

@@ -1,4 +1,7 @@
-"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+"""Define module logic for `dashboard/pages/2_Daily_Summary.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
@@ -25,12 +28,32 @@ render_page_header(
 
 
 def _format_number(value, suffix: str = "", decimals: int = 2) -> str:
+    """Format number.
+
+    Args:
+        value: Parameter input untuk routine ini.
+        suffix: Parameter input untuk routine ini.
+        decimals: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if value is None or pd.isna(value):
         return "-"
     return f"{float(value):.{decimals}f}{suffix}"
 
 
 def _prepare_summary_frame(rows: list[dict]) -> pd.DataFrame:
+    """Perform prepare summary frame.
+
+    Args:
+        rows: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     dataframe = pd.DataFrame(rows)
     if dataframe.empty:
         return dataframe
@@ -54,6 +77,17 @@ def _prepare_summary_frame(rows: list[dict]) -> pd.DataFrame:
 
 
 def _weighted_average(dataframe: pd.DataFrame, value_column: str, weight_column: str) -> float | None:
+    """Perform weighted average.
+
+    Args:
+        dataframe: Parameter input untuk routine ini.
+        value_column: Parameter input untuk routine ini.
+        weight_column: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if dataframe.empty or value_column not in dataframe.columns or weight_column not in dataframe.columns:
         return None
     working = dataframe[[value_column, weight_column]].dropna().copy()
@@ -68,10 +102,30 @@ def _weighted_average(dataframe: pd.DataFrame, value_column: str, weight_column:
 
 
 def _weighted_average_for_group(group: pd.DataFrame, value_column: str, weight_column: str) -> float | None:
+    """Perform weighted average for group.
+
+    Args:
+        group: Parameter input untuk routine ini.
+        value_column: Parameter input untuk routine ini.
+        weight_column: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return _weighted_average(group, value_column, weight_column)
 
 
 def _aggregate_all_devices_weighted(frame: pd.DataFrame) -> pd.DataFrame:
+    """Perform aggregate all devices weighted.
+
+    Args:
+        frame: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     rows: list[dict] = []
     for rollup_date, group in frame.groupby("rollup_date"):
         rows.append(

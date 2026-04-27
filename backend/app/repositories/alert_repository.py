@@ -1,4 +1,7 @@
-"""Provide database query and persistence repositories for the network monitoring project."""
+"""Define module logic for `backend/app/repositories/alert_repository.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from sqlalchemy import Select, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,10 +11,29 @@ from ..models.device import Device
 
 
 class AlertRepository:
+    """Perform AlertRepository.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
     def __init__(self, db: AsyncSession):
+        """Perform init.
+
+        Args:
+            db: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         self.db = db
 
     async def list_active_alerts(self) -> list[Alert]:
+        """Repository method to list active alerts.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query: Select[tuple[Alert]] = (
             select(Alert).where(Alert.status == "active").order_by(desc(Alert.created_at), desc(Alert.id))
         )
@@ -25,6 +47,18 @@ class AlertRepository:
         severity: str | None = None,
         search: str | None = None,
     ) -> list[dict]:
+        """Repository method to list active alert rows.
+
+        Args:
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+            severity: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = (
             select(Alert, Device.name)
             .outerjoin(Device, Device.id == Alert.device_id)
@@ -70,6 +104,18 @@ class AlertRepository:
         severity: str | None = None,
         search: str | None = None,
     ) -> tuple[list[dict], int]:
+        """Repository method to list active alert rows paged.
+
+        Args:
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+            severity: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         rows = await self.list_active_alert_rows(
             limit=limit,
             offset=offset,
@@ -82,6 +128,12 @@ class AlertRepository:
         return rows, total
 
     async def summarize_active_alert_severity_counts(self) -> dict[str, int]:
+        """Repository method to summarize active alert severity counts.
+
+        Returns:
+            TODO describe return value.
+
+        """
         rows = (
             await self.db.execute(
                 select(Alert.severity, func.count())
@@ -97,6 +149,16 @@ class AlertRepository:
         severity: str | None = None,
         search: str | None = None,
     ) -> int:
+        """Repository method to count active alerts.
+
+        Args:
+            severity: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = select(func.count()).select_from(Alert).where(Alert.status == "active")
         normalized_severity = str(severity or "").strip().lower()
         if normalized_severity:
@@ -112,6 +174,16 @@ class AlertRepository:
         return int(await self.db.scalar(query) or 0)
 
     async def create_alert(self, payload: dict, *, commit: bool = True) -> Alert:
+        """Repository method to create alert.
+
+        Args:
+            payload: Parameter input untuk routine ini.
+            commit: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         alert = Alert(**payload)
         self.db.add(alert)
         await self.db.flush()
@@ -121,6 +193,17 @@ class AlertRepository:
         return alert
 
     async def resolve_alert(self, alert: Alert, resolved_at, *, commit: bool = True) -> Alert:
+        """Repository method to return resolve alert.
+
+        Args:
+            alert: Parameter input untuk routine ini.
+            resolved_at: Parameter input untuk routine ini.
+            commit: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         alert.status = "resolved"
         alert.resolved_at = resolved_at
         await self.db.flush()

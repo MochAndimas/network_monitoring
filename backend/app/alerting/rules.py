@@ -1,4 +1,7 @@
-"""Provide alert evaluation and notification workflows for the network monitoring project."""
+"""Define module logic for `backend/app/alerting/rules.py`.
+
+This module contains project-specific implementation details.
+"""
 
 ALERT_RULES = {
     "device_down": {"severity": "critical"},

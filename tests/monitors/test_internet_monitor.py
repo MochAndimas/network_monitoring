@@ -1,4 +1,7 @@
-"""Provide automated regression tests for the network monitoring project."""
+"""Define test module behavior for `tests/monitors/test_internet_monitor.py`.
+
+This module contains automated regression and validation scenarios.
+"""
 
 from datetime import timedelta
 
@@ -18,6 +21,16 @@ from backend.app.core.time import utcnow
 from tests.test_utils import create_all, drop_all, make_fake_safe_ping, run
 
 def test_internet_checks_collect_quality_dns_http_and_public_ip(monkeypatch, session_factory):
+    """Validate that internet checks collect quality dns http and public ip.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     ping_samples = iter([0.010, None, 0.020])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
     monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
@@ -74,6 +87,16 @@ def test_internet_checks_collect_quality_dns_http_and_public_ip(monkeypatch, ses
 
 
 def test_internet_checks_anchor_dns_http_and_public_ip_to_preferred_isp(monkeypatch, session_factory):
+    """Validate that internet checks anchor dns http and public ip to preferred isp.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     ping_samples = iter([0.010, 0.010, 0.010, 0.010, 0.010, 0.010])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
     monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
@@ -118,6 +141,16 @@ def test_internet_checks_anchor_dns_http_and_public_ip_to_preferred_isp(monkeypa
 
 
 def test_access_point_and_printer_checks_collect_packet_loss_jitter_and_snmp(monkeypatch, session_factory):
+    """Validate that access point and printer checks collect packet loss jitter and snmp.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     ping_samples = iter([0.010, None, 0.020, 0.030, 0.030, 0.030])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
     monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
@@ -207,6 +240,16 @@ def test_access_point_and_printer_checks_collect_packet_loss_jitter_and_snmp(mon
 
 
 def test_voip_checks_collect_ping_packet_loss_and_jitter(monkeypatch, session_factory):
+    """Validate that voip checks collect ping packet loss and jitter.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     ping_samples = iter([0.012, 0.018, None])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
     monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
@@ -228,6 +271,16 @@ def test_voip_checks_collect_ping_packet_loss_and_jitter(monkeypatch, session_fa
 
 
 def test_mikrotik_checks_collect_packet_loss_and_jitter(monkeypatch, session_factory):
+    """Validate that mikrotik checks collect packet loss and jitter.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     ping_samples = iter([0.010, 0.015, 0.025])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
     monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
@@ -248,6 +301,16 @@ def test_mikrotik_checks_collect_packet_loss_and_jitter(monkeypatch, session_fac
 
 
 def test_mikrotik_api_checks_collect_routeros_metrics(monkeypatch, session_factory):
+    """Validate that mikrotik api checks collect routeros metrics.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     ping_samples = iter([0.010, 0.010, 0.010])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
 
@@ -338,6 +401,16 @@ def test_mikrotik_api_checks_collect_routeros_metrics(monkeypatch, session_facto
 
 
 def test_mikrotik_dynamic_metric_controls_support_section_toggle_limits_and_allowlist(monkeypatch, session_factory):
+    """Validate that mikrotik dynamic metric controls support section toggle limits and allowlist.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     ping_samples = iter([0.010, 0.010, 0.010])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
 
@@ -405,6 +478,16 @@ def test_mikrotik_dynamic_metric_controls_support_section_toggle_limits_and_allo
 
 
 def test_mikrotik_api_metrics_attach_to_configured_host_device(monkeypatch, session_factory):
+    """Validate that mikrotik api metrics attach to configured host device.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     class FakeApi:
         def path(self, *parts):
             if parts == ("system", "resource"):
@@ -453,6 +536,16 @@ def test_mikrotik_api_metrics_attach_to_configured_host_device(monkeypatch, sess
 
 
 def test_mikrotik_api_metrics_are_skipped_when_host_does_not_match_multiple_devices(monkeypatch, session_factory):
+    """Validate that mikrotik api metrics are skipped when host does not match multiple devices.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.010, 0.010, 0.010, 0.010, 0.010])))
     monkeypatch.setattr(mikrotik_service.settings, "mikrotik_host", "192.168.88.99")
     monkeypatch.setattr(mikrotik_service.settings, "mikrotik_username", "monitor")
@@ -475,6 +568,16 @@ def test_mikrotik_api_metrics_are_skipped_when_host_does_not_match_multiple_devi
 
 
 def test_server_resource_metrics_require_explicit_target_for_multiple_servers(monkeypatch, session_factory):
+    """Validate that server resource metrics require explicit target for multiple servers.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.020])))
     monkeypatch.setattr(server_service.settings, "server_resource_device_ip", "")
 
@@ -499,6 +602,16 @@ def test_server_resource_metrics_require_explicit_target_for_multiple_servers(mo
 
 
 def test_server_resource_metrics_follow_configured_target_device_ip(monkeypatch, session_factory):
+    """Validate that server resource metrics follow configured target device ip.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.020])))
     monkeypatch.setattr(server_service.settings, "server_resource_device_ip", "192.168.1.11")
     monkeypatch.setattr(server_service.psutil, "cpu_percent", lambda *_args, **_kwargs: 10.0)
@@ -532,6 +645,12 @@ def test_server_resource_metrics_follow_configured_target_device_ip(monkeypatch,
 
 @pytest.fixture
 def session_factory():
+    """Perform session factory.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},

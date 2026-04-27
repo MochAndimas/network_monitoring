@@ -1,4 +1,7 @@
-"""Provide application-wide configuration, constants, security, and time helpers for the network monitoring project."""
+"""Define module logic for `backend/app/core/constants.py`.
+
+This module contains project-specific implementation details.
+"""
 
 DEVICE_TYPE_CHOICES = [
     "internet_target",

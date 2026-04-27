@@ -1,4 +1,7 @@
-"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+"""Define module logic for `backend/app/services/run_cycle_service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import asyncio
 import logging
@@ -23,6 +26,15 @@ MonitorRunner = Callable[[AsyncSession], Awaitable[list[dict]]]
 
 
 async def run_monitoring_cycle(db: AsyncSession) -> dict:
+    """Run one end-to-end monitoring cycle including collection and persistence.
+
+    Args:
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     started_at = perf_counter()
     metrics = await collect_monitoring_metrics()
 
@@ -50,11 +62,26 @@ async def run_monitoring_cycle(db: AsyncSession) -> dict:
 
 
 async def collect_monitoring_metrics() -> list[dict]:
+    """Collect monitoring metrics from all configured monitor runners.
+
+    Returns:
+        TODO describe return value.
+
+    """
     runner_results = await asyncio.gather(*[_collect_runner_metrics(runner) for runner in _monitor_runners()])
     return [metric for metrics in runner_results for metric in metrics]
 
 
 async def _collect_runner_metrics(runner: MonitorRunner) -> list[dict]:
+    """Collect runner metrics.
+
+    Args:
+        runner: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     started_at = perf_counter()
     async with SessionLocal() as db:
         metrics = await runner(db)
@@ -68,6 +95,12 @@ async def _collect_runner_metrics(runner: MonitorRunner) -> list[dict]:
 
 
 def _monitor_runners() -> tuple[MonitorRunner, ...]:
+    """Perform monitor runners.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return (
         run_internet_checks,
         run_device_checks,

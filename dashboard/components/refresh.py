@@ -1,4 +1,7 @@
-"""Provide shared Streamlit dashboard UI and API helpers for the network monitoring project."""
+"""Define module logic for `dashboard/components/refresh.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +21,17 @@ def refresh_controls(
     default_enabled: bool = True,
     default_interval: int = 15,
 ) -> tuple[bool, int]:
+    """Return refresh controls.
+
+    Args:
+        page_key: Parameter input untuk routine ini.
+        default_enabled: Parameter input untuk routine ini.
+        default_interval: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     st.sidebar.markdown("### Pembaruan Data")
     with st.sidebar.container(border=True):
         auto_refresh = st.toggle(
@@ -38,16 +52,40 @@ def refresh_controls(
 
 
 def live_status_text(auto_refresh: bool, interval_seconds: int) -> str:
+    """Return live status text.
+
+    Args:
+        auto_refresh: Parameter input untuk routine ini.
+        interval_seconds: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if auto_refresh:
         return f"Aktif, data diperbarui setiap {interval_seconds} detik."
     return "Nonaktif, gunakan refresh browser untuk memperbarui data."
 
 
 def rendered_at_label() -> str:
+    """Return rendered at label.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
 
 
 def render_live_section(auto_refresh: bool, interval_seconds: int, render_fn) -> None:
+    """Render live section.
+
+    Args:
+        auto_refresh: Parameter input untuk routine ini.
+        interval_seconds: Parameter input untuk routine ini.
+        render_fn: Parameter input untuk routine ini.
+
+    """
     if auto_refresh:
         @st.fragment(run_every=f"{interval_seconds}s")
         def _live_fragment():

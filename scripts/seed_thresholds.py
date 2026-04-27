@@ -1,4 +1,7 @@
-"""Provide operator and maintenance scripts for the network monitoring project."""
+"""Define module logic for `scripts/seed_thresholds.py`.
+
+This module contains project-specific implementation details.
+"""
 
 SEED_THRESHOLDS = {
     "cpu_warning": 90,

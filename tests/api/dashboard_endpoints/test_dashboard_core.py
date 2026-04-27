@@ -1,8 +1,17 @@
-"""Split tests from legacy test_dashboard_endpoints module."""
+"""Define test module behavior for `tests/api/dashboard_endpoints/test_dashboard_core.py`.
+
+This module contains automated regression and validation scenarios.
+"""
 
 from .common import *  # noqa: F401,F403
 
 def test_dashboard_summary_and_alerts_endpoint():
+    """Validate that dashboard summary and alerts endpoint.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -74,6 +83,12 @@ def test_dashboard_summary_and_alerts_endpoint():
         assert len(history_response.json()) == 3
 
 def test_alerts_and_incidents_paged_endpoints_include_meta_and_keep_legacy_contracts():
+    """Validate that alerts and incidents paged endpoints include meta and keep legacy contracts.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -198,6 +213,12 @@ def test_alerts_and_incidents_paged_endpoints_include_meta_and_keep_legacy_contr
         assert filtered_incident_payload["items"][0]["summary"] == "cpu saturation"
 
 def test_dashboard_summary_uses_mikrotik_api_health_without_ping():
+    """Validate that dashboard summary uses mikrotik api health without ping.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -227,6 +248,12 @@ def test_dashboard_summary_uses_mikrotik_api_health_without_ping():
         assert summary_response.json()["mikrotik_status"] == "up"
 
 def test_write_routes_ignore_cookie_even_when_cookie_user_is_admin():
+    """Validate that write routes ignore cookie even when cookie user is admin.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client_a, session_factory):
         run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer", full_name="Viewer User"))
@@ -247,6 +274,12 @@ def test_write_routes_ignore_cookie_even_when_cookie_user_is_admin():
         assert mixed_write_response.status_code == 403
 
 def test_refresh_cookie_cannot_authenticate_api_requests_directly():
+    """Validate that refresh cookie cannot authenticate api requests directly.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -263,6 +296,12 @@ def test_refresh_cookie_cannot_authenticate_api_requests_directly():
         assert restore_response.status_code == 200
 
 def test_logout_clears_refresh_cookie_even_when_access_token_has_expired():
+    """Validate that logout clears refresh cookie even when access token has expired.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         user = run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -290,6 +329,12 @@ def test_logout_clears_refresh_cookie_even_when_access_token_has_expired():
         assert restore_response.status_code == 401
 
 def test_bearer_read_requests_do_not_update_last_seen_until_refresh():
+    """Validate that bearer read requests do not update last seen until refresh.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -323,6 +368,12 @@ def test_bearer_read_requests_do_not_update_last_seen_until_refresh():
         assert run(get_last_seen()) > baseline_seen_at
 
 def test_access_cookie_cannot_be_used_as_refresh_token_when_refresh_cookie_is_missing():
+    """Validate that access cookie cannot be used as refresh token when refresh cookie is missing.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -336,6 +387,12 @@ def test_access_cookie_cannot_be_used_as_refresh_token_when_refresh_cookie_is_mi
         assert restore_response.status_code == 401
 
 def test_login_rate_limit_blocks_repeated_failed_attempts():
+    """Validate that login rate limit blocks repeated failed attempts.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -348,6 +405,12 @@ def test_login_rate_limit_blocks_repeated_failed_attempts():
         assert rate_limited_response.json()["detail"] == "Too many login attempts. Please try again later."
 
 def test_login_uses_forwarded_ip_only_for_trusted_proxy():
+    """Validate that login uses forwarded ip only for trusted proxy.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     import backend.app.api.routes.auth as auth_route_module
 
     original_trusted_proxies = auth_route_module.settings.trusted_proxy_ips
@@ -374,6 +437,12 @@ def test_login_uses_forwarded_ip_only_for_trusted_proxy():
         auth_route_module.settings.trusted_proxy_ips = original_trusted_proxies
 
 def test_dashboard_overview_panels_and_problem_devices_endpoints():
+    """Validate that dashboard overview panels and problem devices endpoints.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:

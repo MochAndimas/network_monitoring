@@ -1,8 +1,17 @@
-"""Split tests from legacy test_dashboard_endpoints module."""
+"""Define test module behavior for `tests/api/dashboard_endpoints/test_run_cycle_and_security.py`.
+
+This module contains automated regression and validation scenarios.
+"""
 
 from .common import *  # noqa: F401,F403
 
 def test_run_cycle_creates_alerts_and_incidents():
+    """Validate that run cycle creates alerts and incidents.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         internet_device_id = run(
             _seed_devices_and_metrics(
@@ -64,6 +73,12 @@ def test_run_cycle_creates_alerts_and_incidents():
         assert incidents_response.json()[0]["status"] == "active"
 
 def test_run_cycle_creates_ping_latency_alert():
+    """Validate that run cycle creates ping latency alert.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         internet_device_id = run(
             _seed_devices_and_metrics(
@@ -118,6 +133,12 @@ def test_run_cycle_creates_ping_latency_alert():
         assert alerts_payload[0]["severity"] == "critical"
 
 def test_run_cycle_creates_mikrotik_metric_alerts():
+    """Validate that run cycle creates mikrotik metric alerts.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         mikrotik_device_id = run(
             _seed_devices_and_metrics(
@@ -204,6 +225,12 @@ def test_run_cycle_creates_mikrotik_metric_alerts():
         assert len(incidents_response.json()) == 1
 
 def test_run_cycle_creates_internet_quality_alerts():
+    """Validate that run cycle creates internet quality alerts.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         internet_device_id = run(
             _seed_devices_and_metrics(
@@ -294,6 +321,12 @@ def test_run_cycle_creates_internet_quality_alerts():
         }
 
 def test_run_cycle_creates_printer_alerts_and_incident():
+    """Validate that run cycle creates printer alerts and incident.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         printer_device_id = run(
             _seed_devices_and_metrics(
@@ -413,6 +446,12 @@ def test_run_cycle_creates_printer_alerts_and_incident():
         assert len(incidents_response.json()) == 1
 
 def test_internal_api_key_protects_mutation_endpoints():
+    """Validate that internal api key protects mutation endpoints.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, _session_factory):
         unauthorized_device = client.post(
             "/devices",
@@ -430,6 +469,12 @@ def test_internal_api_key_protects_mutation_endpoints():
         assert authorized_device.status_code == 201
 
 def test_internal_api_key_scopes_split_write_and_ops_access():
+    """Validate that internal api key scopes split write and ops access.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     import backend.app.core.config as config_module
 
     original_internal_api_key = config_module.settings.internal_api_key
@@ -471,6 +516,12 @@ def test_internal_api_key_scopes_split_write_and_ops_access():
         config_module._parse_internal_api_key_map.cache_clear()
 
 def test_internal_api_key_protects_read_endpoints():
+    """Validate that internal api key protects read endpoints.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, _session_factory):
         unauthorized_devices = client.get("/devices")
         authorized_devices = client.get("/devices", headers=API_HEADERS)
@@ -479,6 +530,12 @@ def test_internal_api_key_protects_read_endpoints():
         assert authorized_devices.status_code == 200
 
 def test_missing_credentials_are_rejected_without_api_key_or_bearer_token():
+    """Validate that missing credentials are rejected without api key or bearer token.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     import backend.app.api.deps as deps_module
 
     with client_context() as (client, _session_factory):

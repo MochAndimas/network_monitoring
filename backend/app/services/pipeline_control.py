@@ -1,4 +1,7 @@
-"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+"""Define module logic for `backend/app/services/pipeline_control.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -18,10 +21,28 @@ logger = logging.getLogger("network_monitoring.pipeline")
 
 
 def _mysql_lock_timeout_seconds(*, wait: bool) -> int:
+    """Perform mysql lock timeout seconds.
+
+    Args:
+        wait: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return max(settings.monitoring_lock_timeout_seconds, 1) if wait else 0
 
 
 async def _acquire_mysql_lock(*, wait: bool) -> tuple[object | None, bool]:
+    """Perform acquire mysql lock.
+
+    Args:
+        wait: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     connection = await engine.connect()
     try:
         result = await connection.execute(
@@ -42,6 +63,12 @@ async def _acquire_mysql_lock(*, wait: bool) -> tuple[object | None, bool]:
 
 
 async def _release_mysql_lock(connection) -> None:
+    """Perform release mysql lock.
+
+    Args:
+        connection: Parameter input untuk routine ini.
+
+    """
     try:
         await connection.execute(
             text("SELECT RELEASE_LOCK(:lock_name)"),
@@ -53,6 +80,15 @@ async def _release_mysql_lock(connection) -> None:
 
 @asynccontextmanager
 async def monitoring_pipeline_guard(*, wait: bool) -> AsyncIterator[bool]:
+    """Guard monitoring pipeline execution with cooperative distributed locking.
+
+    Args:
+        wait: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if engine.dialect.name == "mysql":
         connection, acquired = await _acquire_mysql_lock(wait=wait)
         try:

@@ -1,4 +1,7 @@
-"""Provide SQLAlchemy ORM models for the network monitoring project."""
+"""Define module logic for `backend/app/models/alert.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import datetime
 
@@ -10,6 +13,10 @@ from ..core.time import now
 
 
 class Alert(Base):
+    """Perform Alert.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
     __tablename__ = "alerts"
     __table_args__ = (
         Index("ix_alerts_status_created_at", "status", "created_at"),

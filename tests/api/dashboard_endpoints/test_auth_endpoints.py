@@ -1,8 +1,17 @@
-"""Split tests from legacy test_dashboard_endpoints module."""
+"""Define test module behavior for `tests/api/dashboard_endpoints/test_auth_endpoints.py`.
+
+This module contains automated regression and validation scenarios.
+"""
 
 from .common import *  # noqa: F401,F403
 
 def test_auth_login_me_and_logout_flow():
+    """Validate that auth login me and logout flow.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -51,6 +60,12 @@ def test_auth_login_me_and_logout_flow():
         assert restore_after_logout.status_code == 401
 
 def test_auth_me_prefers_bearer_token_over_cookie_session():
+    """Validate that auth me prefers bearer token over cookie session.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client_a, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer", full_name="Viewer User"))
         run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
@@ -71,6 +86,12 @@ def test_auth_me_prefers_bearer_token_over_cookie_session():
         assert mixed_me_response.json()["username"] == "adminuser"
 
 def test_auth_requires_dedicated_password_and_jwt_secrets():
+    """Validate that auth requires dedicated password and jwt secrets.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     import backend.app.core.security as security_module
 
     original_password_secret = security_module.settings.auth_password_secret
@@ -96,6 +117,12 @@ def test_auth_requires_dedicated_password_and_jwt_secrets():
         security_module.settings.bootstrap_admin_password = original_bootstrap_password
 
 def test_production_auth_validation_rejects_insecure_defaults():
+    """Validate that production auth validation rejects insecure defaults.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     import backend.app.core.security as security_module
 
     original_app_env = security_module.settings.app_env
@@ -133,6 +160,12 @@ def test_production_auth_validation_rejects_insecure_defaults():
         security_module.settings.allow_insecure_no_auth = original_allow_insecure
 
 def test_production_auth_validation_accepts_hardened_defaults():
+    """Validate that production auth validation accepts hardened defaults.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     import backend.app.core.security as security_module
 
     original_app_env = security_module.settings.app_env
@@ -169,6 +202,12 @@ def test_production_auth_validation_accepts_hardened_defaults():
         security_module.settings.allow_insecure_no_auth = original_allow_insecure
 
 def test_refresh_token_reuse_revokes_session_chain():
+    """Validate that refresh token reuse revokes session chain.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -197,6 +236,12 @@ def test_refresh_token_reuse_revokes_session_chain():
         assert me_after_reuse.status_code == 401
 
 def test_user_can_list_active_sessions_with_current_marker():
+    """Validate that user can list active sessions with current marker.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -215,6 +260,12 @@ def test_user_can_list_active_sessions_with_current_marker():
         assert payload[0]["user_agent"] == "SessionTestAgent/1.0"
 
 def test_logout_all_revokes_other_sessions_but_keeps_current_session():
+    """Validate that logout all revokes other sessions but keeps current session.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client_a, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -254,6 +305,12 @@ def test_logout_all_revokes_other_sessions_but_keeps_current_session():
             assert sessions_after.json()[0]["is_current"] is True
 
 def test_admin_can_inspect_and_revoke_user_sessions():
+    """Validate that admin can inspect and revoke user sessions.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         viewer_user = run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
         run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
@@ -282,6 +339,12 @@ def test_admin_can_inspect_and_revoke_user_sessions():
         assert revoked_response.json()["revoked_sessions"] >= 1
 
 def test_viewer_cannot_access_admin_mutation_routes():
+    """Validate that viewer cannot access admin mutation routes.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 
@@ -296,6 +359,12 @@ def test_viewer_cannot_access_admin_mutation_routes():
         assert create_response.status_code == 403
 
 def test_admin_bearer_token_can_access_read_and_write_routes():
+    """Validate that admin bearer token can access read and write routes.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
 
@@ -314,6 +383,12 @@ def test_admin_bearer_token_can_access_read_and_write_routes():
         assert create_response.status_code == 201
 
 def test_admin_user_lifecycle_and_audit_logs():
+    """Validate that admin user lifecycle and audit logs.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
 
@@ -361,6 +436,12 @@ def test_admin_user_lifecycle_and_audit_logs():
         assert any(item["username"] == "viewer2" for item in users_response.json())
 
 def test_user_can_change_password_and_old_password_stops_working():
+    """Validate that user can change password and old password stops working.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
 

@@ -1,4 +1,7 @@
-"""Provide SQLAlchemy ORM models for the network monitoring project."""
+"""Define module logic for `backend/app/models/metric.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import datetime
 
@@ -10,6 +13,10 @@ from ..core.time import now
 
 
 class Metric(Base):
+    """Perform Metric.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
     __tablename__ = "metrics"
     __table_args__ = (
         Index("ix_metrics_history_lookup", "device_id", "metric_name", "checked_at"),

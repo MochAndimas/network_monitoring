@@ -1,4 +1,7 @@
-"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+"""Define module logic for `dashboard/pages/6_Incidents.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from urllib.parse import quote_plus
 
@@ -51,6 +54,15 @@ incidents_offset = (current_incidents_page - 1) * int(incidents_page_size)
 
 
 def _duration_label(minutes_value: float | None) -> str:
+    """Perform duration label.
+
+    Args:
+        minutes_value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if minutes_value is None or pd.isna(minutes_value):
         return "-"
     minutes = int(minutes_value)
@@ -59,6 +71,12 @@ def _duration_label(minutes_value: float | None) -> str:
 
 
 def _render_incidents_body() -> None:
+    """Render incidents body.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     path = f"/incidents/paged?limit={int(incidents_page_size)}&offset={incidents_offset}"
     if status_filter != "All":
         path = f"{path}&status={status_filter}"

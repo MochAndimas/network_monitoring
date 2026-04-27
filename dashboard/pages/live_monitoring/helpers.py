@@ -1,4 +1,7 @@
-"""Live monitoring helper functions extracted from page module."""
+"""Define module logic for `dashboard/pages/live_monitoring/helpers.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
@@ -63,6 +66,15 @@ PRINTER_DETAIL_ONLY_METRICS = {"printer_uptime_seconds", "printer_total_pages"}
 
 
 def _default_device_option_label(devices: list[dict]) -> str:
+    """Perform default device option label.
+
+    Args:
+        devices: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     internet_targets = [device for device in devices if device.get("device_type") == "internet_target"]
     if not internet_targets:
         return "Semua Device"
@@ -91,6 +103,15 @@ def _default_device_option_label(devices: list[dict]) -> str:
 
 
 def _format_metric_value(row: pd.Series) -> str:
+    """Format metric value.
+
+    Args:
+        row: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return _format_metric_value_components(
         metric_name=str(row.get("metric_name") or ""),
         metric_value=row.get("metric_value"),
@@ -106,6 +127,18 @@ def _format_metric_value_components(
     metric_value_numeric,
     unit,
 ) -> str:
+    """Format metric value components.
+
+    Args:
+        metric_name: Parameter input untuk routine ini.
+        metric_value: Parameter input untuk routine ini.
+        metric_value_numeric: Parameter input untuk routine ini.
+        unit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     metric_name = str(metric_name or "")
     if metric_name == "printer_uptime_seconds" and pd.notna(metric_value_numeric):
         return _format_duration(pd.Timedelta(seconds=float(metric_value_numeric)))
@@ -120,6 +153,15 @@ def _format_metric_value_components(
 
 
 def _friendly_metric_name(metric_name: str) -> str:
+    """Perform friendly metric name.
+
+    Args:
+        metric_name: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     dynamic_label = _dynamic_mikrotik_metric_label(metric_name)
     if dynamic_label:
         return dynamic_label
@@ -127,12 +169,30 @@ def _friendly_metric_name(metric_name: str) -> str:
 
 
 def _metric_filter_label(metric_name: str) -> str:
+    """Perform metric filter label.
+
+    Args:
+        metric_name: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if metric_name == "All Metrics":
         return "Semua Metrik"
     return f"{_friendly_metric_name(metric_name)} ({metric_name})"
 
 
 def _dynamic_mikrotik_metric_label(metric_name: str) -> str | None:
+    """Perform dynamic mikrotik metric label.
+
+    Args:
+        metric_name: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     parts = str(metric_name or "").split(":")
     if len(parts) < 3:
         return None
@@ -162,6 +222,15 @@ def _dynamic_mikrotik_metric_label(metric_name: str) -> str | None:
 
 
 def _humanize_printer_text(value: str) -> str:
+    """Perform humanize printer text.
+
+    Args:
+        value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     normalized = value.replace(",", ", ").replace("_", " ").strip()
     if not normalized:
         return "-"
@@ -169,10 +238,32 @@ def _humanize_printer_text(value: str) -> str:
 
 
 def _should_hide_metric_for_device(metric_name: str, device_type: str | None, device_name: str | None) -> bool:
+    """Perform should hide metric for device.
+
+    Args:
+        metric_name: Parameter input untuk routine ini.
+        device_type: Parameter input untuk routine ini.
+        device_name: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return is_mikrotik_device(device_type, device_name) and metric_name in INTERNET_ONLY_METRICS
 
 
 def _filter_metric_names(metric_names: list[str], device_type: str | None, device_name: str | None = None) -> list[str]:
+    """Perform filter metric names.
+
+    Args:
+        metric_names: Parameter input untuk routine ini.
+        device_type: Parameter input untuk routine ini.
+        device_name: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return [
         metric_name
         for metric_name in metric_names
@@ -186,6 +277,17 @@ def _filter_history_rows(
     device_type_by_id: dict[int, str],
     device_name_by_id: dict[int, str],
 ) -> list[dict]:
+    """Perform filter history rows.
+
+    Args:
+        rows: Parameter input untuk routine ini.
+        device_type_by_id: Parameter input untuk routine ini.
+        device_name_by_id: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     filtered_rows: list[dict] = []
     for row in rows:
         device_id = int(row.get("device_id", 0) or 0)
@@ -199,6 +301,16 @@ def _filter_history_rows(
 
 
 def _y_axis_label(metric_name: str, unit: str | None) -> str:
+    """Perform y axis label.
+
+    Args:
+        metric_name: Parameter input untuk routine ini.
+        unit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     friendly_name = _friendly_metric_name(metric_name)
     if unit:
         return f"{friendly_name} ({unit})"
@@ -206,6 +318,15 @@ def _y_axis_label(metric_name: str, unit: str | None) -> str:
 
 
 def _format_duration(delta: pd.Timedelta | None) -> str:
+    """Format duration.
+
+    Args:
+        delta: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if delta is None or pd.isna(delta):
         return "-"
     total_seconds = max(int(delta.total_seconds()), 0)
@@ -225,6 +346,16 @@ def _format_duration(delta: pd.Timedelta | None) -> str:
 
 
 def _prepare_history_frame(history: list[dict], *, sort_desc: bool = True) -> pd.DataFrame:
+    """Perform prepare history frame.
+
+    Args:
+        history: Parameter input untuk routine ini.
+        sort_desc: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     dataframe = pd.DataFrame(history)
     if dataframe.empty:
         return dataframe
@@ -244,6 +375,15 @@ def _prepare_history_frame(history: list[dict], *, sort_desc: bool = True) -> pd
 
 
 def _format_metric_values(dataframe: pd.DataFrame) -> pd.Series:
+    """Format metric values.
+
+    Args:
+        dataframe: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     unit_suffix = dataframe["unit"].map(lambda unit: f" {unit}" if unit else "")
     display_values = dataframe["metric_value"].astype(str) + unit_suffix
     numeric_values = pd.to_numeric(dataframe["metric_value_numeric"], errors="coerce")
@@ -280,6 +420,21 @@ def _fetch_device_history_rows(
     max_pages: int | None = None,
     initial_payload: dict | None = None,
 ) -> list[dict]:
+    """Perform fetch device history rows.
+
+    Args:
+        device_id: Parameter input untuk routine ini.
+        checked_from_date: Parameter input untuk routine ini.
+        checked_to_date: Parameter input untuk routine ini.
+        metric_names: Parameter input untuk routine ini.
+        status: Parameter input untuk routine ini.
+        max_pages: Parameter input untuk routine ini.
+        initial_payload: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if metric_names:
         unique_metric_names = list(dict.fromkeys(str(metric_name) for metric_name in metric_names))
         if max_pages == 1:
@@ -329,6 +484,23 @@ def _history_query_params(
     metric_names: list[str] | None = None,
     per_metric_limit: int | None = None,
 ) -> dict[str, object]:
+    """Perform history query params.
+
+    Args:
+        device_id: Parameter input untuk routine ini.
+        metric_name: Parameter input untuk routine ini.
+        status: Parameter input untuk routine ini.
+        checked_from_date: Parameter input untuk routine ini.
+        checked_to_date: Parameter input untuk routine ini.
+        limit: Parameter input untuk routine ini.
+        offset: Parameter input untuk routine ini.
+        metric_names: Parameter input untuk routine ini.
+        per_metric_limit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     query_params: dict[str, object] = {
         "limit": limit,
         "offset": offset,
@@ -359,6 +531,21 @@ def _fetch_history_pages(
     max_pages: int | None = None,
     initial_payload: dict | None = None,
 ) -> list[dict]:
+    """Perform fetch history pages.
+
+    Args:
+        device_id: Parameter input untuk routine ini.
+        metric_name: Parameter input untuk routine ini.
+        status: Parameter input untuk routine ini.
+        checked_from_date: Parameter input untuk routine ini.
+        checked_to_date: Parameter input untuk routine ini.
+        max_pages: Parameter input untuk routine ini.
+        initial_payload: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     page_size = 500
     offset = 0
     items: list[dict] = []
@@ -404,6 +591,20 @@ def _fetch_history_rows_bulk(
     checked_to_date=None,
     per_metric_limit: int = 500,
 ) -> list[dict]:
+    """Perform fetch history rows bulk.
+
+    Args:
+        device_id: Parameter input untuk routine ini.
+        metric_names: Parameter input untuk routine ini.
+        status: Parameter input untuk routine ini.
+        checked_from_date: Parameter input untuk routine ini.
+        checked_to_date: Parameter input untuk routine ini.
+        per_metric_limit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if not metric_names:
         return []
     query_params = _history_query_params(
@@ -423,6 +624,16 @@ def _fetch_history_rows_bulk(
 
 
 def _fetch_latest_device_snapshot(device_id: int, limit: int = 500) -> list[dict]:
+    """Perform fetch latest device snapshot.
+
+    Args:
+        device_id: Parameter input untuk routine ini.
+        limit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     payload = get_json(
         f"/metrics/latest-snapshot/paged?{urlencode({'device_id': device_id, 'limit': limit, 'offset': 0})}",
         {"items": [], "meta": {}},
@@ -431,10 +642,28 @@ def _fetch_latest_device_snapshot(device_id: int, limit: int = 500) -> list[dict
 
 
 def _latest_snapshot_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
+    """Perform latest snapshot frame.
+
+    Args:
+        dataframe: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return dataframe.drop_duplicates(subset=["device_name", "metric_name"]).copy()
 
 
 def _snapshot_pagination_controls(total_rows: int) -> tuple[int, int]:
+    """Perform snapshot pagination controls.
+
+    Args:
+        total_rows: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     page_size_col, page_col, _ = st.columns([1, 1, 4])
     default_page_size = int(st.session_state.get("history_snapshot_page_size", 10))
     if default_page_size not in [10, 25, 50, 100]:
@@ -458,6 +687,17 @@ def _snapshot_pagination_controls(total_rows: int) -> tuple[int, int]:
 
 
 def _paginate_frame(dataframe: pd.DataFrame, *, key_prefix: str, page_size: int = 10) -> pd.DataFrame:
+    """Perform paginate frame.
+
+    Args:
+        dataframe: Parameter input untuk routine ini.
+        key_prefix: Parameter input untuk routine ini.
+        page_size: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if dataframe.empty:
         return dataframe
     total_rows = len(dataframe)
@@ -485,6 +725,14 @@ def _render_metric_trend_section(
     chart_window_label: str,
     target_column=None,
 ) -> None:
+    """Render metric trend section.
+
+    Args:
+        metric_frame: Parameter input untuk routine ini.
+        chart_window_label: Parameter input untuk routine ini.
+        target_column: Parameter input untuk routine ini.
+
+    """
     container = target_column if target_column is not None else st
     latest_metric_timestamp = metric_frame["checked_at"].max()
     chart_window_hours = CHART_WINDOW_OPTIONS[chart_window_label]
@@ -573,6 +821,15 @@ def _render_metric_trend_section(
 
 
 def _render_stat_card(column, label: str, value: str | int, *, compact: bool = False) -> None:
+    """Render stat card.
+
+    Args:
+        column: Parameter input untuk routine ini.
+        label: Parameter input untuk routine ini.
+        value: Parameter input untuk routine ini.
+        compact: Parameter input untuk routine ini.
+
+    """
     with column.container(border=True):
         st.metric(label, value)
 
@@ -581,6 +838,16 @@ def _status_counts_frame(
     latest_snapshot_status_summary: dict[str, int],
     fallback_frame: pd.DataFrame,
 ) -> pd.DataFrame:
+    """Perform status counts frame.
+
+    Args:
+        latest_snapshot_status_summary: Parameter input untuk routine ini.
+        fallback_frame: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if latest_snapshot_status_summary:
         status_counts = pd.DataFrame(
             [{"status": normalize_status_label(status), "Jumlah": count} for status, count in latest_snapshot_status_summary.items()]
@@ -597,6 +864,12 @@ def _status_counts_frame(
 
 
 def _status_color_scale() -> alt.Scale:
+    """Perform status color scale.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return alt.Scale(
         domain=["Down", "Error", "Warning", "Unknown", "Active", "Resolved", "OK", "Up"],
         range=["#dc2626", "#ef4444", "#f59e0b", "#6b7280", "#3b82f6", "#10b981", "#22c55e", "#16a34a"],
@@ -604,6 +877,15 @@ def _status_color_scale() -> alt.Scale:
 
 
 def _health_score_percent(status_counts: pd.DataFrame) -> int:
+    """Perform health score percent.
+
+    Args:
+        status_counts: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if status_counts.empty:
         return 0
     total = int(status_counts["Jumlah"].sum())
@@ -626,6 +908,18 @@ def _health_score_percent(status_counts: pd.DataFrame) -> int:
 
 
 def _entity_volume_frame(dataframe: pd.DataFrame, column_name: str, label_name: str, top_n: int = 6) -> pd.DataFrame:
+    """Perform entity volume frame.
+
+    Args:
+        dataframe: Parameter input untuk routine ini.
+        column_name: Parameter input untuk routine ini.
+        label_name: Parameter input untuk routine ini.
+        top_n: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if dataframe.empty or column_name not in dataframe.columns:
         return pd.DataFrame(columns=[label_name, "Jumlah"])
     grouped = (
@@ -641,6 +935,16 @@ def _entity_volume_frame(dataframe: pd.DataFrame, column_name: str, label_name: 
 
 
 def _recent_anomaly_frame(dataframe: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
+    """Perform recent anomaly frame.
+
+    Args:
+        dataframe: Parameter input untuk routine ini.
+        top_n: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if dataframe.empty:
         return pd.DataFrame()
     anomaly_statuses = {"Warning", "Down", "Error"}
@@ -651,6 +955,16 @@ def _recent_anomaly_frame(dataframe: pd.DataFrame, top_n: int = 20) -> pd.DataFr
 
 
 def _format_metric_numeric(value: float | int | None, unit: str | None = None) -> str:
+    """Format metric numeric.
+
+    Args:
+        value: Parameter input untuk routine ini.
+        unit: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if value is None or pd.isna(value):
         return "-"
     suffix = f" {unit}" if unit else ""
@@ -658,6 +972,15 @@ def _format_metric_numeric(value: float | int | None, unit: str | None = None) -
 
 
 def _trend_direction_text(delta_value: float | None) -> str:
+    """Perform trend direction text.
+
+    Args:
+        delta_value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if delta_value is None or pd.isna(delta_value):
         return "Stabil (data awal)"
     if abs(float(delta_value)) < 1e-9:
@@ -667,6 +990,15 @@ def _trend_direction_text(delta_value: float | None) -> str:
 
 
 def _metric_kpi_summary(metric_frame: pd.DataFrame) -> dict[str, object]:
+    """Perform metric kpi summary.
+
+    Args:
+        metric_frame: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if metric_frame.empty:
         return {}
     ordered = metric_frame.sort_values("checked_at").copy()
@@ -700,6 +1032,16 @@ def _metric_kpi_summary(metric_frame: pd.DataFrame) -> dict[str, object]:
 
 
 def _raw_history_view(raw_history_frame: pd.DataFrame, *, metric_selected: bool) -> pd.DataFrame:
+    """Perform raw history view.
+
+    Args:
+        raw_history_frame: Parameter input untuk routine ini.
+        metric_selected: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if raw_history_frame.empty:
         return pd.DataFrame(columns=["Dicek (WIB)", "Nilai", "Status", "Device", "Metrik"])
     if not metric_selected:
@@ -747,6 +1089,15 @@ def _raw_history_view(raw_history_frame: pd.DataFrame, *, metric_selected: bool)
 
 
 def _status_label_for_display(status_value: object) -> str:
+    """Perform status label for display.
+
+    Args:
+        status_value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     normalized = str(status_value or "").strip().lower()
     if normalized in {"down", "error"}:
         return f"Tinggi | {normalize_status_label(normalized)}"
@@ -758,6 +1109,15 @@ def _status_label_for_display(status_value: object) -> str:
 
 
 def _non_numeric_metric_timeline(metric_frame: pd.DataFrame) -> pd.DataFrame:
+    """Perform non numeric metric timeline.
+
+    Args:
+        metric_frame: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if metric_frame.empty:
         return pd.DataFrame(columns=["Dicek (WIB)", "Nilai", "Status", "Device", "Metrik"])
     ordered = metric_frame.sort_values("checked_at", ascending=False).copy()
@@ -776,6 +1136,15 @@ def _non_numeric_metric_timeline(metric_frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _latest_metric_snapshot_map(dataframe: pd.DataFrame) -> dict[str, pd.Series]:
+    """Perform latest metric snapshot map.
+
+    Args:
+        dataframe: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if dataframe.empty:
         return {}
     latest_rows = dataframe.sort_values("checked_at").drop_duplicates(subset=["metric_name"], keep="last")
@@ -787,6 +1156,17 @@ def _latest_metric_value_from_map(
     metric_name: str,
     default: str = "-",
 ) -> str:
+    """Perform latest metric value from map.
+
+    Args:
+        latest_map: Parameter input untuk routine ini.
+        metric_name: Parameter input untuk routine ini.
+        default: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     row = latest_map.get(metric_name)
     if row is None:
         return default
@@ -794,6 +1174,15 @@ def _latest_metric_value_from_map(
 
 
 def _format_percent(value: str) -> str:
+    """Format percent.
+
+    Args:
+        value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     try:
         return f"{float(value):.1f}%"
     except (TypeError, ValueError):
@@ -801,6 +1190,15 @@ def _format_percent(value: str) -> str:
 
 
 def _format_bytes(value: float | int | None) -> str:
+    """Format bytes.
+
+    Args:
+        value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if value is None or pd.isna(value):
         return "-"
     size = float(value)
@@ -812,12 +1210,31 @@ def _format_bytes(value: float | int | None) -> str:
 
 
 def _format_mbps(value: float | int | None) -> str:
+    """Format mbps.
+
+    Args:
+        value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if value is None or pd.isna(value):
         return "-"
     return f"{float(value):.2f}"
 
 
 def _dynamic_mikrotik_metric_table(dataframe: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    """Perform dynamic mikrotik metric table.
+
+    Args:
+        dataframe: Parameter input untuk routine ini.
+        prefix: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if dataframe.empty:
         return pd.DataFrame()
 
@@ -866,6 +1283,15 @@ def _dynamic_mikrotik_metric_table(dataframe: pd.DataFrame, prefix: str) -> pd.D
 
 
 def _interface_view(dataframe: pd.DataFrame) -> pd.DataFrame:
+    """Perform interface view.
+
+    Args:
+        dataframe: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     table = _dynamic_mikrotik_metric_table(dataframe, "interface")
     if table.empty:
         return table
@@ -890,6 +1316,15 @@ def _interface_view(dataframe: pd.DataFrame) -> pd.DataFrame:
 
 
 def _firewall_view(dataframe: pd.DataFrame) -> pd.DataFrame:
+    """Perform firewall view.
+
+    Args:
+        dataframe: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     table = _dynamic_mikrotik_metric_table(dataframe, "firewall")
     if table.empty:
         return table
@@ -907,6 +1342,12 @@ def _firewall_view(dataframe: pd.DataFrame) -> pd.DataFrame:
 
 
 def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> None:
+    """Render mikrotik history section.
+
+    Args:
+        mikrotik_history_frame: Parameter input untuk routine ini.
+
+    """
     if mikrotik_history_frame.empty:
         st.info("Belum ada metrik Mikrotik API. Pastikan device aktif dan monitoring cycle berjalan.")
         return
@@ -997,10 +1438,28 @@ def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> No
 
 
 def _is_dynamic_mikrotik_metric(metric_name: str) -> bool:
+    """Perform is dynamic mikrotik metric.
+
+    Args:
+        metric_name: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return str(metric_name or "").startswith(("interface:", "queue:", "firewall:"))
 
 
 def _default_mikrotik_trend_metrics(metric_names: list[str]) -> list[str]:
+    """Perform default mikrotik trend metrics.
+
+    Args:
+        metric_names: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     preferred_metrics = [
         "ping",
         "packet_loss",
@@ -1014,6 +1473,12 @@ def _default_mikrotik_trend_metrics(metric_names: list[str]) -> list[str]:
 def _render_printer_history_section(
     printer_history_frame: pd.DataFrame,
 ) -> None:
+    """Render printer history section.
+
+    Args:
+        printer_history_frame: Parameter input untuk routine ini.
+
+    """
     if printer_history_frame.empty:
         st.info("Belum ada metrik printer SNMP. Periksa koneksi SNMP printer dan jalankan monitoring cycle.")
         return

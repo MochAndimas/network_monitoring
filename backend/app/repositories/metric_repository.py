@@ -1,4 +1,7 @@
-"""Provide database query and persistence repositories for the network monitoring project."""
+"""Define module logic for `backend/app/repositories/metric_repository.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from collections.abc import Iterable
 
@@ -18,11 +21,33 @@ UP_STATUSES = {"up", "ok"}
 
 
 class MetricRepository:
+    """Perform MetricRepository.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
     def __init__(self, db: AsyncSession):
+        """Perform init.
+
+        Args:
+            db: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         self.db = db
 
     @staticmethod
     def _metric_row_payload(row) -> dict:
+        """Perform metric row payload.
+
+        Args:
+            row: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         metric_value_numeric = row.metric_value_numeric
         if metric_value_numeric is None:
             metric_value_numeric = safe_float(row.metric_value)
@@ -40,6 +65,15 @@ class MetricRepository:
 
     @staticmethod
     def _normalize_metric_names(metric_names: list[str] | None) -> list[str]:
+        """Normalize metric names.
+
+        Args:
+            metric_names: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         if not metric_names:
             return []
         return list(dict.fromkeys(str(metric_name) for metric_name in metric_names if metric_name))
@@ -54,6 +88,20 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ) -> list[object]:
+        """Perform recent metric filter conditions.
+
+        Args:
+            device_id: Parameter input untuk routine ini.
+            metric_name: Parameter input untuk routine ini.
+            metric_names: Parameter input untuk routine ini.
+            status: Parameter input untuk routine ini.
+            checked_from: Parameter input untuk routine ini.
+            checked_to: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         conditions: list[object] = []
         if device_id is not None:
             conditions.append(Metric.device_id == device_id)
@@ -81,6 +129,20 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ):
+        """Perform recent metric rows query.
+
+        Args:
+            device_id: Parameter input untuk routine ini.
+            metric_name: Parameter input untuk routine ini.
+            metric_names: Parameter input untuk routine ini.
+            status: Parameter input untuk routine ini.
+            checked_from: Parameter input untuk routine ini.
+            checked_to: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = (
             select(
                 Metric.id,
@@ -108,6 +170,16 @@ class MetricRepository:
         return query
 
     async def create_metrics(self, payloads: Iterable[dict], *, commit: bool = True) -> list[Metric]:
+        """Repository method to create metrics.
+
+        Args:
+            payloads: Parameter input untuk routine ini.
+            commit: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         metrics = [
                 Metric(
                     **payload,
@@ -126,6 +198,12 @@ class MetricRepository:
         return metrics
 
     async def _upsert_latest_metrics(self, metrics: list[Metric]) -> None:
+        """Upsert latest metrics.
+
+        Args:
+            metrics: Parameter input untuk routine ini.
+
+        """
         grouped_metrics: dict[tuple[int, str], list[Metric]] = {}
         for metric in metrics:
             key = (int(metric.device_id), str(metric.metric_name))
@@ -188,6 +266,18 @@ class MetricRepository:
         metric_name: str | None = None,
         status: str | None = None,
     ) -> list[Metric]:
+        """Repository method to list recent metrics.
+
+        Args:
+            limit: Parameter input untuk routine ini.
+            device_id: Parameter input untuk routine ini.
+            metric_name: Parameter input untuk routine ini.
+            status: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query: Select[tuple[Metric]] = select(Metric)
         if device_id is not None:
             query = query.where(Metric.device_id == device_id)
@@ -205,6 +295,17 @@ class MetricRepository:
         metric_name: str,
         per_device_limit: int = 2,
     ) -> dict[int, list[Metric]]:
+        """Repository method to list recent metrics by device.
+
+        Args:
+            device_ids: Parameter input untuk routine ini.
+            metric_name: Parameter input untuk routine ini.
+            per_device_limit: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         if not device_ids or per_device_limit < 1:
             return {}
 
@@ -248,6 +349,22 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ) -> list[dict]:
+        """Repository method to list recent metric rows.
+
+        Args:
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+            device_id: Parameter input untuk routine ini.
+            metric_name: Parameter input untuk routine ini.
+            metric_names: Parameter input untuk routine ini.
+            status: Parameter input untuk routine ini.
+            checked_from: Parameter input untuk routine ini.
+            checked_to: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = self._recent_metric_rows_query(
             device_id=device_id,
             metric_name=metric_name,
@@ -276,6 +393,23 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ) -> tuple[list[dict], int]:
+        """Repository method to list recent metric rows paged.
+
+        Args:
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+            device_id: Parameter input untuk routine ini.
+            metric_name: Parameter input untuk routine ini.
+            metric_names: Parameter input untuk routine ini.
+            per_metric_limit: Parameter input untuk routine ini.
+            status: Parameter input untuk routine ini.
+            checked_from: Parameter input untuk routine ini.
+            checked_to: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         normalized_metric_names = self._normalize_metric_names(metric_names)
         if normalized_metric_names and per_metric_limit is not None and offset == 0:
             return await self._list_recent_metric_rows_per_metric_limit(
@@ -337,6 +471,21 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ) -> tuple[list[dict], int]:
+        """List recent metric rows per metric limit.
+
+        Args:
+            device_id: Parameter input untuk routine ini.
+            metric_name: Parameter input untuk routine ini.
+            metric_names: Parameter input untuk routine ini.
+            per_metric_limit: Parameter input untuk routine ini.
+            status: Parameter input untuk routine ini.
+            checked_from: Parameter input untuk routine ini.
+            checked_to: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         conditions = self._recent_metric_filter_conditions(
             device_id=device_id,
             metric_name=metric_name,
@@ -391,6 +540,20 @@ class MetricRepository:
         checked_from=None,
         checked_to=None,
     ) -> int:
+        """Repository method to count recent metric rows.
+
+        Args:
+            device_id: Parameter input untuk routine ini.
+            metric_name: Parameter input untuk routine ini.
+            metric_names: Parameter input untuk routine ini.
+            status: Parameter input untuk routine ini.
+            checked_from: Parameter input untuk routine ini.
+            checked_to: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = select(func.count()).select_from(Metric)
         conditions = self._recent_metric_filter_conditions(
             device_id=device_id,
@@ -406,6 +569,15 @@ class MetricRepository:
 
     @staticmethod
     def _latest_metrics_query(*, device_id: int | None = None):
+        """Perform latest metrics query.
+
+        Args:
+            device_id: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         internet_target_name_priority = case(
             (
                 and_(
@@ -470,6 +642,17 @@ class MetricRepository:
         offset: int = 0,
         device_id: int | None = None,
     ) -> list[dict]:
+        """Repository method to list latest metric rows.
+
+        Args:
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+            device_id: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         rows = (await self.db.execute(self._latest_metrics_query(device_id=device_id).offset(offset).limit(limit))).all()
         return [self._metric_row_payload(row) for row in rows]
 
@@ -480,6 +663,17 @@ class MetricRepository:
         offset: int = 0,
         device_id: int | None = None,
     ) -> tuple[list[dict], int]:
+        """Repository method to list latest metric rows paged.
+
+        Args:
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+            device_id: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         rows = (await self.db.execute(self._latest_metrics_query(device_id=device_id).offset(offset).limit(limit))).all()
         payload = [self._metric_row_payload(row) for row in rows]
         if offset == 0 and len(payload) < limit:
@@ -489,11 +683,27 @@ class MetricRepository:
         return payload, await self.count_latest_metrics(device_id=device_id)
 
     async def list_latest_metrics(self) -> list[Metric]:
+        """Repository method to list latest metrics.
+
+        Returns:
+            TODO describe return value.
+
+        """
         latest_metric = aliased(Metric)
         query = select(latest_metric).join(LatestMetric, latest_metric.id == LatestMetric.metric_id)
         return list((await self.db.scalars(query)).all())
 
     async def get_latest_metric(self, device_id: int, metric_name: str) -> Metric | None:
+        """Repository method to get latest metric.
+
+        Args:
+            device_id: Parameter input untuk routine ini.
+            metric_name: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = (
             select(Metric)
             .join(LatestMetric, Metric.id == LatestMetric.metric_id)
@@ -506,11 +716,26 @@ class MetricRepository:
         return (await self.db.scalars(query)).first()
 
     async def latest_metric_map(self) -> dict[tuple[int, str], Metric]:
+        """Repository method to return latest metric map.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = select(Metric).join(LatestMetric, Metric.id == LatestMetric.metric_id)
         metrics = list((await self.db.scalars(query)).all())
         return {(metric.device_id, metric.metric_name): metric for metric in metrics}
 
     async def latest_metric_map_for_device(self, device_id: int) -> dict[str, Metric]:
+        """Repository method to return latest metric map for device.
+
+        Args:
+            device_id: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = (
             select(Metric)
             .join(LatestMetric, Metric.id == LatestMetric.metric_id)
@@ -520,12 +745,27 @@ class MetricRepository:
         return {metric.metric_name: metric for metric in metrics}
 
     async def count_latest_metrics(self, *, device_id: int | None = None) -> int:
+        """Repository method to count latest metrics.
+
+        Args:
+            device_id: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = select(func.count()).select_from(LatestMetric)
         if device_id is not None:
             query = query.where(LatestMetric.device_id == device_id)
         return int(await self.db.scalar(query) or 0)
 
     async def summarize_latest_snapshot_status_counts(self) -> dict[str, int]:
+        """Repository method to summarize latest snapshot status counts.
+
+        Returns:
+            TODO describe return value.
+
+        """
         rows = (
             await self.db.execute(
                 select(
@@ -545,6 +785,15 @@ class MetricRepository:
         return counts
 
     def summarize_latest_snapshot_status_counts_for_rows(self, latest_rows: list[dict]) -> dict[str, int]:
+        """Repository method to summarize latest snapshot status counts for rows.
+
+        Args:
+            latest_rows: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         device_statuses: dict[int, list[str]] = {}
         for row in latest_rows:
             device_id = int(row.get("device_id") or 0)
@@ -563,6 +812,16 @@ class MetricRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> dict[str, str]:
+        """Repository method to return latest snapshot uptime map.
+
+        Args:
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         latest_rows = await self.list_latest_metric_rows(limit=limit, offset=offset)
         return await self.latest_snapshot_uptime_map_for_rows(latest_rows)
 
@@ -570,6 +829,15 @@ class MetricRepository:
         self,
         latest_rows: list[dict],
     ) -> dict[str, str]:
+        """Repository method to return latest snapshot uptime map for rows.
+
+        Args:
+            latest_rows: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         latest_pairs = [
             (int(row["device_id"]), str(row["metric_name"]), row["checked_at"], str(row.get("status") or "unknown"))
             for row in latest_rows
@@ -623,6 +891,15 @@ class MetricRepository:
         return payload
 
     async def list_metric_names(self, device_id: int | None = None) -> list[str]:
+        """Repository method to list metric names.
+
+        Args:
+            device_id: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = select(distinct(LatestMetric.metric_name)).order_by(LatestMetric.metric_name)
         if device_id is not None:
             query = query.where(LatestMetric.device_id == device_id)
@@ -635,6 +912,17 @@ class MetricRepository:
         rollup_from=None,
         rollup_to=None,
     ):
+        """Perform daily summary query.
+
+        Args:
+            device_id: Parameter input untuk routine ini.
+            rollup_from: Parameter input untuk routine ini.
+            rollup_to: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = (
             select(
                 MetricDailyRollup.id,
@@ -673,6 +961,19 @@ class MetricRepository:
         rollup_from=None,
         rollup_to=None,
     ) -> tuple[list[dict], int]:
+        """Repository method to list daily summary rows paged.
+
+        Args:
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+            device_id: Parameter input untuk routine ini.
+            rollup_from: Parameter input untuk routine ini.
+            rollup_to: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         rows = (
             await self.db.execute(
                 self._daily_summary_query(
@@ -721,6 +1022,17 @@ class MetricRepository:
         rollup_from=None,
         rollup_to=None,
     ) -> int:
+        """Repository method to count daily summary rows.
+
+        Args:
+            device_id: Parameter input untuk routine ini.
+            rollup_from: Parameter input untuk routine ini.
+            rollup_to: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
         query = select(func.count()).select_from(MetricDailyRollup)
         if device_id is not None:
             query = query.where(MetricDailyRollup.device_id == device_id)
@@ -732,6 +1044,17 @@ class MetricRepository:
 
 
 def _is_metric_newer(metric: Metric, existing_checked_at, existing_metric_id: int | None) -> bool:
+    """Perform is metric newer.
+
+    Args:
+        metric: Parameter input untuk routine ini.
+        existing_checked_at: Parameter input untuk routine ini.
+        existing_metric_id: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if existing_checked_at is None:
         return True
     if metric.checked_at > existing_checked_at:
@@ -747,6 +1070,17 @@ def _next_uptime_streak_started_at(
     latest_metric: Metric,
     ordered_metric_batch: list[Metric],
 ):
+    """Perform next uptime streak started at.
+
+    Args:
+        existing: Parameter input untuk routine ini.
+        latest_metric: Parameter input untuk routine ini.
+        ordered_metric_batch: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     status = str(latest_metric.status or "").lower()
     if status not in UP_STATUSES:
         return None
@@ -773,6 +1107,15 @@ def _next_uptime_streak_started_at(
 
 
 def _rollup_statuses(statuses: list[str]) -> str:
+    """Perform rollup statuses.
+
+    Args:
+        statuses: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     normalized = [str(status).lower() for status in statuses if status]
     if not normalized:
         return "unknown"

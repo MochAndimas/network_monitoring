@@ -1,4 +1,7 @@
-"""Provide operator and maintenance scripts for the network monitoring project."""
+"""Define module logic for `scripts/seed_devices.py`.
+
+This module contains project-specific implementation details.
+"""
 
 SEED_DEVICES = [
     {"name": "Gateway Lokal", "ip_address": "192.168.1.1", "device_type": "internet_target"},

@@ -1,4 +1,7 @@
-"""Bootstrap auth helpers."""
+"""Define module logic for `backend/app/services/auth/bootstrap.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +15,15 @@ from ...models.user import User
 
 
 async def ensure_bootstrap_admin(db: AsyncSession) -> bool:
+    """Ensure bootstrap admin account exists for first-run environments.
+
+    Args:
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if not settings.bootstrap_admin_password:
         return False
 

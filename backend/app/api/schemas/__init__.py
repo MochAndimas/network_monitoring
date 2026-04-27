@@ -1,4 +1,7 @@
-"""Provide API response and request schemas for the network monitoring project."""
+"""Define module logic for `backend/app/api/schemas/__init__.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from .auth import (
     AdminAuditLogItem,

@@ -1,4 +1,7 @@
-"""Define API lifecycle policy and deprecation metadata for legacy contracts."""
+"""Define module logic for `backend/app/api/lifecycle.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +13,16 @@ from fastapi import Response
 
 @dataclass(frozen=True)
 class LegacyEndpointDeprecation:
-    """Store deprecation lifecycle metadata for one legacy endpoint."""
+    """Describe timeline and migration metadata for one deprecated endpoint contract.
+
+    Attributes:
+        legacy_endpoint: Existing endpoint path being deprecated.
+        replacement_endpoint: Endpoint path clients should migrate to.
+        announced_on: Date the deprecation announcement became effective.
+        warning_window_starts_on: Date warning-phase headers should begin.
+        removal_on: Date the legacy endpoint is expected to be removed.
+        sunset_http_date: RFC1123 timestamp used for the HTTP ``Sunset`` header.
+    """
 
     legacy_endpoint: str
     replacement_endpoint: str
@@ -57,6 +69,16 @@ LEGACY_NON_PAGED_DEPRECATION_PLAN: dict[str, LegacyEndpointDeprecation] = {
 
 
 def _deprecation_phase(*, plan: LegacyEndpointDeprecation, today: date) -> str:
+    """Perform deprecation phase.
+
+    Args:
+        plan: Parameter input untuk routine ini.
+        today: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if today >= plan.removal_on:
         return "removal"
     if today >= plan.warning_window_starts_on:
@@ -65,7 +87,17 @@ def _deprecation_phase(*, plan: LegacyEndpointDeprecation, today: date) -> str:
 
 
 def apply_legacy_deprecation_headers(response: Response, *, legacy_endpoint: str, today: date | None = None) -> None:
-    """Attach standard deprecation headers for a legacy API endpoint response."""
+    """Attach deprecation and migration headers for a known legacy endpoint.
+
+    Args:
+        response: FastAPI response object that will be sent to the client.
+        legacy_endpoint: Legacy endpoint path key present in
+            ``LEGACY_NON_PAGED_DEPRECATION_PLAN``.
+        today: Optional date override used to evaluate deprecation phase for tests.
+
+    Returns:
+        None. The function mutates ``response.headers`` in-place.
+    """
 
     plan = LEGACY_NON_PAGED_DEPRECATION_PLAN[legacy_endpoint]
     evaluated_on = today or date.today()

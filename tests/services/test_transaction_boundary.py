@@ -1,4 +1,7 @@
-"""Transactional boundary regression tests for monitoring workflows."""
+"""Define test module behavior for `tests/services/test_transaction_boundary.py`.
+
+This module contains automated regression and validation scenarios.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +21,15 @@ from tests.test_utils import create_all, drop_all, run
 
 
 def test_run_monitoring_cycle_rolls_back_metrics_when_alerting_fails(monkeypatch):
+    """Validate that run monitoring cycle rolls back metrics when alerting fails.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -63,6 +75,15 @@ def test_run_monitoring_cycle_rolls_back_metrics_when_alerting_fails(monkeypatch
 
 
 def test_scheduler_job_failure_rolls_back_domain_writes_and_updates_job_status(monkeypatch):
+    """Validate that scheduler job failure rolls back domain writes and updates job status.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False,

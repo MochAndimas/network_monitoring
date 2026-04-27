@@ -1,4 +1,7 @@
-"""Provide FastAPI route handlers and HTTP helpers for the network monitoring project."""
+"""Define module logic for `backend/app/api/routes/system.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +22,17 @@ async def run_cycle(
     actor=Depends(require_ops_access),
     db: AsyncSession = Depends(get_db),
 ) -> RunCycleResult:
+    """Manually trigger one monitoring cycle execution.
+
+    Args:
+        request: Parameter input untuk routine ini.
+        actor: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     async with monitoring_pipeline_guard(wait=False) as acquired:
         if not acquired:
             raise HTTPException(

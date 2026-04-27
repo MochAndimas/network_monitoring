@@ -1,4 +1,7 @@
-"""Provide application-wide configuration, constants, security, and time helpers for the network monitoring project."""
+"""Define module logic for `backend/app/core/config.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import json
 import logging
@@ -11,10 +14,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _split_csv(raw_value: str) -> list[str]:
+    """Perform split csv.
+
+    Args:
+        raw_value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return [item.strip() for item in str(raw_value or "").split(",") if item.strip()]
 
 
 class Settings(BaseSettings):
+    """Perform Settings.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
     app_name: str = "Network Monitoring"
     app_env: str = "development"
     database_url: str = "mysql+pymysql://network_monitoring:change-me@localhost:3306/network_monitoring"
@@ -106,6 +122,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def load_file_backed_secrets(self) -> "Settings":
+        """Load file backed secrets.
+
+        Returns:
+            TODO describe return value.
+
+        """
         secret_fields = {
             "telegram_bot_token": self.telegram_bot_token_file,
             "telegram_chat_id": self.telegram_chat_id_file,
@@ -141,10 +163,22 @@ class Settings(BaseSettings):
 
     @property
     def normalized_cors_origins(self) -> list[str]:
+        """Return normalized cors origins.
+
+        Returns:
+            TODO describe return value.
+
+        """
         return [item.rstrip("/") for item in _split_csv(self.cors_origins)]
 
     @property
     def normalized_trusted_hosts(self) -> list[str]:
+        """Return normalized trusted hosts.
+
+        Returns:
+            TODO describe return value.
+
+        """
         hosts = set(_split_csv(self.trusted_hosts))
         hosts.update({"localhost", "127.0.0.1", "testserver"})
         api_host = urlparse(self.dashboard_api_url if "://" in self.dashboard_api_url else f"http://{self.dashboard_api_url}")
@@ -154,34 +188,76 @@ class Settings(BaseSettings):
 
     @property
     def normalized_trusted_proxy_ips(self) -> set[str]:
+        """Return normalized trusted proxy ips.
+
+        Returns:
+            TODO describe return value.
+
+        """
         return set(_split_csv(self.trusted_proxy_ips))
 
     @property
     def normalized_auth_cookie_samesite(self) -> str:
+        """Return normalized auth cookie samesite.
+
+        Returns:
+            TODO describe return value.
+
+        """
         allowed = {"lax", "strict", "none"}
         value = str(self.auth_cookie_samesite or "lax").strip().lower()
         return value if value in allowed else "lax"
 
     @property
     def normalized_mikrotik_dynamic_sections(self) -> set[str]:
+        """Return normalized mikrotik dynamic sections.
+
+        Returns:
+            TODO describe return value.
+
+        """
         sections = {item.lower() for item in _split_csv(self.mikrotik_dynamic_sections)}
         return sections or {"interface", "firewall", "queue"}
 
     @property
     def normalized_mikrotik_dynamic_firewall_sections(self) -> set[str]:
+        """Return normalized mikrotik dynamic firewall sections.
+
+        Returns:
+            TODO describe return value.
+
+        """
         sections = {item.lower() for item in _split_csv(self.mikrotik_dynamic_firewall_section_allowlist)}
         return sections or {"filter", "nat"}
 
     @property
     def normalized_mikrotik_interface_allowlist(self) -> set[str]:
+        """Return normalized mikrotik interface allowlist.
+
+        Returns:
+            TODO describe return value.
+
+        """
         return {item.lower() for item in _split_csv(self.mikrotik_dynamic_interface_allowlist)}
 
     @property
     def normalized_mikrotik_queue_allowlist(self) -> set[str]:
+        """Return normalized mikrotik queue allowlist.
+
+        Returns:
+            TODO describe return value.
+
+        """
         return {item.lower() for item in _split_csv(self.mikrotik_dynamic_queue_allowlist)}
 
     @property
     def is_production(self) -> bool:
+        """Return is production.
+
+        Returns:
+            TODO describe return value.
+
+        """
         return str(self.app_env or "").strip().lower() == "production"
 
 
@@ -189,11 +265,26 @@ settings = Settings()
 
 
 def printer_snmp_community_map() -> dict[str, str]:
+    """Return printer snmp community map.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return _parse_printer_snmp_community_map(settings.printer_snmp_communities or "")
 
 
 @lru_cache(maxsize=8)
 def _parse_printer_snmp_community_map(raw_value: str) -> dict[str, str]:
+    """Parse printer snmp community map.
+
+    Args:
+        raw_value: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     raw_value = raw_value.strip()
     if not raw_value:
         return {}
@@ -225,11 +316,30 @@ def _parse_printer_snmp_community_map(raw_value: str) -> dict[str, str]:
 
 
 def printer_snmp_community_for_ip(ip_address: str) -> str | None:
+    """Return printer snmp community for ip.
+
+    Args:
+        ip_address: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return printer_snmp_community_map().get(str(ip_address).strip())
 
 
 @lru_cache(maxsize=4)
 def _parse_internal_api_key_map(raw_keys: str, legacy_key: str) -> dict[str, dict[str, object]]:
+    """Parse internal API key map.
+
+    Args:
+        raw_keys: Parameter input untuk routine ini.
+        legacy_key: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     payload: dict[str, dict[str, object]] = {}
     normalized_raw = str(raw_keys or "").strip()
     if normalized_raw:
@@ -265,10 +375,22 @@ def _parse_internal_api_key_map(raw_keys: str, legacy_key: str) -> dict[str, dic
 
 
 def internal_api_key_map() -> dict[str, dict[str, object]]:
+    """Return internal API key map.
+
+    Returns:
+        TODO describe return value.
+
+    """
     return _parse_internal_api_key_map(settings.internal_api_keys or "", settings.internal_api_key or "")
 
 
 def configure_logging() -> None:
+    """Configure application logging level and format.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",

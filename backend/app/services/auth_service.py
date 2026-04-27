@@ -1,4 +1,7 @@
-"""Compatibility facade for modularized auth services."""
+"""Define module logic for `backend/app/services/auth_service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 

@@ -1,9 +1,18 @@
-"""Provide automated regression tests for observability payload metrics."""
+"""Define test module behavior for `tests/services/test_observability_service.py`.
+
+This module contains automated regression and validation scenarios.
+"""
 
 from backend.app.services import observability_service as observability_module
 
 
 def test_observability_payload_metrics_cover_paged_endpoints():
+    """Validate that observability payload metrics cover paged endpoints.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     original_payload_request_count = observability_module._api_payload_request_count.copy()
     original_payload_rows = observability_module._api_payload_rows.copy()
     original_payload_total_rows = observability_module._api_payload_total_rows.copy()

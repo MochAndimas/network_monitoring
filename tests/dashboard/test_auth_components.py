@@ -1,4 +1,7 @@
-"""Provide automated regression tests for the network monitoring project."""
+"""Define test module behavior for `tests/dashboard/test_auth_components.py`.
+
+This module contains automated regression and validation scenarios.
+"""
 
 from __future__ import annotations
 
@@ -11,15 +14,36 @@ import dashboard.components.auth as auth_module
 
 
 class RerunTriggered(RuntimeError):
+    """Perform RerunTriggered.
+
+    This class groups related test utilities or scenarios.
+    """
     pass
 
 
 class StopTriggered(RuntimeError):
+    """Perform StopTriggered.
+
+    This class groups related test utilities or scenarios.
+    """
     pass
 
 
 class FakeStreamlit:
+    """Perform FakeStreamlit.
+
+    This class groups related test utilities or scenarios.
+    """
     def __init__(self, session_state: dict | None = None):
+        """Perform init.
+
+        Args:
+            session_state: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         self.session_state = session_state or {}
         self.warnings: list[str] = []
         self.captions: list[str] = []
@@ -27,61 +51,213 @@ class FakeStreamlit:
         self.form_submit_value = False
 
     def warning(self, message: str) -> None:
+        """Perform warning.
+
+        Args:
+            message: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         self.warnings.append(message)
 
     def caption(self, message: str) -> None:
+        """Perform caption.
+
+        Args:
+            message: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         self.captions.append(message)
 
     def error(self, message: str) -> None:
+        """Perform error.
+
+        Args:
+            message: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         self.errors.append(message)
 
     def markdown(self, *_args, **_kwargs) -> None:
+        """Perform markdown.
+
+        Args:
+            *_args: Parameter input untuk routine ini.
+            **_kwargs: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         return None
 
     def title(self, *_args, **_kwargs) -> None:
+        """Perform title.
+
+        Args:
+            *_args: Parameter input untuk routine ini.
+            **_kwargs: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         return None
 
     def text_input(self, _label: str, value: str = "", **_kwargs) -> str:
+        """Perform text input.
+
+        Args:
+            _label: Parameter input untuk routine ini.
+            value: Parameter input untuk routine ini.
+            **_kwargs: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         return value
 
     def checkbox(self, _label: str, **_kwargs) -> bool:
+        """Perform checkbox.
+
+        Args:
+            _label: Parameter input untuk routine ini.
+            **_kwargs: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         return False
 
     def form_submit_button(self, *_args, **_kwargs) -> bool:
+        """Perform form submit button.
+
+        Args:
+            *_args: Parameter input untuk routine ini.
+            **_kwargs: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         return self.form_submit_value
 
     def form(self, *_args, **_kwargs):
+        """Perform form.
+
+        Args:
+            *_args: Parameter input untuk routine ini.
+            **_kwargs: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         return _NullContext()
 
     @property
     def sidebar(self):
+        """Perform sidebar.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         return _NullContext()
 
     def button(self, *_args, **_kwargs) -> bool:
+        """Perform button.
+
+        Args:
+            *_args: Parameter input untuk routine ini.
+            **_kwargs: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         return False
 
     def rerun(self) -> None:
+        """Perform rerun.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         raise RerunTriggered()
 
     def stop(self) -> None:
+        """Perform stop.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         raise StopTriggered()
 
 
 class _NullContext:
+    """Perform NullContext.
+
+    This class groups related test utilities or scenarios.
+    """
     def __enter__(self):
+        """Perform enter.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         return self
 
     def __exit__(self, exc_type, exc, tb):
+        """Perform exit.
+
+        Args:
+            exc_type: Parameter input untuk routine ini.
+            exc: Parameter input untuk routine ini.
+            tb: Parameter input untuk routine ini.
+
+        Returns:
+            Nilai balik routine atau efek samping yang dihasilkan.
+
+        """
         return False
 
 
 def _http_401() -> httpx.HTTPStatusError:
+    """Perform http 401.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     request = httpx.Request("POST", "http://testserver/devices")
     response = httpx.Response(401, request=request)
     return httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
 
 def test_restore_login_state_applies_bridge_payload(monkeypatch):
+    """Validate that restore login state applies bridge payload.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": False,
@@ -121,6 +297,15 @@ def test_restore_login_state_applies_bridge_payload(monkeypatch):
 
 
 def test_restore_login_state_marks_failed_restore_completed(monkeypatch):
+    """Validate that restore login state marks failed restore completed.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": False,
@@ -152,6 +337,15 @@ def test_restore_login_state_marks_failed_restore_completed(monkeypatch):
 
 
 def test_restore_not_needed_after_failed_restore_for_logged_out_user(monkeypatch):
+    """Validate that restore not needed after failed restore for logged out user.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": False,
@@ -166,6 +360,12 @@ def test_restore_not_needed_after_failed_restore_for_logged_out_user(monkeypatch
 
 
 def test_login_error_message_surfaces_unauthorized_message():
+    """Validate that login error message surfaces unauthorized message.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     error = auth_module._login_error_message(
         {
             "request_id": "req-123",
@@ -178,6 +378,15 @@ def test_login_error_message_surfaces_unauthorized_message():
 
 
 def test_require_dashboard_login_does_not_overwrite_pending_login_with_restore(monkeypatch):
+    """Validate that require dashboard login does not overwrite pending login with restore.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     fake_st = FakeStreamlit(
         {
             "auth_token": None,
@@ -227,6 +436,15 @@ def test_require_dashboard_login_does_not_overwrite_pending_login_with_restore(m
 
 
 def test_require_dashboard_login_submits_bridge_login_request(monkeypatch):
+    """Validate that require dashboard login submits bridge login request.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     fake_st = FakeStreamlit(
         {
             "auth_token": None,
@@ -265,6 +483,15 @@ def test_require_dashboard_login_submits_bridge_login_request(monkeypatch):
 
 
 def test_require_dashboard_login_applies_bridge_login_response(monkeypatch):
+    """Validate that require dashboard login applies bridge login response.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     fake_st = FakeStreamlit(
         {
             "auth_token": None,
@@ -315,6 +542,15 @@ def test_require_dashboard_login_applies_bridge_login_response(monkeypatch):
 
 
 def test_require_dashboard_login_surfaces_bridge_login_error(monkeypatch):
+    """Validate that require dashboard login surfaces bridge login error.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     fake_st = FakeStreamlit(
         {
             "auth_token": None,
@@ -355,6 +591,15 @@ def test_require_dashboard_login_surfaces_bridge_login_error(monkeypatch):
 
 
 def test_post_json_queues_pending_request_on_401_and_replays_after_restore(monkeypatch):
+    """Validate that post json queues pending request on 401 and replays after restore.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": True,
@@ -412,10 +657,25 @@ def test_post_json_queues_pending_request_on_401_and_replays_after_restore(monke
 
 
 def test_dashboard_api_does_not_fallback_to_service_key_without_auth_token():
+    """Validate that dashboard api does not fallback to service key without auth token.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     assert api_module._request_headers("") == {}
 
 
 def test_get_json_uses_cached_get_reader(monkeypatch):
+    """Validate that get json uses cached get reader.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": True,
@@ -444,6 +704,15 @@ def test_get_json_uses_cached_get_reader(monkeypatch):
 
 
 def test_get_json_keeps_401_recovery_with_cached_get_reader(monkeypatch):
+    """Validate that get json keeps 401 recovery with cached get reader.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     fake_st = FakeStreamlit(
         {
             "dashboard_authenticated": True,
@@ -473,6 +742,12 @@ def test_get_json_keeps_401_recovery_with_cached_get_reader(monkeypatch):
 
 
 def test_auth_bridge_frontend_restricts_parent_origin():
+    """Validate that auth bridge frontend restricts parent origin.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     html = (auth_module.__file__)
     from pathlib import Path
 

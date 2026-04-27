@@ -1,4 +1,7 @@
-"""Provide operator and maintenance scripts for the network monitoring project."""
+"""Define module logic for `scripts/benchmark_endpoints.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -30,6 +33,17 @@ DEFAULT_PATHS = [
 
 
 async def _measure_path(client: httpx.AsyncClient, path: str, runs: int) -> dict:
+    """Perform measure path.
+
+    Args:
+        client: Parameter input untuk routine ini.
+        path: Parameter input untuk routine ini.
+        runs: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     samples_ms: list[float] = []
     for _ in range(runs):
         started_at = time.perf_counter()
@@ -48,6 +62,17 @@ async def _measure_path(client: httpx.AsyncClient, path: str, runs: int) -> dict
 
 
 def _resolve_thresholds(*, profile: str, max_p95_ms: float, max_max_ms: float) -> tuple[float, float]:
+    """Resolve thresholds.
+
+    Args:
+        profile: Parameter input untuk routine ini.
+        max_p95_ms: Parameter input untuk routine ini.
+        max_max_ms: Parameter input untuk routine ini.
+
+    Returns:
+        TODO describe return value.
+
+    """
     if profile == "ci":
         return 1500.0, 2500.0
     if profile == "strict":
@@ -56,6 +81,12 @@ def _resolve_thresholds(*, profile: str, max_p95_ms: float, max_max_ms: float) -
 
 
 def _print_latency_summary(results: list[dict]) -> None:
+    """Perform print latency summary.
+
+    Args:
+        results: Parameter input untuk routine ini.
+
+    """
     if not results:
         return
     by_p95 = sorted(results, key=lambda item: float(item.get("p95_ms") or 0.0), reverse=True)[:3]
@@ -69,6 +100,13 @@ def _print_latency_summary(results: list[dict]) -> None:
 
 
 def _write_json(path: str | None, payload: dict) -> None:
+    """Perform write json.
+
+    Args:
+        path: Parameter input untuk routine ini.
+        payload: Parameter input untuk routine ini.
+
+    """
     if not path:
         return
     target = Path(path)
@@ -77,6 +115,12 @@ def _write_json(path: str | None, payload: dict) -> None:
 
 
 async def main() -> None:
+    """Run the module entrypoint.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
     parser = argparse.ArgumentParser(description="Benchmark a set of backend endpoints.")
     parser.add_argument("--base-url", default="http://localhost:8000", help="Base backend URL.")
     parser.add_argument("--runs", type=int, default=5, help="Number of runs per endpoint.")
