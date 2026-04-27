@@ -1,1 +1,4 @@
-"""Provide application-wide configuration, constants, security, and time helpers for the network monitoring project."""
+"""Define module logic for `backend/app/core/__init__.py`.
+
+This module contains project-specific implementation details.
+"""

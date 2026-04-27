@@ -1,4 +1,7 @@
-"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+"""Define module logic for `backend/app/services/device_service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,19 +19,20 @@ async def list_device_rows_filtered(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[dict]:
-    """Return a list of device rows filtered for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """List devices using optional filters, ordering, and pagination controls.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        active_only: active only keyword value used by this routine (type `bool`, optional).
-        device_type: device type keyword value used by this routine (type `str | None`, optional).
-        latest_status: latest status keyword value used by this routine (type `str | None`, optional).
-        search: search keyword value used by this routine (type `str | None`, optional).
-        limit: limit keyword value used by this routine (type `int | None`, optional).
-        offset: offset keyword value used by this routine (type `int`, optional).
+        db: Parameter input untuk routine ini.
+        active_only: Parameter input untuk routine ini.
+        device_type: Parameter input untuk routine ini.
+        latest_status: Parameter input untuk routine ini.
+        search: Parameter input untuk routine ini.
+        limit: Parameter input untuk routine ini.
+        offset: Parameter input untuk routine ini.
 
     Returns:
-        `list[dict]` result produced by the routine.
+        TODO describe return value.
+
     """
     return await DeviceRepository(db).list_device_status_rows(
         active_only=active_only,
@@ -41,14 +45,15 @@ async def list_device_rows_filtered(
 
 
 async def get_device_row(db: AsyncSession, device_id: int) -> dict:
-    """Return device row for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Fetch one device row by identifier.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        device_id: device id value used by this routine (type `int`).
+        db: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     rows = await DeviceRepository(db).list_device_status_rows(device_id=device_id)
     if not rows:
@@ -57,14 +62,15 @@ async def get_device_row(db: AsyncSession, device_id: int) -> dict:
 
 
 async def create_device(db: AsyncSession, payload: dict):
-    """Create device for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Create and persist a new managed device entity.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        payload: payload value used by this routine (type `dict`).
+        db: Parameter input untuk routine ini.
+        payload: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        TODO describe return value.
+
     """
     repository = DeviceRepository(db)
     existing = await repository.get_by_ip_address(payload["ip_address"])
@@ -74,15 +80,16 @@ async def create_device(db: AsyncSession, payload: dict):
 
 
 async def update_device(db: AsyncSession, device_id: int, payload: dict):
-    """Update device for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Update an existing managed device entity.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        device_id: device id value used by this routine (type `int`).
-        payload: payload value used by this routine (type `dict`).
+        db: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        payload: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        TODO describe return value.
+
     """
     repository = DeviceRepository(db)
     device = await repository.get_by_id(device_id)
@@ -99,14 +106,12 @@ async def update_device(db: AsyncSession, device_id: int, payload: dict):
 
 
 async def delete_device(db: AsyncSession, device_id: int) -> None:
-    """Delete device for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Delete a managed device entity by identifier.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        device_id: device id value used by this routine (type `int`).
+        db: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     repository = DeviceRepository(db)
     device = await repository.get_by_id(device_id)

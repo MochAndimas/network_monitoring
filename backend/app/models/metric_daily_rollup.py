@@ -1,4 +1,7 @@
-"""Provide SQLAlchemy ORM models for the network monitoring project."""
+"""Define module logic for `backend/app/models/metric_daily_rollup.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import date, datetime
 
@@ -8,20 +11,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..core.time import now
 from ..db.base import Base
 
-
-def _utcnow() -> datetime:
-    """Handle the internal utcnow helper logic for SQLAlchemy ORM models.
-
-    Returns:
-        `datetime` result produced by the routine.
-    """
-    return now()
-
-
 class MetricDailyRollup(Base):
-    """Represent metric daily rollup behavior and data for SQLAlchemy ORM models.
+    """Perform MetricDailyRollup.
 
-    Inherits from `Base` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     __tablename__ = "metric_daily_rollups"
     __table_args__ = (UniqueConstraint("device_id", "rollup_date", name="uq_metric_daily_rollups_device_date"),)
@@ -39,7 +32,7 @@ class MetricDailyRollup(Base):
     average_packet_loss_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     average_jitter_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_jitter_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
 
     device: Mapped["Device"] = relationship()

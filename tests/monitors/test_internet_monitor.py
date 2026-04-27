@@ -1,6 +1,8 @@
-"""Provide automated regression tests for the network monitoring project."""
+"""Define test module behavior for `tests/monitors/test_internet_monitor.py`.
 
-import asyncio
+This module contains automated regression and validation scenarios.
+"""
+
 from datetime import timedelta
 
 import httpx
@@ -8,93 +10,41 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from backend.app.db.base import Base
 from backend.app.monitors import helpers
 from backend.app.monitors.device import service as device_service
 from backend.app.monitors.internet import service as internet_service
 from backend.app.monitors.mikrotik import service as mikrotik_service
+from backend.app.monitors.server import service as server_service
 from backend.app.repositories.device_repository import DeviceRepository
 from backend.app.repositories.metric_repository import MetricRepository
 from backend.app.core.time import utcnow
-
-
-def run(coro):
-    """Run the requested operation for automated regression tests.
-
-    Args:
-        coro: coro value used by this routine.
-
-    Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
-    """
-    return asyncio.run(coro)
-
+from tests.test_utils import create_all, drop_all, make_fake_safe_ping, run
 
 def test_internet_checks_collect_quality_dns_http_and_public_ip(monkeypatch, session_factory):
-    """Handle test internet checks collect quality dns http and public ip for automated regression tests.
+    """Validate that internet checks collect quality dns http and public ip.
 
     Args:
-        monkeypatch: monkeypatch value used by this routine.
-        session_factory: session factory value used by this routine.
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     ping_samples = iter([0.010, None, 0.020])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
-
-    async def fake_safe_ping(_ip_address):
-        """Handle fake safe ping for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            _ip_address: ip address value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
-        return next(ping_samples)
-
-    monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
 
     async def fake_getaddrinfo(*_args, **_kwargs):
-        """Handle fake getaddrinfo for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            *_args: Additional positional values accepted by this routine.
-            **_kwargs: Additional keyword values accepted by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         return [object()]
 
     class FakeLoop:
-        """Represent fake loop behavior and data for automated regression tests.
-        """
         async def getaddrinfo(self, *_args, **_kwargs):
-            """Handle getaddrinfo for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Args:
-                *_args: Additional positional values accepted by this routine.
-                **_kwargs: Additional keyword values accepted by this routine.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             return await fake_getaddrinfo()
 
     monkeypatch.setattr(internet_service.asyncio, "get_running_loop", lambda: FakeLoop())
 
     async def fake_client_get(self, url, **_kwargs):
-        """Handle fake client get for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            url: url value used by this routine.
-            **_kwargs: Additional keyword values accepted by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         request = httpx.Request("GET", url)
         if url == internet_service.settings.public_ip_check_url:
             return httpx.Response(200, request=request, text="203.0.113.20")
@@ -103,11 +53,6 @@ def test_internet_checks_collect_quality_dns_http_and_public_ip(monkeypatch, ses
     monkeypatch.setattr(internet_service.httpx.AsyncClient, "get", fake_client_get)
 
     async def scenario():
-        """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         async with session_factory() as db:
             device = (
                 await DeviceRepository(db).upsert_devices(
@@ -142,58 +87,27 @@ def test_internet_checks_collect_quality_dns_http_and_public_ip(monkeypatch, ses
 
 
 def test_internet_checks_anchor_dns_http_and_public_ip_to_preferred_isp(monkeypatch, session_factory):
-    """Handle test internet checks anchor dns http and public ip to preferred isp for automated regression tests.
+    """Validate that internet checks anchor dns http and public ip to preferred isp.
 
     Args:
-        monkeypatch: monkeypatch value used by this routine.
-        session_factory: session factory value used by this routine.
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     ping_samples = iter([0.010, 0.010, 0.010, 0.010, 0.010, 0.010])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
-
-    async def fake_safe_ping(_ip_address):
-        """Handle fake safe ping for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            _ip_address: ip address value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
-        return next(ping_samples)
-
-    monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
 
     class FakeLoop:
-        """Represent fake loop behavior and data for automated regression tests.
-        """
         async def getaddrinfo(self, *_args, **_kwargs):
-            """Handle getaddrinfo for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-            Args:
-                *_args: Additional positional values accepted by this routine.
-                **_kwargs: Additional keyword values accepted by this routine.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             return [object()]
 
     monkeypatch.setattr(internet_service.asyncio, "get_running_loop", lambda: FakeLoop())
 
     async def fake_client_get(self, url, **_kwargs):
-        """Handle fake client get for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            url: url value used by this routine.
-            **_kwargs: Additional keyword values accepted by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         request = httpx.Request("GET", url)
         if url == internet_service.settings.public_ip_check_url:
             return httpx.Response(200, request=request, text="203.0.113.20")
@@ -202,11 +116,6 @@ def test_internet_checks_anchor_dns_http_and_public_ip_to_preferred_isp(monkeypa
     monkeypatch.setattr(internet_service.httpx.AsyncClient, "get", fake_client_get)
 
     async def scenario():
-        """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         async with session_factory() as db:
             devices = await DeviceRepository(db).upsert_devices(
                 [
@@ -232,41 +141,21 @@ def test_internet_checks_anchor_dns_http_and_public_ip_to_preferred_isp(monkeypa
 
 
 def test_access_point_and_printer_checks_collect_packet_loss_jitter_and_snmp(monkeypatch, session_factory):
-    """Handle test access point and printer checks collect packet loss jitter and snmp for automated regression tests.
+    """Validate that access point and printer checks collect packet loss jitter and snmp.
 
     Args:
-        monkeypatch: monkeypatch value used by this routine.
-        session_factory: session factory value used by this routine.
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     ping_samples = iter([0.010, None, 0.020, 0.030, 0.030, 0.030])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
-
-    async def fake_safe_ping(_ip_address):
-        """Handle fake safe ping for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            _ip_address: ip address value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
-        return next(ping_samples)
-
-    monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
 
     async def fake_collect_printer_snmp_metrics(device_id, _ip_address):
-        """Handle fake collect printer snmp metrics for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            device_id: device id value used by this routine.
-            _ip_address: ip address value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         checked_at = utcnow()
         return [
             {
@@ -322,11 +211,6 @@ def test_access_point_and_printer_checks_collect_packet_loss_jitter_and_snmp(mon
     monkeypatch.setattr(device_service, "collect_printer_snmp_metrics", fake_collect_printer_snmp_metrics)
 
     async def scenario():
-        """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         async with session_factory() as db:
             devices = await DeviceRepository(db).upsert_devices(
                 [
@@ -356,37 +240,21 @@ def test_access_point_and_printer_checks_collect_packet_loss_jitter_and_snmp(mon
 
 
 def test_voip_checks_collect_ping_packet_loss_and_jitter(monkeypatch, session_factory):
-    """Handle test voip checks collect ping packet loss and jitter for automated regression tests.
+    """Validate that voip checks collect ping packet loss and jitter.
 
     Args:
-        monkeypatch: monkeypatch value used by this routine.
-        session_factory: session factory value used by this routine.
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     ping_samples = iter([0.012, 0.018, None])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
-
-    async def fake_safe_ping(_ip_address):
-        """Handle fake safe ping for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            _ip_address: ip address value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
-        return next(ping_samples)
-
-    monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
 
     async def scenario():
-        """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         async with session_factory() as db:
             await DeviceRepository(db).upsert_devices(
                 [{"name": "Dinstar Gateway", "ip_address": "192.168.88.10", "device_type": "voip"}]
@@ -403,37 +271,21 @@ def test_voip_checks_collect_ping_packet_loss_and_jitter(monkeypatch, session_fa
 
 
 def test_mikrotik_checks_collect_packet_loss_and_jitter(monkeypatch, session_factory):
-    """Handle test mikrotik checks collect packet loss and jitter for automated regression tests.
+    """Validate that mikrotik checks collect packet loss and jitter.
 
     Args:
-        monkeypatch: monkeypatch value used by this routine.
-        session_factory: session factory value used by this routine.
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     ping_samples = iter([0.010, 0.015, 0.025])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
-
-    async def fake_safe_ping(_ip_address):
-        """Handle fake safe ping for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            _ip_address: ip address value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
-        return next(ping_samples)
-
-    monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
 
     async def scenario():
-        """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         async with session_factory() as db:
             await DeviceRepository(db).upsert_devices(
                 [{"name": "Mikrotik Utama", "ip_address": "192.168.1.254", "device_type": "mikrotik"}]
@@ -449,41 +301,21 @@ def test_mikrotik_checks_collect_packet_loss_and_jitter(monkeypatch, session_fac
 
 
 def test_mikrotik_api_checks_collect_routeros_metrics(monkeypatch, session_factory):
-    """Handle test mikrotik api checks collect routeros metrics for automated regression tests.
+    """Validate that mikrotik api checks collect routeros metrics.
 
     Args:
-        monkeypatch: monkeypatch value used by this routine.
-        session_factory: session factory value used by this routine.
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     ping_samples = iter([0.010, 0.010, 0.010])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
 
-    async def fake_safe_ping(_ip_address):
-        """Handle fake safe ping for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            _ip_address: ip address value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
-        return next(ping_samples)
-
     class FakeApi:
-        """Represent fake api behavior and data for automated regression tests.
-        """
         def path(self, *parts):
-            """Handle path for automated regression tests.
-
-            Args:
-                *parts: Additional positional values accepted by this routine.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             paths = {
                 ("system", "resource"): [
                     {
@@ -515,25 +347,15 @@ def test_mikrotik_api_checks_collect_routeros_metrics(monkeypatch, session_facto
             return paths.get(parts, [])
 
         def close(self):
-            """Handle close for automated regression tests.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             return None
 
-    monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
     monkeypatch.setattr(mikrotik_service.settings, "mikrotik_host", "192.168.88.1")
     monkeypatch.setattr(mikrotik_service.settings, "mikrotik_username", "monitor")
     monkeypatch.setattr(mikrotik_service.settings, "mikrotik_password", "secret")
     monkeypatch.setattr(mikrotik_service, "connect", lambda **_kwargs: FakeApi())
 
     async def scenario():
-        """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         async with session_factory() as db:
             devices = await DeviceRepository(db).upsert_devices(
                 [{"name": "Mikrotik Utama", "ip_address": "192.168.88.1", "device_type": "internet_target"}]
@@ -579,41 +401,21 @@ def test_mikrotik_api_checks_collect_routeros_metrics(monkeypatch, session_facto
 
 
 def test_mikrotik_dynamic_metric_controls_support_section_toggle_limits_and_allowlist(monkeypatch, session_factory):
-    """Handle test mikrotik dynamic metric controls support section toggle limits and allowlist for automated regression tests.
+    """Validate that mikrotik dynamic metric controls support section toggle limits and allowlist.
 
     Args:
-        monkeypatch: monkeypatch value used by this routine.
-        session_factory: session factory value used by this routine.
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     ping_samples = iter([0.010, 0.010, 0.010])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
 
-    async def fake_safe_ping(_ip_address):
-        """Handle fake safe ping for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            _ip_address: ip address value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
-        return next(ping_samples)
-
     class FakeApi:
-        """Represent fake api behavior and data for automated regression tests.
-        """
         def path(self, *parts):
-            """Handle path for automated regression tests.
-
-            Args:
-                *parts: Additional positional values accepted by this routine.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             paths = {
                 ("system", "resource"): [
                     {
@@ -644,14 +446,9 @@ def test_mikrotik_dynamic_metric_controls_support_section_toggle_limits_and_allo
             return paths.get(parts, [])
 
         def close(self):
-            """Handle close for automated regression tests.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             return None
 
-    monkeypatch.setattr(helpers, "safe_ping", fake_safe_ping)
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
     monkeypatch.setattr(mikrotik_service.settings, "mikrotik_host", "192.168.88.1")
     monkeypatch.setattr(mikrotik_service.settings, "mikrotik_username", "monitor")
     monkeypatch.setattr(mikrotik_service.settings, "mikrotik_password", "secret")
@@ -664,11 +461,6 @@ def test_mikrotik_dynamic_metric_controls_support_section_toggle_limits_and_allo
     monkeypatch.setattr(mikrotik_service, "connect", lambda **_kwargs: FakeApi())
 
     async def scenario():
-        """Handle scenario for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         async with session_factory() as db:
             devices = await DeviceRepository(db).upsert_devices(
                 [{"name": "Mikrotik Utama", "ip_address": "192.168.88.1", "device_type": "internet_target"}]
@@ -685,12 +477,179 @@ def test_mikrotik_dynamic_metric_controls_support_section_toggle_limits_and_allo
     assert not any(name.startswith("firewall:") for name in metric_names)
 
 
-@pytest.fixture
-def session_factory():
-    """Handle session factory for automated regression tests.
+def test_mikrotik_api_metrics_attach_to_configured_host_device(monkeypatch, session_factory):
+    """Validate that mikrotik api metrics attach to configured host device.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    class FakeApi:
+        def path(self, *parts):
+            if parts == ("system", "resource"):
+                return [{"cpu-load": "10", "total-memory": "1000", "free-memory": "500", "total-hdd-space": "1000", "free-hdd-space": "500"}]
+            if parts == ("interface",):
+                return []
+            if parts == ("ip", "dhcp-server", "lease"):
+                return []
+            if parts == ("ip", "arp"):
+                return []
+            if parts == ("ip", "firewall", "filter"):
+                return []
+            if parts == ("ip", "firewall", "nat"):
+                return []
+            if parts == ("queue", "simple"):
+                return []
+            return []
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.010, 0.010, 0.010, 0.010, 0.010])))
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_host", "192.168.88.2")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_username", "monitor")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_password", "secret")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_dynamic_sections", "")
+    monkeypatch.setattr(mikrotik_service, "connect", lambda **_kwargs: FakeApi())
+
+    async def scenario():
+        async with session_factory() as db:
+            devices = await DeviceRepository(db).upsert_devices(
+                [
+                    {"name": "Mikrotik Backup", "ip_address": "192.168.88.2", "device_type": "mikrotik"},
+                    {"name": "Mikrotik Primary", "ip_address": "192.168.88.1", "device_type": "mikrotik"},
+                ]
+            )
+            metrics = await mikrotik_service.run_mikrotik_checks(db)
+            backup = next(device for device in devices if device.ip_address == "192.168.88.2")
+            primary = next(device for device in devices if device.ip_address == "192.168.88.1")
+            return metrics, backup.id, primary.id
+
+    metrics, backup_id, primary_id = run(scenario())
+    api_metric_device_ids = {metric["device_id"] for metric in metrics if metric["metric_name"] == "mikrotik_api"}
+    assert api_metric_device_ids == {backup_id}
+    assert primary_id not in api_metric_device_ids
+
+
+def test_mikrotik_api_metrics_are_skipped_when_host_does_not_match_multiple_devices(monkeypatch, session_factory):
+    """Validate that mikrotik api metrics are skipped when host does not match multiple devices.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.010, 0.010, 0.010, 0.010, 0.010])))
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_host", "192.168.88.99")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_username", "monitor")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_password", "secret")
+    monkeypatch.setattr(mikrotik_service, "connect", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("connect should not run")))
+
+    async def scenario():
+        async with session_factory() as db:
+            await DeviceRepository(db).upsert_devices(
+                [
+                    {"name": "Mikrotik Backup", "ip_address": "192.168.88.2", "device_type": "mikrotik"},
+                    {"name": "Mikrotik Primary", "ip_address": "192.168.88.1", "device_type": "mikrotik"},
+                ]
+            )
+            return await mikrotik_service.run_mikrotik_checks(db)
+
+    metrics = run(scenario())
+    metric_names = {metric["metric_name"] for metric in metrics}
+    assert "mikrotik_api" not in metric_names
+
+
+def test_server_resource_metrics_require_explicit_target_for_multiple_servers(monkeypatch, session_factory):
+    """Validate that server resource metrics require explicit target for multiple servers.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.020])))
+    monkeypatch.setattr(server_service.settings, "server_resource_device_ip", "")
+
+    async def scenario():
+        async with session_factory() as db:
+            devices = await DeviceRepository(db).upsert_devices(
+                [
+                    {"name": "Server A", "ip_address": "192.168.1.10", "device_type": "server"},
+                    {"name": "Server B", "ip_address": "192.168.1.11", "device_type": "server"},
+                ]
+            )
+            metrics = await server_service.run_server_checks(db)
+            return metrics, {device.id for device in devices}
+
+    metrics, server_ids = run(scenario())
+    ping_ids = {metric["device_id"] for metric in metrics if metric["metric_name"] == "ping"}
+    assert ping_ids == server_ids
+    assert not any(metric["metric_name"] == "cpu_percent" for metric in metrics)
+    assert not any(metric["metric_name"] == "memory_percent" for metric in metrics)
+    assert not any(metric["metric_name"] == "disk_percent" for metric in metrics)
+    assert not any(metric["metric_name"] == "boot_time_epoch" for metric in metrics)
+
+
+def test_server_resource_metrics_follow_configured_target_device_ip(monkeypatch, session_factory):
+    """Validate that server resource metrics follow configured target device ip.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.020])))
+    monkeypatch.setattr(server_service.settings, "server_resource_device_ip", "192.168.1.11")
+    monkeypatch.setattr(server_service.psutil, "cpu_percent", lambda *_args, **_kwargs: 10.0)
+    monkeypatch.setattr(server_service.psutil, "virtual_memory", lambda: type("Mem", (), {"percent": 20.0})())
+    monkeypatch.setattr(server_service.psutil, "disk_usage", lambda _path: type("Disk", (), {"percent": 30.0})())
+    monkeypatch.setattr(server_service.psutil, "boot_time", lambda: 1_700_000_000)
+
+    async def scenario():
+        async with session_factory() as db:
+            devices = await DeviceRepository(db).upsert_devices(
+                [
+                    {"name": "Server A", "ip_address": "192.168.1.10", "device_type": "server"},
+                    {"name": "Server B", "ip_address": "192.168.1.11", "device_type": "server"},
+                ]
+            )
+            metrics = await server_service.run_server_checks(db)
+            server_b = next(device for device in devices if device.ip_address == "192.168.1.11")
+            return metrics, server_b.id
+
+    metrics, server_b_id = run(scenario())
+    cpu_metric = next(metric for metric in metrics if metric["metric_name"] == "cpu_percent")
+    memory_metric = next(metric for metric in metrics if metric["metric_name"] == "memory_percent")
+    disk_metric = next(metric for metric in metrics if metric["metric_name"] == "disk_percent")
+    boot_metric = next(metric for metric in metrics if metric["metric_name"] == "boot_time_epoch")
+
+    assert cpu_metric["device_id"] == server_b_id
+    assert memory_metric["device_id"] == server_b_id
+    assert disk_metric["device_id"] == server_b_id
+    assert boot_metric["device_id"] == server_b_id
+
+
+@pytest.fixture
+def session_factory():
+    """Perform session factory.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -698,35 +657,8 @@ def session_factory():
         poolclass=StaticPool,
     )
     SessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-    run(_create_all(engine))
+    run(create_all(engine))
     try:
         yield SessionLocal
     finally:
-        run(_drop_all(engine))
-
-
-async def _create_all(engine) -> None:
-    """Create all for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        engine: engine value used by this routine.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-
-
-async def _drop_all(engine) -> None:
-    """Handle the internal drop all helper logic for automated regression tests. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-    Args:
-        engine: engine value used by this routine.
-
-    Returns:
-        None. The routine is executed for its side effects.
-    """
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+        run(drop_all(engine))

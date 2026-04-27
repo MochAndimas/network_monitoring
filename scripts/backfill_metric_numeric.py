@@ -1,4 +1,7 @@
-"""Provide operator and maintenance scripts for the network monitoring project."""
+"""Define module logic for `scripts/backfill_metric_numeric.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -22,10 +25,11 @@ NUMERIC_PATTERN = r"^-?[0-9]+(\.[0-9]+)?$"
 
 
 async def _count_pending_metrics() -> int:
-    """Count pending metrics for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Count pending metrics.
 
     Returns:
-        `int` result produced by the routine.
+        TODO describe return value.
+
     """
     async with SessionLocal() as db:
         query = (
@@ -40,13 +44,14 @@ async def _count_pending_metrics() -> int:
 
 
 async def _next_metric_ids(batch_size: int) -> list[int]:
-    """Handle the internal next metric ids helper logic for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Perform next metric ids.
 
     Args:
-        batch_size: batch size value used by this routine (type `int`).
+        batch_size: Parameter input untuk routine ini.
 
     Returns:
-        `list[int]` result produced by the routine.
+        TODO describe return value.
+
     """
     async with SessionLocal() as db:
         query = (
@@ -62,13 +67,14 @@ async def _next_metric_ids(batch_size: int) -> list[int]:
 
 
 async def _backfill_batch(metric_ids: list[int]) -> int:
-    """Handle the internal backfill batch helper logic for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Perform backfill batch.
 
     Args:
-        metric_ids: metric ids value used by this routine (type `list[int]`).
+        metric_ids: Parameter input untuk routine ini.
 
     Returns:
-        `int` result produced by the routine.
+        TODO describe return value.
+
     """
     if not metric_ids:
         return 0
@@ -89,10 +95,11 @@ async def _backfill_batch(metric_ids: list[int]) -> int:
 
 
 async def main() -> None:
-    """Handle main for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run the module entrypoint.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     parser = argparse.ArgumentParser(description="Backfill numeric metric values in small non-blocking batches.")
     parser.add_argument("--batch-size", type=int, default=500, help="Rows to update per transaction.")
@@ -128,11 +135,6 @@ async def main() -> None:
 
 if __name__ == "__main__":
     async def _run() -> None:
-        """Run the requested operation for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Returns:
-            None. The routine is executed for its side effects.
-        """
         try:
             await main()
         finally:

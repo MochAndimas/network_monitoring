@@ -1,4 +1,7 @@
-"""Provide application-wide configuration, constants, security, and time helpers for the network monitoring project."""
+"""Define module logic for `backend/app/core/time.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -8,22 +11,24 @@ WIB = ZoneInfo("Asia/Jakarta")
 
 
 def now() -> datetime:
-    """Handle now for application-wide configuration, constants, security, and time helpers.
+    """Return now.
 
     Returns:
-        `datetime` result produced by the routine.
+        TODO describe return value.
+
     """
     return datetime.now(WIB).replace(tzinfo=None)
 
 
 def as_wib_aware(value: datetime) -> datetime:
-    """Handle as wib aware for application-wide configuration, constants, security, and time helpers.
+    """Return as wib aware.
 
     Args:
-        value: value value used by this routine (type `datetime`).
+        value: Parameter input untuk routine ini.
 
     Returns:
-        `datetime` result produced by the routine.
+        TODO describe return value.
+
     """
     if value.tzinfo is None:
         return value.replace(tzinfo=WIB)
@@ -31,21 +36,23 @@ def as_wib_aware(value: datetime) -> datetime:
 
 
 def from_unix_timestamp(value: int) -> datetime:
-    """Handle from unix timestamp for application-wide configuration, constants, security, and time helpers.
+    """Return from unix timestamp.
 
     Args:
-        value: value value used by this routine (type `int`).
+        value: Parameter input untuk routine ini.
 
     Returns:
-        `datetime` result produced by the routine.
+        TODO describe return value.
+
     """
     return datetime.fromtimestamp(value, tz=WIB).replace(tzinfo=None)
 
 
 def utcnow() -> datetime:
-    """Handle utcnow for application-wide configuration, constants, security, and time helpers.
+    """Return utcnow.
 
     Returns:
-        `datetime` result produced by the routine.
+        TODO describe return value.
+
     """
     return now()

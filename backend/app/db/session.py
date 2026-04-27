@@ -1,4 +1,7 @@
-"""Provide database engine, session, and initialization helpers for the network monitoring project."""
+"""Define module logic for `backend/app/db/session.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -11,13 +14,14 @@ from ..core.config import settings
 
 
 def _async_database_url(database_url: str) -> str:
-    """Handle the internal async database url helper logic for database engine, session, and initialization helpers.
+    """Perform async database url.
 
     Args:
-        database_url: database url value used by this routine (type `str`).
+        database_url: Parameter input untuk routine ini.
 
     Returns:
-        `str` result produced by the routine.
+        TODO describe return value.
+
     """
     if database_url.startswith("sqlite:///") and not database_url.startswith("sqlite+aiosqlite:///"):
         return database_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
@@ -29,13 +33,14 @@ def _async_database_url(database_url: str) -> str:
 
 
 def _engine_options(database_url: str) -> dict:
-    """Handle the internal engine options helper logic for database engine, session, and initialization helpers.
+    """Perform engine options.
 
     Args:
-        database_url: database url value used by this routine (type `str`).
+        database_url: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     options = {
         "future": True,
@@ -61,20 +66,22 @@ SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, autoflush=Fa
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    """Return db for database engine, session, and initialization helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Yield a request-scoped async database session.
 
     Returns:
-        `AsyncIterator[AsyncSession]` result produced by the routine.
+        TODO describe return value.
+
     """
     async with SessionLocal() as db:
         yield db
 
 
 async def check_database_connection() -> bool:
-    """Check database connection for database engine, session, and initialization helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return True when a simple database query succeeds.
 
     Returns:
-        `bool` result produced by the routine.
+        TODO describe return value.
+
     """
     try:
         async with engine.connect() as connection:

@@ -1,4 +1,7 @@
-"""Provide background scheduler and worker jobs for the network monitoring project."""
+"""Define module logic for `backend/app/scheduler/worker.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -18,13 +21,11 @@ logger = logging.getLogger("network_monitoring.scheduler.worker")
 
 
 def _install_signal_handlers(stop_event: asyncio.Event) -> None:
-    """Handle the internal install signal handlers helper logic for background scheduler and worker jobs.
+    """Perform install signal handlers.
 
     Args:
-        stop_event: stop event value used by this routine (type `asyncio.Event`).
+        stop_event: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -36,10 +37,11 @@ def _install_signal_handlers(stop_event: asyncio.Event) -> None:
 
 
 async def run_scheduler_worker() -> None:
-    """Run scheduler worker for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run scheduler worker for scheduler execution workflows.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     configure_logging()
     validate_auth_configuration()
@@ -66,10 +68,11 @@ async def run_scheduler_worker() -> None:
 
 
 def main() -> None:
-    """Handle main for background scheduler and worker jobs.
+    """Return main for scheduler execution workflows.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     asyncio.run(run_scheduler_worker())
 

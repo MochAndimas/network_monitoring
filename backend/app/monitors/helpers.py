@@ -1,4 +1,7 @@
-"""Provide monitoring collectors for network, device, server, and Mikrotik metrics for the network monitoring project."""
+"""Define module logic for `backend/app/monitors/helpers.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -14,14 +17,15 @@ PING_SEMAPHORE = asyncio.Semaphore(max(settings.ping_concurrency_limit, 1))
 
 
 def build_ping_metric(device_id: int, latency_seconds: float | None) -> dict:
-    """Build ping metric for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Build ping metric as part of monitoring collection workflows.
 
     Args:
-        device_id: device id value used by this routine (type `int`).
-        latency_seconds: latency seconds value used by this routine (type `float | None`).
+        device_id: Parameter input untuk routine ini.
+        latency_seconds: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     checked_at = utcnow()
     if latency_seconds is None:
@@ -45,14 +49,15 @@ def build_ping_metric(device_id: int, latency_seconds: float | None) -> dict:
 
 
 def build_ping_quality_metrics(device_id: int, samples: list[float | None]) -> list[dict]:
-    """Build ping quality metrics for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Build ping quality metrics as part of monitoring collection workflows.
 
     Args:
-        device_id: device id value used by this routine (type `int`).
-        samples: samples value used by this routine (type `list[float | None]`).
+        device_id: Parameter input untuk routine ini.
+        samples: Parameter input untuk routine ini.
 
     Returns:
-        `list[dict]` result produced by the routine.
+        TODO describe return value.
+
     """
     checked_at = utcnow()
     sample_count = len(samples)
@@ -83,39 +88,42 @@ def build_ping_quality_metrics(device_id: int, samples: list[float | None]) -> l
 
 
 async def collect_ping_samples(ip_address: str) -> list[float | None]:
-    """Collect ping samples for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Collect ping samples as part of monitoring collection workflows.
 
     Args:
-        ip_address: ip address value used by this routine (type `str`).
+        ip_address: Parameter input untuk routine ini.
 
     Returns:
-        `list[float | None]` result produced by the routine.
+        TODO describe return value.
+
     """
     sample_count = max(settings.ping_sample_count, 1)
     return list(await asyncio.gather(*[safe_ping(ip_address) for _ in range(sample_count)]))
 
 
 def latest_successful_ping(samples: list[float | None]) -> float | None:
-    """Handle latest successful ping for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Return latest successful ping as part of monitoring collection workflows.
 
     Args:
-        samples: samples value used by this routine (type `list[float | None]`).
+        samples: Parameter input untuk routine ini.
 
     Returns:
-        `float | None` result produced by the routine.
+        TODO describe return value.
+
     """
     successful_samples = [sample for sample in samples if sample is not None]
     return successful_samples[-1] if successful_samples else None
 
 
 async def safe_ping(ip_address: str) -> float | None:
-    """Handle safe ping for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return safe ping as part of monitoring collection workflows.
 
     Args:
-        ip_address: ip address value used by this routine (type `str`).
+        ip_address: Parameter input untuk routine ini.
 
     Returns:
-        `float | None` result produced by the routine.
+        TODO describe return value.
+
     """
     try:
         async with PING_SEMAPHORE:
@@ -125,14 +133,15 @@ async def safe_ping(ip_address: str) -> float | None:
 
 
 async def bounded_gather(coroutines, *, limit: int | None = None) -> list:
-    """Handle bounded gather for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return bounded gather as part of monitoring collection workflows.
 
     Args:
-        coroutines: coroutines value used by this routine.
-        limit: limit keyword value used by this routine (type `int | None`, optional).
+        coroutines: Parameter input untuk routine ini.
+        limit: Parameter input untuk routine ini.
 
     Returns:
-        `list` result produced by the routine.
+        TODO describe return value.
+
     """
     coroutines = list(coroutines)
     if not coroutines:
@@ -141,14 +150,6 @@ async def bounded_gather(coroutines, *, limit: int | None = None) -> list:
     semaphore = asyncio.Semaphore(concurrency_limit)
 
     async def _run(coroutine):
-        """Run the requested operation for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
-
-        Args:
-            coroutine: coroutine value used by this routine.
-
-        Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
-        """
         async with semaphore:
             return await coroutine
 
@@ -156,13 +157,14 @@ async def bounded_gather(coroutines, *, limit: int | None = None) -> list:
 
 
 def _calculate_jitter_ms(samples: list[float]) -> float | None:
-    """Handle the internal calculate jitter ms helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Perform calculate jitter ms.
 
     Args:
-        samples: samples value used by this routine (type `list[float]`).
+        samples: Parameter input untuk routine ini.
 
     Returns:
-        `float | None` result produced by the routine.
+        TODO describe return value.
+
     """
     if len(samples) < 2:
         return 0.0 if samples else None

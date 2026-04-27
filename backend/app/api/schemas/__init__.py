@@ -1,4 +1,7 @@
-"""Provide API response and request schemas for the network monitoring project."""
+"""Define module logic for `backend/app/api/schemas/__init__.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from .auth import (
     AdminAuditLogItem,
@@ -16,6 +19,7 @@ from .auth import (
     UserSessionInfo,
 )
 from .dashboard import (
+    AlertPage,
     AlertItem,
     AuthObservabilitySummary,
     DashboardSummary,
@@ -25,7 +29,10 @@ from .dashboard import (
     DeviceOption,
     DeviceTypeOption,
     DeviceUpdate,
+    IncidentPage,
     IncidentItem,
+    MetricDailySummaryItem,
+    MetricDailySummaryPage,
     MetricHistoryItem,
     MetricHistoryPage,
     PageMeta,
@@ -36,6 +43,7 @@ from .dashboard import (
 
 __all__ = [
     "AlertItem",
+    "AlertPage",
     "AdminAuditLogItem",
     "AuthAdminSessionItem",
     "AuthObservabilitySummary",
@@ -50,11 +58,14 @@ __all__ = [
     "DeviceTypeOption",
     "DeviceUpdate",
     "IncidentItem",
+    "IncidentPage",
     "LoginRequest",
     "LoginResponse",
     "LogoutAllResponse",
     "MetricHistoryItem",
     "MetricHistoryPage",
+    "MetricDailySummaryItem",
+    "MetricDailySummaryPage",
     "PageMeta",
     "RunCycleResult",
     "ThresholdItem",

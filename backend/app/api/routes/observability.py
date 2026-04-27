@@ -1,4 +1,7 @@
-"""Provide FastAPI route handlers and HTTP helpers for the network monitoring project."""
+"""Define module logic for `backend/app/api/routes/observability.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
@@ -23,13 +26,14 @@ router = APIRouter()
 
 @router.get("/summary")
 async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
-    """Handle observability summary for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return observability summary for API and scheduler operations.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`, optional).
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     database_ok = await check_database_connection()
     devices_total = await DeviceRepository(db).count_devices(active_only=False)
@@ -66,13 +70,14 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
 
 @router.get("/metrics", response_class=PlainTextResponse)
 async def observability_metrics(db: AsyncSession = Depends(get_db)) -> PlainTextResponse:
-    """Handle observability metrics for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return Prometheus-format observability metrics payload.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`, optional).
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `PlainTextResponse` result produced by the routine.
+        TODO describe return value.
+
     """
     database_ok = await check_database_connection()
     scheduler_statuses = await list_scheduler_job_statuses(db)

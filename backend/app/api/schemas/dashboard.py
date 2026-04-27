@@ -1,6 +1,9 @@
-"""Provide API response and request schemas for the network monitoring project."""
+"""Define module logic for `backend/app/api/schemas/dashboard.py`.
 
-from datetime import datetime
+This module contains project-specific implementation details.
+"""
+
+from datetime import date, datetime
 from ipaddress import ip_address
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -9,9 +12,9 @@ from ...core.constants import DEVICE_TYPE_CHOICES
 
 
 class DashboardSummary(BaseModel):
-    """Represent dashboard summary behavior and data for API response and request schemas.
+    """Perform DashboardSummary.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     internet_status: str
     mikrotik_status: str
@@ -20,9 +23,9 @@ class DashboardSummary(BaseModel):
 
 
 class DeviceListItem(BaseModel):
-    """Represent device list item behavior and data for API response and request schemas.
+    """Perform DeviceListItem.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -38,9 +41,9 @@ class DeviceListItem(BaseModel):
 
 
 class PageMeta(BaseModel):
-    """Represent page meta behavior and data for API response and request schemas.
+    """Perform PageMeta.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     total: int
     limit: int
@@ -48,18 +51,18 @@ class PageMeta(BaseModel):
 
 
 class DeviceListPage(BaseModel):
-    """Represent device list page behavior and data for API response and request schemas.
+    """Perform DeviceListPage.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     items: list["DeviceListItem"]
     meta: PageMeta
 
 
 class DeviceCreate(BaseModel):
-    """Represent device create behavior and data for API response and request schemas.
+    """Perform DeviceCreate.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     name: str = Field(min_length=1, max_length=150)
     ip_address: str = Field(min_length=1, max_length=50)
@@ -71,13 +74,14 @@ class DeviceCreate(BaseModel):
     @field_validator("ip_address")
     @classmethod
     def validate_ip_address(cls, value: str) -> str:
-        """Validate ip address for API response and request schemas.
+        """Validate IP address.
 
         Args:
-            value: value value used by this routine (type `str`).
+            value: Parameter input untuk routine ini.
 
         Returns:
-            `str` result produced by the routine.
+            TODO describe return value.
+
         """
         ip_address(value)
         return value
@@ -85,13 +89,14 @@ class DeviceCreate(BaseModel):
     @field_validator("device_type")
     @classmethod
     def validate_device_type(cls, value: str) -> str:
-        """Validate device type for API response and request schemas.
+        """Validate device type.
 
         Args:
-            value: value value used by this routine (type `str`).
+            value: Parameter input untuk routine ini.
 
         Returns:
-            `str` result produced by the routine.
+            TODO describe return value.
+
         """
         if value not in DEVICE_TYPE_CHOICES:
             raise ValueError(f"device_type must be one of: {', '.join(DEVICE_TYPE_CHOICES)}")
@@ -99,9 +104,9 @@ class DeviceCreate(BaseModel):
 
 
 class DeviceUpdate(BaseModel):
-    """Represent device update behavior and data for API response and request schemas.
+    """Perform DeviceUpdate.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     name: str | None = Field(default=None, min_length=1, max_length=150)
     ip_address: str | None = Field(default=None, min_length=1, max_length=50)
@@ -113,13 +118,14 @@ class DeviceUpdate(BaseModel):
     @field_validator("ip_address")
     @classmethod
     def validate_optional_ip_address(cls, value: str | None) -> str | None:
-        """Validate optional ip address for API response and request schemas.
+        """Validate optional IP address.
 
         Args:
-            value: value value used by this routine (type `str | None`).
+            value: Parameter input untuk routine ini.
 
         Returns:
-            `str | None` result produced by the routine.
+            TODO describe return value.
+
         """
         if value is None:
             return value
@@ -129,13 +135,14 @@ class DeviceUpdate(BaseModel):
     @field_validator("device_type")
     @classmethod
     def validate_optional_device_type(cls, value: str | None) -> str | None:
-        """Validate optional device type for API response and request schemas.
+        """Validate optional device type.
 
         Args:
-            value: value value used by this routine (type `str | None`).
+            value: Parameter input untuk routine ini.
 
         Returns:
-            `str | None` result produced by the routine.
+            TODO describe return value.
+
         """
         if value is None:
             return value
@@ -145,9 +152,9 @@ class DeviceUpdate(BaseModel):
 
 
 class MetricHistoryItem(BaseModel):
-    """Represent metric history item behavior and data for API response and request schemas.
+    """Perform MetricHistoryItem.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     id: int
     device_id: int
@@ -161,18 +168,50 @@ class MetricHistoryItem(BaseModel):
 
 
 class MetricHistoryPage(BaseModel):
-    """Represent metric history page behavior and data for API response and request schemas.
+    """Perform MetricHistoryPage.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     items: list["MetricHistoryItem"]
     meta: PageMeta
 
 
-class AlertItem(BaseModel):
-    """Represent alert item behavior and data for API response and request schemas.
+class MetricDailySummaryItem(BaseModel):
+    """Perform MetricDailySummaryItem.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
+    """
+    id: int
+    device_id: int
+    device_name: str
+    device_type: str | None = None
+    rollup_date: date
+    total_samples: int
+    ping_samples: int
+    down_count: int
+    uptime_percentage: float | None = None
+    average_ping_ms: float | None = None
+    min_ping_ms: float | None = None
+    max_ping_ms: float | None = None
+    average_packet_loss_percent: float | None = None
+    average_jitter_ms: float | None = None
+    max_jitter_ms: float | None = None
+    updated_at: datetime
+
+
+class MetricDailySummaryPage(BaseModel):
+    """Perform MetricDailySummaryPage.
+
+    This class encapsulates related behavior and data for this domain area.
+    """
+    items: list["MetricDailySummaryItem"]
+    meta: PageMeta
+
+
+class AlertItem(BaseModel):
+    """Perform AlertItem.
+
+    This class encapsulates related behavior and data for this domain area.
     """
     id: int
     device_id: int | None = None
@@ -185,10 +224,19 @@ class AlertItem(BaseModel):
     resolved_at: datetime | None = None
 
 
-class IncidentItem(BaseModel):
-    """Represent incident item behavior and data for API response and request schemas.
+class AlertPage(BaseModel):
+    """Perform AlertPage.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
+    """
+    items: list["AlertItem"]
+    meta: PageMeta
+
+
+class IncidentItem(BaseModel):
+    """Perform IncidentItem.
+
+    This class encapsulates related behavior and data for this domain area.
     """
     id: int
     device_id: int | None = None
@@ -199,10 +247,19 @@ class IncidentItem(BaseModel):
     ended_at: datetime | None = None
 
 
-class RunCycleResult(BaseModel):
-    """Represent run cycle result behavior and data for API response and request schemas.
+class IncidentPage(BaseModel):
+    """Perform IncidentPage.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
+    """
+    items: list["IncidentItem"]
+    meta: PageMeta
+
+
+class RunCycleResult(BaseModel):
+    """Perform RunCycleResult.
+
+    This class encapsulates related behavior and data for this domain area.
     """
     metrics_collected: int
     alerts_created: int
@@ -212,9 +269,9 @@ class RunCycleResult(BaseModel):
 
 
 class ThresholdItem(BaseModel):
-    """Represent threshold item behavior and data for API response and request schemas.
+    """Perform ThresholdItem.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     id: int
     key: str
@@ -223,26 +280,26 @@ class ThresholdItem(BaseModel):
 
 
 class ThresholdUpdate(BaseModel):
-    """Represent threshold update behavior and data for API response and request schemas.
+    """Perform ThresholdUpdate.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     value: float
 
 
 class DeviceTypeOption(BaseModel):
-    """Represent device type option behavior and data for API response and request schemas.
+    """Perform DeviceTypeOption.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     value: str
     label: str
 
 
 class DeviceOption(BaseModel):
-    """Represent device option behavior and data for API response and request schemas.
+    """Perform DeviceOption.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     id: int
     name: str
@@ -253,9 +310,9 @@ class DeviceOption(BaseModel):
 
 
 class AuthObservabilitySummary(BaseModel):
-    """Represent auth observability summary behavior and data for API response and request schemas.
+    """Perform AuthObservabilitySummary.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     active_sessions: int
     login_failures_window: int

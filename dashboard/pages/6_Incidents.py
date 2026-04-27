@@ -1,11 +1,16 @@
-"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+"""Define module logic for `dashboard/pages/6_Incidents.py`.
+
+This module contains project-specific implementation details.
+"""
+
+from urllib.parse import quote_plus
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
 from components.auth import require_dashboard_login
-from components.api import get_json
+from components.api import get_json, paged_items, paged_meta
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
@@ -28,20 +33,35 @@ status_filter = filter_col1.selectbox(
 )
 search_filter = filter_col2.text_input("Cari", placeholder="Filter berdasarkan device atau ringkasan")
 with st.expander("Filter Lanjutan"):
-    adv_col1, adv_col2 = st.columns(2)
+    adv_col1, adv_col2, adv_col3 = st.columns(3)
     sort_mode = adv_col1.selectbox("Urutkan", options=["Terbaru", "Durasi Terpanjang", "Berdasarkan Status"], index=0)
     max_rows = adv_col2.selectbox("Maks. Baris Detail", options=[25, 50, 100, 200], index=1)
+    incidents_page_size = adv_col3.selectbox("Baris per Halaman", options=[25, 50, 100, 200], index=1)
 auto_refresh, interval_seconds = refresh_controls("incidents", default_enabled=True, default_interval=15)
+incidents_page_key = "incidents_page"
+incidents_filter_signature_key = "incidents_filter_signature"
+incidents_filter_signature = (
+    str(status_filter),
+    search_filter.strip().lower(),
+    str(sort_mode),
+    int(incidents_page_size),
+)
+if st.session_state.get(incidents_filter_signature_key) != incidents_filter_signature:
+    st.session_state[incidents_page_key] = 1
+    st.session_state[incidents_filter_signature_key] = incidents_filter_signature
+current_incidents_page = max(int(st.session_state.get(incidents_page_key, 1) or 1), 1)
+incidents_offset = (current_incidents_page - 1) * int(incidents_page_size)
 
 
 def _duration_label(minutes_value: float | None) -> str:
-    """Handle the internal duration label helper logic for Streamlit dashboard page rendering.
+    """Perform duration label.
 
     Args:
-        minutes_value: minutes value value used by this routine (type `float | None`).
+        minutes_value: Parameter input untuk routine ini.
 
     Returns:
-        `str` result produced by the routine.
+        TODO describe return value.
+
     """
     if minutes_value is None or pd.isna(minutes_value):
         return "-"
@@ -51,13 +71,31 @@ def _duration_label(minutes_value: float | None) -> str:
 
 
 def _render_incidents_body() -> None:
-    """Render incidents body for Streamlit dashboard page rendering.
+    """Render incidents body.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
-    path = "/incidents" if status_filter == "All" else f"/incidents?status={status_filter}"
-    incidents = get_json(path, [])
+    path = f"/incidents/paged?limit={int(incidents_page_size)}&offset={incidents_offset}"
+    if status_filter != "All":
+        path = f"{path}&status={status_filter}"
+    normalized_search_filter = search_filter.strip()
+    if normalized_search_filter:
+        path = f"{path}&search={quote_plus(normalized_search_filter)}"
+    incidents_payload = get_json(
+        path,
+        {"items": [], "meta": {"total": 0, "limit": int(incidents_page_size), "offset": incidents_offset}},
+    )
+    incidents = paged_items(incidents_payload, [])
+    incidents_meta = paged_meta(incidents_payload)
+    incidents_total = int(incidents_meta.get("total") or 0)
+    incidents_total_pages = max((incidents_total - 1) // int(incidents_page_size) + 1, 1)
+    if current_incidents_page > incidents_total_pages:
+        st.session_state[incidents_page_key] = incidents_total_pages
+        st.rerun()
+    start_row = 0 if incidents_total == 0 else incidents_offset + 1
+    end_row = min(incidents_offset + len(incidents), incidents_total)
 
     render_meta_row(
         [
@@ -65,8 +103,19 @@ def _render_incidents_body() -> None:
             ("Terakhir Diperbarui", rendered_at_label()),
             ("Filter Status", normalize_status_label(status_filter)),
             ("Urutan", sort_mode),
+            ("Cakupan Data", f"{start_row}-{end_row} / {incidents_total} incidents"),
         ]
     )
+    page_col, page_meta_col = st.columns([1, 4])
+    page_col.number_input(
+        "Halaman Incidents",
+        min_value=1,
+        max_value=incidents_total_pages,
+        value=min(current_incidents_page, incidents_total_pages),
+        step=1,
+        key=incidents_page_key,
+    )
+    page_meta_col.caption(f"Menampilkan {start_row}-{end_row} dari {incidents_total} incidents.")
 
     if not incidents:
         st.info("Belum ada insiden tercatat. Data akan muncul setelah gangguan terdeteksi.")
@@ -103,12 +152,6 @@ def _render_incidents_body() -> None:
     dataframe["duration_label"] = dataframe["duration_minutes"].map(_duration_label)
 
     filtered_frame = dataframe.copy()
-    if search_filter.strip():
-        needle = search_filter.strip().lower()
-        filtered_frame = filtered_frame[
-            filtered_frame["device_name"].str.lower().str.contains(needle, na=False)
-            | filtered_frame["summary"].str.lower().str.contains(needle, na=False)
-        ]
 
     if filtered_frame.empty:
         st.info("Tidak ada insiden yang cocok dengan filter. Coba ubah kata kunci pencarian.")

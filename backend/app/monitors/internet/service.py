@@ -1,4 +1,7 @@
-"""Provide monitoring collectors for network, device, server, and Mikrotik metrics for the network monitoring project."""
+"""Define module logic for `backend/app/monitors/internet/service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -16,13 +19,14 @@ from ..helpers import bounded_gather, build_ping_metric, build_ping_quality_metr
 
 
 async def run_internet_checks(db: AsyncSession) -> list[dict]:
-    """Run internet checks for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run internet checks as part of monitoring collection workflows.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `list[dict]` result produced by the routine.
+        TODO describe return value.
+
     """
     devices = await DeviceRepository(db).list_by_type("internet_target", active_only=True)
     metrics: list[dict] = []
@@ -49,23 +53,16 @@ async def run_internet_checks(db: AsyncSession) -> list[dict]:
 
 
 def _select_internet_anchor_device(devices):
-    """Handle the internal select internet anchor device helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Perform select internet anchor device.
 
     Args:
-        devices: devices value used by this routine.
+        devices: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        TODO describe return value.
+
     """
     def priority(device) -> tuple[int, str]:
-        """Handle priority for monitoring collectors for network, device, server, and Mikrotik metrics.
-
-        Args:
-            device: device value used by this routine.
-
-        Returns:
-            `tuple[int, str]` result produced by the routine.
-        """
         name = str(getattr(device, "name", "") or "").lower()
         if "myrepublic" in name:
             return (0, name)
@@ -79,14 +76,15 @@ def _select_internet_anchor_device(devices):
 
 
 async def _build_device_ping_metrics(device_id: int, ip_address: str) -> list[dict]:
-    """Build device ping metrics for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Build device ping metrics.
 
     Args:
-        device_id: device id value used by this routine (type `int`).
-        ip_address: ip address value used by this routine (type `str`).
+        device_id: Parameter input untuk routine ini.
+        ip_address: Parameter input untuk routine ini.
 
     Returns:
-        `list[dict]` result produced by the routine.
+        TODO describe return value.
+
     """
     samples = await collect_ping_samples(ip_address)
     return [
@@ -96,13 +94,14 @@ async def _build_device_ping_metrics(device_id: int, ip_address: str) -> list[di
 
 
 async def _build_dns_metric(device_id: int) -> dict:
-    """Build dns metric for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Build dns metric.
 
     Args:
-        device_id: device id value used by this routine (type `int`).
+        device_id: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     checked_at = utcnow()
     started_at = perf_counter()
@@ -130,14 +129,15 @@ async def _build_dns_metric(device_id: int) -> dict:
 
 
 async def _build_http_metric(device_id: int, client: httpx.AsyncClient) -> dict:
-    """Build http metric for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Build http metric.
 
     Args:
-        device_id: device id value used by this routine (type `int`).
-        client: client value used by this routine (type `httpx.AsyncClient`).
+        device_id: Parameter input untuk routine ini.
+        client: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     checked_at = utcnow()
     started_at = perf_counter()
@@ -166,15 +166,16 @@ async def _build_http_metric(device_id: int, client: httpx.AsyncClient) -> dict:
 
 
 async def _build_public_ip_metric(db: AsyncSession, device_id: int, client: httpx.AsyncClient) -> dict:
-    """Build public ip metric for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Build public IP metric.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        device_id: device id value used by this routine (type `int`).
-        client: client value used by this routine (type `httpx.AsyncClient`).
+        db: Parameter input untuk routine ini.
+        device_id: Parameter input untuk routine ini.
+        client: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     checked_at = utcnow()
     try:

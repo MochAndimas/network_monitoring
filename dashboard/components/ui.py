@@ -1,4 +1,7 @@
-"""Provide shared Streamlit dashboard UI and API helpers for the network monitoring project."""
+"""Define module logic for `dashboard/components/ui.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -9,27 +12,23 @@ import streamlit as st
 
 
 def render_page_header(title: str, description: str) -> None:
-    """Render page header for shared Streamlit dashboard UI and API helpers.
+    """Render page header.
 
     Args:
-        title: title value used by this routine (type `str`).
-        description: description value used by this routine (type `str`).
+        title: Parameter input untuk routine ini.
+        description: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     st.title(title)
     st.caption(description)
 
 
 def render_meta_row(items: Sequence[tuple[str, object]]) -> None:
-    """Render meta row for shared Streamlit dashboard UI and API helpers.
+    """Render meta row.
 
     Args:
-        items: items value used by this routine (type `Sequence[tuple[str, object]]`).
+        items: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     if not items:
         return
@@ -45,14 +44,12 @@ def render_kpi_cards(
     *,
     columns_per_row: int = 4,
 ) -> None:
-    """Render kpi cards for shared Streamlit dashboard UI and API helpers.
+    """Render kpi cards.
 
     Args:
-        items: items value used by this routine (type `Sequence[tuple[str, object, str | None]]`).
-        columns_per_row: columns per row keyword value used by this routine (type `int`, optional).
+        items: Parameter input untuk routine ini.
+        columns_per_row: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     if not items:
         return
@@ -67,13 +64,14 @@ def render_kpi_cards(
 
 
 def normalize_status_label(value: object) -> str:
-    """Normalize status label for shared Streamlit dashboard UI and API helpers.
+    """Normalize status label.
 
     Args:
-        value: value value used by this routine (type `object`).
+        value: Parameter input untuk routine ini.
 
     Returns:
-        `str` result produced by the routine.
+        TODO describe return value.
+
     """
     normalized = str(value or "").strip().lower()
     if not normalized:
@@ -92,13 +90,14 @@ def normalize_status_label(value: object) -> str:
 
 
 def status_priority(value: object) -> int:
-    """Handle status priority for shared Streamlit dashboard UI and API helpers.
+    """Return status priority.
 
     Args:
-        value: value value used by this routine (type `object`).
+        value: Parameter input untuk routine ini.
 
     Returns:
-        `int` result produced by the routine.
+        TODO describe return value.
+
     """
     normalized = str(value or "").strip().lower()
     priorities = {

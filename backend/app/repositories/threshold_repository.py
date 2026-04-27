@@ -1,4 +1,7 @@
-"""Provide database query and persistence repositories for the network monitoring project."""
+"""Define module logic for `backend/app/repositories/threshold_repository.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,60 +10,67 @@ from ..models.threshold import Threshold
 
 
 class ThresholdRepository:
-    """Represent threshold repository behavior and data for database query and persistence repositories.
+    """Perform ThresholdRepository.
+
+    This class encapsulates related behavior and data for this domain area.
     """
     def __init__(self, db: AsyncSession):
-        """Handle the internal init helper logic for database query and persistence repositories.
+        """Perform init.
 
         Args:
-            db: db value used by this routine (type `AsyncSession`).
+            db: Parameter input untuk routine ini.
 
         Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
+            TODO describe return value.
+
         """
         self.db = db
 
     async def list_thresholds(self) -> list[Threshold]:
-        """Return a list of thresholds for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to list thresholds.
 
         Returns:
-            `list[Threshold]` result produced by the routine.
+            TODO describe return value.
+
         """
         query: Select[tuple[Threshold]] = select(Threshold).order_by(Threshold.key.asc())
         return list((await self.db.scalars(query)).all())
 
     async def count_thresholds(self) -> int:
-        """Count thresholds for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to count thresholds.
 
         Returns:
-            `int` result produced by the routine.
+            TODO describe return value.
+
         """
         query = select(func.count()).select_from(Threshold)
         return int(await self.db.scalar(query) or 0)
 
     async def get_by_key(self, key: str) -> Threshold | None:
-        """Return by key for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to get by key.
 
         Args:
-            key: key value used by this routine (type `str`).
+            key: Parameter input untuk routine ini.
 
         Returns:
-            `Threshold | None` result produced by the routine.
+            TODO describe return value.
+
         """
         query: Select[tuple[Threshold]] = select(Threshold).where(Threshold.key == key)
         return (await self.db.scalars(query)).first()
 
     async def upsert_threshold(self, key: str, value: float, description: str | None = None, *, commit: bool = True) -> Threshold:
-        """Handle upsert threshold for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to upsert threshold.
 
         Args:
-            key: key value used by this routine (type `str`).
-            value: value value used by this routine (type `float`).
-            description: description value used by this routine (type `str | None`, optional).
-            commit: commit keyword value used by this routine (type `bool`, optional).
+            key: Parameter input untuk routine ini.
+            value: Parameter input untuk routine ini.
+            description: Parameter input untuk routine ini.
+            commit: Parameter input untuk routine ini.
 
         Returns:
-            `Threshold` result produced by the routine.
+            TODO describe return value.
+
         """
         threshold = await self.get_by_key(key)
         if threshold is None:

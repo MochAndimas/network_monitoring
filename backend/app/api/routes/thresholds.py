@@ -1,4 +1,7 @@
-"""Provide FastAPI route handlers and HTTP helpers for the network monitoring project."""
+"""Define module logic for `backend/app/api/routes/thresholds.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,13 +17,14 @@ router = APIRouter()
 
 @router.get("", response_model=list[ThresholdItem])
 async def list_thresholds(db: AsyncSession = Depends(get_db)) -> list[ThresholdItem]:
-    """Return a list of thresholds for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return configured threshold key/value definitions.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`, optional).
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `list[ThresholdItem]` result produced by the routine.
+        TODO describe return value.
+
     """
     return [ThresholdItem(**row) for row in await list_threshold_rows(db)]
 
@@ -33,17 +37,18 @@ async def update_threshold(
     actor=Depends(require_write_access),
     db: AsyncSession = Depends(get_db),
 ) -> ThresholdItem:
-    """Update threshold for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Update one threshold value by key.
 
     Args:
-        key: key value used by this routine (type `str`).
-        payload: payload value used by this routine (type `ThresholdUpdate`).
-        request: request value used by this routine (type `Request`).
-        actor: actor value used by this routine (optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
+        key: Parameter input untuk routine ini.
+        payload: Parameter input untuk routine ini.
+        request: Parameter input untuk routine ini.
+        actor: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `ThresholdItem` result produced by the routine.
+        TODO describe return value.
+
     """
     threshold = await update_threshold_value(db, key, payload.value)
     await record_admin_audit_log(

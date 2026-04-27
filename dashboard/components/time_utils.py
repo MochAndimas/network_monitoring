@@ -1,4 +1,7 @@
-"""Provide shared Streamlit dashboard UI and API helpers for the network monitoring project."""
+"""Define module logic for `dashboard/components/time_utils.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -13,13 +16,14 @@ _WIB_ZONE = ZoneInfo(WIB_TIMEZONE)
 
 
 def to_wib_timestamp(value):
-    """Handle to wib timestamp for shared Streamlit dashboard UI and API helpers.
+    """Return to wib timestamp.
 
     Args:
-        value: value value used by this routine.
+        value: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        TODO describe return value.
+
     """
     parsed = pd.to_datetime(value)
     if isinstance(parsed, pd.Series):
@@ -32,13 +36,14 @@ def to_wib_timestamp(value):
 
 
 def format_wib_timestamp(value) -> str:
-    """Format wib timestamp for shared Streamlit dashboard UI and API helpers.
+    """Format wib timestamp.
 
     Args:
-        value: value value used by this routine.
+        value: Parameter input untuk routine ini.
 
     Returns:
-        `str` result produced by the routine.
+        TODO describe return value.
+
     """
     if pd.isna(value):
         return "-"
@@ -46,14 +51,15 @@ def format_wib_timestamp(value) -> str:
 
 
 def wib_date_boundary_to_utc_iso(value, *, end_of_day: bool = False) -> str:
-    """Handle wib date boundary to utc iso for shared Streamlit dashboard UI and API helpers.
+    """Return wib date boundary to utc iso.
 
     Args:
-        value: value value used by this routine.
-        end_of_day: end of day keyword value used by this routine (type `bool`, optional).
+        value: Parameter input untuk routine ini.
+        end_of_day: Parameter input untuk routine ini.
 
     Returns:
-        `str` result produced by the routine.
+        TODO describe return value.
+
     """
     boundary_time = time.max if end_of_day else time.min
     localized = datetime.combine(value, boundary_time, tzinfo=_WIB_ZONE)

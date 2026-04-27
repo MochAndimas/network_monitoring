@@ -1,4 +1,7 @@
-"""Provide FastAPI route handlers and HTTP helpers for the network monitoring project."""
+"""Define module logic for `backend/app/api/routes/health.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from fastapi import APIRouter, Response, status
 
@@ -13,14 +16,15 @@ router = APIRouter()
 
 @router.get("")
 async def health(response: Response, db: AsyncSession = Depends(get_db)) -> dict:
-    """Report health for the requested operation for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return combined API health status with dependency snapshots.
 
     Args:
-        response: response value used by this routine (type `Response`).
-        db: db value used by this routine (type `AsyncSession`, optional).
+        response: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     database_ok = await check_database_connection()
     scheduler_alerts = build_scheduler_operational_alerts(await list_scheduler_job_statuses(db))
@@ -35,24 +39,26 @@ async def health(response: Response, db: AsyncSession = Depends(get_db)) -> dict
 
 @router.get("/live")
 async def health_live() -> dict:
-    """Report health for live for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Liveness probe that confirms API process responsiveness.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     return {"status": "ok"}
 
 
 @router.get("/dependencies")
 async def health_dependencies(response: Response, db: AsyncSession = Depends(get_db)) -> dict:
-    """Report health for dependencies for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return dependency-level health diagnostics.
 
     Args:
-        response: response value used by this routine (type `Response`).
-        db: db value used by this routine (type `AsyncSession`, optional).
+        response: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     database_ok = await check_database_connection()
     scheduler_statuses = await list_scheduler_job_statuses(db)
@@ -77,14 +83,15 @@ async def health_dependencies(response: Response, db: AsyncSession = Depends(get
 
 @router.get("/ready")
 async def health_ready(response: Response, db: AsyncSession = Depends(get_db)) -> dict:
-    """Report health for ready for FastAPI route handlers and HTTP helpers. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Readiness probe that validates API can serve traffic safely.
 
     Args:
-        response: response value used by this routine (type `Response`).
-        db: db value used by this routine (type `AsyncSession`, optional).
+        response: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     database_ok = await check_database_connection()
     scheduler_statuses = await list_scheduler_job_statuses(db)

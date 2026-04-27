@@ -4,6 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV HOME=/home/appuser
 ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+ENV PYTHONPATH=/app
 
 RUN addgroup --system appuser \
     && adduser --system --ingroup appuser --home /home/appuser --shell /usr/sbin/nologin appuser
@@ -14,6 +15,7 @@ COPY requirements ./requirements
 RUN pip install --no-cache-dir -r requirements/dashboard.txt
 
 COPY .streamlit ./.streamlit
+COPY shared ./shared
 COPY dashboard ./dashboard
 
 RUN mkdir -p /home/appuser/.streamlit \

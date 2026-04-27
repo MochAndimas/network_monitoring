@@ -1,4 +1,7 @@
-"""Provide application-wide configuration, constants, security, and time helpers for the network monitoring project."""
+"""Define module logic for `backend/app/core/config.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import json
 import logging
@@ -11,21 +14,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _split_csv(raw_value: str) -> list[str]:
-    """Handle the internal split csv helper logic for application-wide configuration, constants, security, and time helpers.
+    """Perform split csv.
 
     Args:
-        raw_value: raw value value used by this routine (type `str`).
+        raw_value: Parameter input untuk routine ini.
 
     Returns:
-        `list[str]` result produced by the routine.
+        TODO describe return value.
+
     """
     return [item.strip() for item in str(raw_value or "").split(",") if item.strip()]
 
 
 class Settings(BaseSettings):
-    """Represent settings behavior and data for application-wide configuration, constants, security, and time helpers.
+    """Perform Settings.
 
-    Inherits from `BaseSettings` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     app_name: str = "Network Monitoring"
     app_env: str = "development"
@@ -77,6 +81,7 @@ class Settings(BaseSettings):
     cpu_warning_threshold: float = 90.0
     ram_warning_threshold: float = 90.0
     disk_warning_threshold: float = 85.0
+    server_resource_device_ip: str = ""
     internal_api_key: str = ""
     internal_api_keys: str = ""
     auth_password_secret: str = ""
@@ -117,10 +122,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def load_file_backed_secrets(self) -> "Settings":
-        """Handle load file backed secrets for application-wide configuration, constants, security, and time helpers.
+        """Load file backed secrets.
 
         Returns:
-            `'Settings'` result produced by the routine.
+            TODO describe return value.
+
         """
         secret_fields = {
             "telegram_bot_token": self.telegram_bot_token_file,
@@ -132,28 +138,46 @@ class Settings(BaseSettings):
             "bootstrap_admin_password": self.bootstrap_admin_password_file,
             "auth_jwt_secret": self.auth_jwt_secret_file,
         }
+        configured_file_backed_fields = {
+            field_name: str(raw_file_path).strip()
+            for field_name, raw_file_path in secret_fields.items()
+            if str(raw_file_path or "").strip()
+        }
+        if configured_file_backed_fields and not self.is_production:
+            configured_names = ", ".join(sorted(configured_file_backed_fields))
+            raise ValueError(
+                f"File-backed secret fields ({configured_names}) are only allowed when APP_ENV=production."
+            )
         for field_name, raw_file_path in secret_fields.items():
             if not raw_file_path:
                 continue
             file_path = Path(raw_file_path)
-            object.__setattr__(self, field_name, file_path.read_text(encoding="utf-8").strip())
+            try:
+                file_value = file_path.read_text(encoding="utf-8").strip()
+            except OSError as exc:
+                raise ValueError(
+                    f"Unable to read file-backed secret for `{field_name}` from `{file_path}`."
+                ) from exc
+            object.__setattr__(self, field_name, file_value)
         return self
 
     @property
     def normalized_cors_origins(self) -> list[str]:
-        """Handle normalized cors origins for application-wide configuration, constants, security, and time helpers.
+        """Return normalized cors origins.
 
         Returns:
-            `list[str]` result produced by the routine.
+            TODO describe return value.
+
         """
         return [item.rstrip("/") for item in _split_csv(self.cors_origins)]
 
     @property
     def normalized_trusted_hosts(self) -> list[str]:
-        """Handle normalized trusted hosts for application-wide configuration, constants, security, and time helpers.
+        """Return normalized trusted hosts.
 
         Returns:
-            `list[str]` result produced by the routine.
+            TODO describe return value.
+
         """
         hosts = set(_split_csv(self.trusted_hosts))
         hosts.update({"localhost", "127.0.0.1", "testserver"})
@@ -164,19 +188,21 @@ class Settings(BaseSettings):
 
     @property
     def normalized_trusted_proxy_ips(self) -> set[str]:
-        """Handle normalized trusted proxy ips for application-wide configuration, constants, security, and time helpers.
+        """Return normalized trusted proxy ips.
 
         Returns:
-            `set[str]` result produced by the routine.
+            TODO describe return value.
+
         """
         return set(_split_csv(self.trusted_proxy_ips))
 
     @property
     def normalized_auth_cookie_samesite(self) -> str:
-        """Handle normalized auth cookie samesite for application-wide configuration, constants, security, and time helpers.
+        """Return normalized auth cookie samesite.
 
         Returns:
-            `str` result produced by the routine.
+            TODO describe return value.
+
         """
         allowed = {"lax", "strict", "none"}
         value = str(self.auth_cookie_samesite or "lax").strip().lower()
@@ -184,48 +210,53 @@ class Settings(BaseSettings):
 
     @property
     def normalized_mikrotik_dynamic_sections(self) -> set[str]:
-        """Handle normalized mikrotik dynamic sections for application-wide configuration, constants, security, and time helpers.
+        """Return normalized mikrotik dynamic sections.
 
         Returns:
-            `set[str]` result produced by the routine.
+            TODO describe return value.
+
         """
         sections = {item.lower() for item in _split_csv(self.mikrotik_dynamic_sections)}
         return sections or {"interface", "firewall", "queue"}
 
     @property
     def normalized_mikrotik_dynamic_firewall_sections(self) -> set[str]:
-        """Handle normalized mikrotik dynamic firewall sections for application-wide configuration, constants, security, and time helpers.
+        """Return normalized mikrotik dynamic firewall sections.
 
         Returns:
-            `set[str]` result produced by the routine.
+            TODO describe return value.
+
         """
         sections = {item.lower() for item in _split_csv(self.mikrotik_dynamic_firewall_section_allowlist)}
         return sections or {"filter", "nat"}
 
     @property
     def normalized_mikrotik_interface_allowlist(self) -> set[str]:
-        """Handle normalized mikrotik interface allowlist for application-wide configuration, constants, security, and time helpers.
+        """Return normalized mikrotik interface allowlist.
 
         Returns:
-            `set[str]` result produced by the routine.
+            TODO describe return value.
+
         """
         return {item.lower() for item in _split_csv(self.mikrotik_dynamic_interface_allowlist)}
 
     @property
     def normalized_mikrotik_queue_allowlist(self) -> set[str]:
-        """Handle normalized mikrotik queue allowlist for application-wide configuration, constants, security, and time helpers.
+        """Return normalized mikrotik queue allowlist.
 
         Returns:
-            `set[str]` result produced by the routine.
+            TODO describe return value.
+
         """
         return {item.lower() for item in _split_csv(self.mikrotik_dynamic_queue_allowlist)}
 
     @property
     def is_production(self) -> bool:
-        """Handle is production for application-wide configuration, constants, security, and time helpers.
+        """Return is production.
 
         Returns:
-            `bool` result produced by the routine.
+            TODO describe return value.
+
         """
         return str(self.app_env or "").strip().lower() == "production"
 
@@ -234,23 +265,25 @@ settings = Settings()
 
 
 def printer_snmp_community_map() -> dict[str, str]:
-    """Handle printer snmp community map for application-wide configuration, constants, security, and time helpers.
+    """Return printer snmp community map.
 
     Returns:
-        `dict[str, str]` result produced by the routine.
+        TODO describe return value.
+
     """
     return _parse_printer_snmp_community_map(settings.printer_snmp_communities or "")
 
 
 @lru_cache(maxsize=8)
 def _parse_printer_snmp_community_map(raw_value: str) -> dict[str, str]:
-    """Parse printer snmp community map for application-wide configuration, constants, security, and time helpers.
+    """Parse printer snmp community map.
 
     Args:
-        raw_value: raw value value used by this routine (type `str`).
+        raw_value: Parameter input untuk routine ini.
 
     Returns:
-        `dict[str, str]` result produced by the routine.
+        TODO describe return value.
+
     """
     raw_value = raw_value.strip()
     if not raw_value:
@@ -283,27 +316,29 @@ def _parse_printer_snmp_community_map(raw_value: str) -> dict[str, str]:
 
 
 def printer_snmp_community_for_ip(ip_address: str) -> str | None:
-    """Handle printer snmp community for ip for application-wide configuration, constants, security, and time helpers.
+    """Return printer snmp community for ip.
 
     Args:
-        ip_address: ip address value used by this routine (type `str`).
+        ip_address: Parameter input untuk routine ini.
 
     Returns:
-        `str | None` result produced by the routine.
+        TODO describe return value.
+
     """
     return printer_snmp_community_map().get(str(ip_address).strip())
 
 
 @lru_cache(maxsize=4)
 def _parse_internal_api_key_map(raw_keys: str, legacy_key: str) -> dict[str, dict[str, object]]:
-    """Parse internal api key map for application-wide configuration, constants, security, and time helpers.
+    """Parse internal API key map.
 
     Args:
-        raw_keys: raw keys value used by this routine (type `str`).
-        legacy_key: legacy key value used by this routine (type `str`).
+        raw_keys: Parameter input untuk routine ini.
+        legacy_key: Parameter input untuk routine ini.
 
     Returns:
-        `dict[str, dict[str, object]]` result produced by the routine.
+        TODO describe return value.
+
     """
     payload: dict[str, dict[str, object]] = {}
     normalized_raw = str(raw_keys or "").strip()
@@ -340,19 +375,21 @@ def _parse_internal_api_key_map(raw_keys: str, legacy_key: str) -> dict[str, dic
 
 
 def internal_api_key_map() -> dict[str, dict[str, object]]:
-    """Handle internal api key map for application-wide configuration, constants, security, and time helpers.
+    """Return internal API key map.
 
     Returns:
-        `dict[str, dict[str, object]]` result produced by the routine.
+        TODO describe return value.
+
     """
     return _parse_internal_api_key_map(settings.internal_api_keys or "", settings.internal_api_key or "")
 
 
 def configure_logging() -> None:
-    """Handle configure logging for application-wide configuration, constants, security, and time helpers.
+    """Configure application logging level and format.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),

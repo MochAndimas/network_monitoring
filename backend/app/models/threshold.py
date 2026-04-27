@@ -1,4 +1,7 @@
-"""Provide SQLAlchemy ORM models for the network monitoring project."""
+"""Define module logic for `backend/app/models/threshold.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from sqlalchemy import Float, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -7,9 +10,9 @@ from ..db.base import Base
 
 
 class Threshold(Base):
-    """Represent threshold behavior and data for SQLAlchemy ORM models.
+    """Perform Threshold.
 
-    Inherits from `Base` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     __tablename__ = "thresholds"
 

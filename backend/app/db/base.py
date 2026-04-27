@@ -1,11 +1,14 @@
-"""Provide database engine, session, and initialization helpers for the network monitoring project."""
+"""Define module logic for `backend/app/db/base.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
-    """Represent base behavior and data for database engine, session, and initialization helpers.
+    """Perform Base.
 
-    Inherits from `DeclarativeBase` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     pass

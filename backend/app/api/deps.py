@@ -1,4 +1,7 @@
-"""Provide project functionality for the network monitoring project."""
+"""Define module logic for `backend/app/api/deps.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import secrets
 
@@ -11,13 +14,14 @@ from ..services.auth_service import AuthenticatedActor, actor_has_permission, ge
 
 
 def _validate_internal_api_key(x_api_key: str | None) -> AuthenticatedActor | None:
-    """Validate internal api key for project functionality.
+    """Validate internal API key.
 
     Args:
-        x_api_key: x api key value used by this routine (type `str | None`).
+        x_api_key: Parameter input untuk routine ini.
 
     Returns:
-        `AuthenticatedActor | None` result produced by the routine.
+        TODO describe return value.
+
     """
     api_keys = internal_api_key_map()
     if not api_keys:
@@ -43,16 +47,17 @@ async def _authenticate_api_access(
     session_cookie: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> AuthenticatedActor:
-    """Handle the internal authenticate api access helper logic for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Perform authenticate API access.
 
     Args:
-        authorization: authorization value used by this routine (type `str | None`, optional).
-        x_api_key: x api key value used by this routine (type `str | None`, optional).
-        session_cookie: session cookie value used by this routine (type `str | None`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
+        authorization: Parameter input untuk routine ini.
+        x_api_key: Parameter input untuk routine ini.
+        session_cookie: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `AuthenticatedActor` result produced by the routine.
+        TODO describe return value.
+
     """
     api_key_actor = _validate_internal_api_key(x_api_key)
     if api_key_actor is not None:
@@ -74,15 +79,16 @@ async def require_api_access(
     x_api_key: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> AuthenticatedActor:
-    """Handle require api access for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return require API access.
 
     Args:
-        authorization: authorization value used by this routine (type `str | None`, optional).
-        x_api_key: x api key value used by this routine (type `str | None`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
+        authorization: Parameter input untuk routine ini.
+        x_api_key: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `AuthenticatedActor` result produced by the routine.
+        TODO describe return value.
+
     """
     return await _authenticate_api_access(authorization=authorization, x_api_key=x_api_key, db=db)
 
@@ -93,16 +99,17 @@ async def require_api_access_with_session_cookie(
     session_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
     db: AsyncSession = Depends(get_db),
 ) -> AuthenticatedActor:
-    """Handle require api access with session cookie for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return require API access with session cookie.
 
     Args:
-        authorization: authorization value used by this routine (type `str | None`, optional).
-        x_api_key: x api key value used by this routine (type `str | None`, optional).
-        session_cookie: session cookie value used by this routine (type `str | None`, optional).
-        db: db value used by this routine (type `AsyncSession`, optional).
+        authorization: Parameter input untuk routine ini.
+        x_api_key: Parameter input untuk routine ini.
+        session_cookie: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `AuthenticatedActor` result produced by the routine.
+        TODO describe return value.
+
     """
     return await _authenticate_api_access(
         authorization=authorization,
@@ -113,13 +120,14 @@ async def require_api_access_with_session_cookie(
 
 
 async def require_admin_access(actor: AuthenticatedActor = Depends(require_api_access)) -> AuthenticatedActor:
-    """Handle require admin access for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return require admin access.
 
     Args:
-        actor: actor value used by this routine (type `AuthenticatedActor`, optional).
+        actor: Parameter input untuk routine ini.
 
     Returns:
-        `AuthenticatedActor` result produced by the routine.
+        TODO describe return value.
+
     """
     if actor.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
@@ -127,13 +135,14 @@ async def require_admin_access(actor: AuthenticatedActor = Depends(require_api_a
 
 
 async def require_write_access(actor: AuthenticatedActor = Depends(require_api_access)) -> AuthenticatedActor:
-    """Handle require write access for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return require write access.
 
     Args:
-        actor: actor value used by this routine (type `AuthenticatedActor`, optional).
+        actor: Parameter input untuk routine ini.
 
     Returns:
-        `AuthenticatedActor` result produced by the routine.
+        TODO describe return value.
+
     """
     if actor.user is not None and actor.role == "admin":
         return actor
@@ -143,13 +152,14 @@ async def require_write_access(actor: AuthenticatedActor = Depends(require_api_a
 
 
 async def require_ops_access(actor: AuthenticatedActor = Depends(require_api_access)) -> AuthenticatedActor:
-    """Handle require ops access for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return require ops access.
 
     Args:
-        actor: actor value used by this routine (type `AuthenticatedActor`, optional).
+        actor: Parameter input untuk routine ini.
 
     Returns:
-        `AuthenticatedActor` result produced by the routine.
+        TODO describe return value.
+
     """
     if actor.user is not None and actor.role == "admin":
         return actor

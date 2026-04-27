@@ -1,4 +1,7 @@
-"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+"""Define module logic for `backend/app/services/audit_service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -20,21 +23,24 @@ async def record_admin_audit_log(
     ip_address: str = "",
     user_agent: str = "",
     details: dict | None = None,
+    commit: bool = True,
 ) -> AdminAuditLog:
-    """Record admin audit log for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Persist an admin audit-log event for privileged actions.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        actor: actor keyword value used by this routine.
-        action: action keyword value used by this routine (type `str`).
-        target_type: target type keyword value used by this routine (type `str`).
-        target_id: target id keyword value used by this routine (type `str | None`).
-        ip_address: ip address keyword value used by this routine (type `str`, optional).
-        user_agent: user agent keyword value used by this routine (type `str`, optional).
-        details: details keyword value used by this routine (type `dict | None`, optional).
+        db: Parameter input untuk routine ini.
+        actor: Parameter input untuk routine ini.
+        action: Parameter input untuk routine ini.
+        target_type: Parameter input untuk routine ini.
+        target_id: Parameter input untuk routine ini.
+        ip_address: Parameter input untuk routine ini.
+        user_agent: Parameter input untuk routine ini.
+        details: Parameter input untuk routine ini.
+        commit: Parameter input untuk routine ini.
 
     Returns:
-        `AdminAuditLog` result produced by the routine.
+        TODO describe return value.
+
     """
     user = getattr(actor, "user", None)
     entry = AdminAuditLog(
@@ -51,8 +57,10 @@ async def record_admin_audit_log(
         details_json=json.dumps(details or {}, ensure_ascii=True, default=str),
     )
     db.add(entry)
-    await db.commit()
-    await db.refresh(entry)
+    await db.flush()
+    if commit:
+        await db.commit()
+        await db.refresh(entry)
     return entry
 
 
@@ -61,14 +69,15 @@ async def list_admin_audit_logs(
     *,
     limit: int = 100,
 ) -> list[AdminAuditLog]:
-    """Return a list of admin audit logs for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return admin audit-log rows with optional filters and pagination.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        limit: limit keyword value used by this routine (type `int`, optional).
+        db: Parameter input untuk routine ini.
+        limit: Parameter input untuk routine ini.
 
     Returns:
-        `list[AdminAuditLog]` result produced by the routine.
+        TODO describe return value.
+
     """
     rows = await db.scalars(select(AdminAuditLog).order_by(desc(AdminAuditLog.created_at), desc(AdminAuditLog.id)).limit(limit))
     return list(rows.all())

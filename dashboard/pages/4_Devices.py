@@ -1,4 +1,7 @@
-"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+"""Define module logic for `dashboard/pages/4_Devices.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from urllib.parse import urlencode
 
@@ -32,34 +35,37 @@ type_label_by_value = {value: label for label, value in type_labels.items()}
 
 
 def _clear_cached_gets() -> None:
-    """Handle the internal clear cached gets helper logic for Streamlit dashboard page rendering.
+    """Perform clear cached gets.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     st.cache_data.clear()
 
 
 def _device_type_label(device_type: str) -> str:
-    """Handle the internal device type label helper logic for Streamlit dashboard page rendering.
+    """Perform device type label.
 
     Args:
-        device_type: device type value used by this routine (type `str`).
+        device_type: Parameter input untuk routine ini.
 
     Returns:
-        `str` result produced by the routine.
+        TODO describe return value.
+
     """
     return type_label_by_value.get(device_type, device_type.replace("_", " ").title())
 
 
 def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
-    """Handle the internal prepare manage frame helper logic for Streamlit dashboard page rendering.
+    """Perform prepare manage frame.
 
     Args:
-        rows: rows value used by this routine (type `list[dict]`).
+        rows: Parameter input untuk routine ini.
 
     Returns:
-        `pd.DataFrame` result produced by the routine.
+        TODO describe return value.
+
     """
     dataframe = pd.DataFrame(rows)
     if dataframe.empty:
@@ -80,13 +86,11 @@ def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
 
 @st.dialog("Ubah Device")
 def _render_edit_device_dialog(device: dict) -> None:
-    """Render edit device dialog for Streamlit dashboard page rendering.
+    """Render edit device dialog.
 
     Args:
-        device: device value used by this routine (type `dict`).
+        device: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     edit_key_prefix = f"edit_device_{device['id']}"
     type_options = list(type_labels.keys())
@@ -110,7 +114,7 @@ def _render_edit_device_dialog(device: dict) -> None:
             key=f"{edit_key_prefix}_description",
         )
         edit_active = st.checkbox("Aktif", value=bool(device["is_active"]), key=f"{edit_key_prefix}_active")
-        submitted = st.form_submit_button("Simpan Perubahan", use_container_width=True)
+        submitted = st.form_submit_button("Simpan Perubahan", width="stretch")
 
     if submitted:
         update_payload = {
@@ -130,25 +134,23 @@ def _render_edit_device_dialog(device: dict) -> None:
 
 @st.dialog("Hapus Device")
 def _render_delete_device_dialog(device: dict) -> None:
-    """Render delete device dialog for Streamlit dashboard page rendering.
+    """Render delete device dialog.
 
     Args:
-        device: device value used by this routine (type `dict`).
+        device: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     st.warning(f"Hapus device `{device['name']}` ({device['ip_address']})?")
     st.caption("Metric device ini akan ikut dihapus. Alert dan incident lama tetap disimpan tanpa relasi device.")
     confirm = st.text_input("Ketik DELETE untuk konfirmasi", key=f"delete_device_{device['id']}_confirm")
     left, right = st.columns(2)
-    if left.button("Hapus Device", type="primary", use_container_width=True, disabled=confirm != "DELETE"):
+    if left.button("Hapus Device", type="primary", width="stretch", disabled=confirm != "DELETE"):
         result = delete_json(f"/devices/{device['id']}", False, action_key=f"delete_device_{device['id']}")
         if result:
             _clear_cached_gets()
             st.success(f"Device `{device['name']}` berhasil dihapus.")
             st.rerun()
-    if right.button("Batal", use_container_width=True):
+    if right.button("Batal", width="stretch"):
         st.rerun()
 
 
@@ -227,7 +229,7 @@ with inventory_tab:
         )
         st.dataframe(
             inventory_view,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "Nama Device": st.column_config.TextColumn("Nama Device", width="medium"),
@@ -258,7 +260,7 @@ with manage_tab:
                 create_site = st.text_input("Lokasi", placeholder="WAN")
                 create_description = st.text_area("Deskripsi", placeholder="Target monitoring ISP utama")
                 create_active = st.checkbox("Aktif", value=True)
-                create_submitted = st.form_submit_button("Tambah Device", use_container_width=True)
+                create_submitted = st.form_submit_button("Tambah Device", width="stretch")
 
             if create_submitted:
                 payload = {
@@ -348,7 +350,7 @@ with manage_tab:
                     )
                     st.dataframe(
                         view_frame,
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                         column_config={
                             "Nama Device": st.column_config.TextColumn("Nama Device", width="medium"),
@@ -371,7 +373,7 @@ with manage_tab:
                     selected_device = selector_map[selected_label]
 
                     action_col1, action_col2 = st.columns([1, 1])
-                    if action_col1.button("Ubah Device Terpilih", use_container_width=True):
+                    if action_col1.button("Ubah Device Terpilih", width="stretch"):
                         _render_edit_device_dialog(selected_device)
-                    if action_col2.button("Hapus Device Terpilih", type="primary", use_container_width=True):
+                    if action_col2.button("Hapus Device Terpilih", type="primary", width="stretch"):
                         _render_delete_device_dialog(selected_device)

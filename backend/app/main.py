@@ -1,4 +1,7 @@
-"""Provide project functionality for the network monitoring project."""
+"""Define module logic for `backend/app/main.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from contextlib import asynccontextmanager
 import logging
@@ -34,13 +37,14 @@ logger = logging.getLogger("network_monitoring.http")
 
 
 def _route_template(request) -> str | None:
-    """Handle the internal route template helper logic for project functionality.
+    """Perform route template.
 
     Args:
-        request: request value used by this routine.
+        request: Parameter input untuk routine ini.
 
     Returns:
-        `str | None` result produced by the routine.
+        TODO describe return value.
+
     """
     route = request.scope.get("route")
     if route is None:
@@ -49,19 +53,20 @@ def _route_template(request) -> str | None:
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Represent request logging middleware behavior and data for project functionality.
+    """Perform RequestLoggingMiddleware.
 
-    Inherits from `BaseHTTPMiddleware` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     async def dispatch(self, request, call_next):
-        """Handle dispatch for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Process one ASGI request/response cycle for this middleware.
 
         Args:
-            request: request value used by this routine.
-            call_next: call next value used by this routine.
+            request: Parameter input untuk routine ini.
+            call_next: Parameter input untuk routine ini.
 
         Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
+            TODO describe return value.
+
         """
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
@@ -107,19 +112,20 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Represent security headers middleware behavior and data for project functionality.
+    """Perform SecurityHeadersMiddleware.
 
-    Inherits from `BaseHTTPMiddleware` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     async def dispatch(self, request, call_next):
-        """Handle dispatch for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Process one ASGI request/response cycle for this middleware.
 
         Args:
-            request: request value used by this routine.
-            call_next: call next value used by this routine.
+            request: Parameter input untuk routine ini.
+            call_next: Parameter input untuk routine ini.
 
         Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
+            TODO describe return value.
+
         """
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -145,13 +151,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Handle lifespan for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Manage FastAPI startup and shutdown application lifecycle hooks.
 
     Args:
-        _: _ value used by this routine (type `FastAPI`).
+        _: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        TODO describe return value.
+
     """
     configure_logging()
     validate_auth_configuration()
@@ -196,9 +203,10 @@ app.include_router(observability_router, prefix="/observability", tags=["observa
 
 @app.get("/")
 async def root() -> dict:
-    """Handle root for project functionality. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return lightweight root endpoint metadata for service identification.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     return {"message": f"{settings.app_name} API is running"}

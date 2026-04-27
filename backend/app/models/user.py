@@ -1,4 +1,7 @@
-"""Provide SQLAlchemy ORM models for the network monitoring project."""
+"""Define module logic for `backend/app/models/user.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import datetime
 
@@ -10,9 +13,9 @@ from ..core.time import utcnow
 
 
 class User(Base):
-    """Represent user behavior and data for SQLAlchemy ORM models.
+    """Perform User.
 
-    Inherits from `Base` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     __tablename__ = "users"
     __table_args__ = (
@@ -35,9 +38,9 @@ class User(Base):
 
 
 class AuthSession(Base):
-    """Represent auth session behavior and data for SQLAlchemy ORM models.
+    """Perform AuthSession.
 
-    Inherits from `Base` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     __tablename__ = "auth_sessions"
     __table_args__ = (
@@ -59,9 +62,9 @@ class AuthSession(Base):
 
 
 class AuthLoginAttempt(Base):
-    """Represent auth login attempt behavior and data for SQLAlchemy ORM models.
+    """Perform AuthLoginAttempt.
 
-    Inherits from `Base` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     __tablename__ = "auth_login_attempts"
     __table_args__ = (

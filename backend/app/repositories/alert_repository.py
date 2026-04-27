@@ -1,6 +1,9 @@
-"""Provide database query and persistence repositories for the network monitoring project."""
+"""Define module logic for `backend/app/repositories/alert_repository.py`.
 
-from sqlalchemy import Select, desc, func, select
+This module contains project-specific implementation details.
+"""
+
+from sqlalchemy import Select, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.alert import Alert
@@ -8,38 +11,53 @@ from ..models.device import Device
 
 
 class AlertRepository:
-    """Represent alert repository behavior and data for database query and persistence repositories.
+    """Perform AlertRepository.
+
+    This class encapsulates related behavior and data for this domain area.
     """
     def __init__(self, db: AsyncSession):
-        """Handle the internal init helper logic for database query and persistence repositories.
+        """Perform init.
 
         Args:
-            db: db value used by this routine (type `AsyncSession`).
+            db: Parameter input untuk routine ini.
 
         Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
+            TODO describe return value.
+
         """
         self.db = db
 
     async def list_active_alerts(self) -> list[Alert]:
-        """Return a list of active alerts for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to list active alerts.
 
         Returns:
-            `list[Alert]` result produced by the routine.
+            TODO describe return value.
+
         """
         query: Select[tuple[Alert]] = (
             select(Alert).where(Alert.status == "active").order_by(desc(Alert.created_at), desc(Alert.id))
         )
         return list((await self.db.scalars(query)).all())
 
-    async def list_active_alert_rows(self, *, limit: int | None = None) -> list[dict]:
-        """Return a list of active alert rows for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    async def list_active_alert_rows(
+        self,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        severity: str | None = None,
+        search: str | None = None,
+    ) -> list[dict]:
+        """Repository method to list active alert rows.
 
         Args:
-            limit: limit keyword value used by this routine (type `int | None`, optional).
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+            severity: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
 
         Returns:
-            `list[dict]` result produced by the routine.
+            TODO describe return value.
+
         """
         query = (
             select(Alert, Device.name)
@@ -47,6 +65,19 @@ class AlertRepository:
             .where(Alert.status == "active")
             .order_by(desc(Alert.created_at), desc(Alert.id))
         )
+        normalized_severity = str(severity or "").strip().lower()
+        if normalized_severity:
+            query = query.where(func.lower(Alert.severity) == normalized_severity)
+        normalized_search = str(search or "").strip().lower()
+        if normalized_search:
+            query = query.where(
+                or_(
+                    func.lower(Alert.message).like(f"%{normalized_search}%"),
+                    func.lower(Device.name).like(f"%{normalized_search}%"),
+                )
+            )
+        if offset:
+            query = query.offset(offset)
         if limit is not None:
             query = query.limit(limit)
         rows = (await self.db.execute(query)).all()
@@ -65,11 +96,43 @@ class AlertRepository:
             for alert, device_name in rows
         ]
 
-    async def summarize_active_alert_severity_counts(self) -> dict[str, int]:
-        """Summarize active alert severity counts for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    async def list_active_alert_rows_paged(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        severity: str | None = None,
+        search: str | None = None,
+    ) -> tuple[list[dict], int]:
+        """Repository method to list active alert rows paged.
+
+        Args:
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+            severity: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
 
         Returns:
-            `dict[str, int]` result produced by the routine.
+            TODO describe return value.
+
+        """
+        rows = await self.list_active_alert_rows(
+            limit=limit,
+            offset=offset,
+            severity=severity,
+            search=search,
+        )
+        if offset == 0 and len(rows) < limit:
+            return rows, len(rows)
+        total = await self.count_active_alerts(severity=severity, search=search)
+        return rows, total
+
+    async def summarize_active_alert_severity_counts(self) -> dict[str, int]:
+        """Repository method to summarize active alert severity counts.
+
+        Returns:
+            TODO describe return value.
+
         """
         rows = (
             await self.db.execute(
@@ -80,24 +143,46 @@ class AlertRepository:
         ).all()
         return {str(severity or "unknown"): int(total) for severity, total in rows}
 
-    async def count_active_alerts(self) -> int:
-        """Count active alerts for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    async def count_active_alerts(
+        self,
+        *,
+        severity: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        """Repository method to count active alerts.
+
+        Args:
+            severity: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
 
         Returns:
-            `int` result produced by the routine.
+            TODO describe return value.
+
         """
         query = select(func.count()).select_from(Alert).where(Alert.status == "active")
+        normalized_severity = str(severity or "").strip().lower()
+        if normalized_severity:
+            query = query.where(func.lower(Alert.severity) == normalized_severity)
+        normalized_search = str(search or "").strip().lower()
+        if normalized_search:
+            query = query.join(Device, Device.id == Alert.device_id, isouter=True).where(
+                or_(
+                    func.lower(Alert.message).like(f"%{normalized_search}%"),
+                    func.lower(Device.name).like(f"%{normalized_search}%"),
+                )
+            )
         return int(await self.db.scalar(query) or 0)
 
     async def create_alert(self, payload: dict, *, commit: bool = True) -> Alert:
-        """Create alert for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to create alert.
 
         Args:
-            payload: payload value used by this routine (type `dict`).
-            commit: commit keyword value used by this routine (type `bool`, optional).
+            payload: Parameter input untuk routine ini.
+            commit: Parameter input untuk routine ini.
 
         Returns:
-            `Alert` result produced by the routine.
+            TODO describe return value.
+
         """
         alert = Alert(**payload)
         self.db.add(alert)
@@ -108,15 +193,16 @@ class AlertRepository:
         return alert
 
     async def resolve_alert(self, alert: Alert, resolved_at, *, commit: bool = True) -> Alert:
-        """Resolve alert for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to return resolve alert.
 
         Args:
-            alert: alert value used by this routine (type `Alert`).
-            resolved_at: resolved at value used by this routine.
-            commit: commit keyword value used by this routine (type `bool`, optional).
+            alert: Parameter input untuk routine ini.
+            resolved_at: Parameter input untuk routine ini.
+            commit: Parameter input untuk routine ini.
 
         Returns:
-            `Alert` result produced by the routine.
+            TODO describe return value.
+
         """
         alert.status = "resolved"
         alert.resolved_at = resolved_at

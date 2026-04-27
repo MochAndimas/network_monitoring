@@ -1,6 +1,9 @@
-"""Provide database query and persistence repositories for the network monitoring project."""
+"""Define module logic for `backend/app/repositories/incident_repository.py`.
 
-from sqlalchemy import Select, desc, func, select
+This module contains project-specific implementation details.
+"""
+
+from sqlalchemy import Select, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.device import Device
@@ -8,24 +11,28 @@ from ..models.incident import Incident
 
 
 class IncidentRepository:
-    """Represent incident repository behavior and data for database query and persistence repositories.
+    """Perform IncidentRepository.
+
+    This class encapsulates related behavior and data for this domain area.
     """
     def __init__(self, db: AsyncSession):
-        """Handle the internal init helper logic for database query and persistence repositories.
+        """Perform init.
 
         Args:
-            db: db value used by this routine (type `AsyncSession`).
+            db: Parameter input untuk routine ini.
 
         Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
+            TODO describe return value.
+
         """
         self.db = db
 
     async def list_active_incidents(self) -> list[Incident]:
-        """Return a list of active incidents for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to list active incidents.
 
         Returns:
-            `list[Incident]` result produced by the routine.
+            TODO describe return value.
+
         """
         query: Select[tuple[Incident]] = (
             select(Incident).where(Incident.status == "active").order_by(desc(Incident.started_at), desc(Incident.id))
@@ -33,28 +40,51 @@ class IncidentRepository:
         return list((await self.db.scalars(query)).all())
 
     async def count_active_incidents(self) -> int:
-        """Count active incidents for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to count active incidents.
 
         Returns:
-            `int` result produced by the routine.
+            TODO describe return value.
+
         """
         query = select(func.count()).select_from(Incident).where(Incident.status == "active")
         return int(await self.db.scalar(query) or 0)
 
-    async def list_incident_rows(self, status: str | None = None, limit: int = 100) -> list[dict]:
-        """Return a list of incident rows for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    async def list_incident_rows(
+        self,
+        status: str | None = None,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        search: str | None = None,
+    ) -> list[dict]:
+        """Repository method to list incident rows.
 
         Args:
-            status: status value used by this routine (type `str | None`, optional).
-            limit: limit value used by this routine (type `int`, optional).
+            status: Parameter input untuk routine ini.
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
 
         Returns:
-            `list[dict]` result produced by the routine.
+            TODO describe return value.
+
         """
         query = select(Incident, Device.name).outerjoin(Device, Device.id == Incident.device_id)
         if status:
             query = query.where(Incident.status == status)
-        query = query.order_by(desc(Incident.started_at), desc(Incident.id)).limit(limit)
+        normalized_search = str(search or "").strip().lower()
+        if normalized_search:
+            query = query.where(
+                or_(
+                    func.lower(Incident.summary).like(f"%{normalized_search}%"),
+                    func.lower(Device.name).like(f"%{normalized_search}%"),
+                )
+            )
+        query = query.order_by(desc(Incident.started_at), desc(Incident.id))
+        if offset:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
         rows = (await self.db.execute(query)).all()
         return [
             {
@@ -69,15 +99,65 @@ class IncidentRepository:
             for incident, device_name in rows
         ]
 
-    async def create_incident(self, payload: dict, *, commit: bool = True) -> Incident:
-        """Create incident for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    async def list_incident_rows_paged(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        search: str | None = None,
+    ) -> tuple[list[dict], int]:
+        """Repository method to list incident rows paged.
 
         Args:
-            payload: payload value used by this routine (type `dict`).
-            commit: commit keyword value used by this routine (type `bool`, optional).
+            status: Parameter input untuk routine ini.
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
 
         Returns:
-            `Incident` result produced by the routine.
+            TODO describe return value.
+
+        """
+        rows = await self.list_incident_rows(status=status, limit=limit, offset=offset, search=search)
+        if offset == 0 and len(rows) < limit:
+            return rows, len(rows)
+        return rows, await self.count_incident_rows(status=status, search=search)
+
+    async def count_incident_rows(self, *, status: str | None = None, search: str | None = None) -> int:
+        """Repository method to count incident rows.
+
+        Args:
+            status: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
+        """
+        query = select(func.count()).select_from(Incident)
+        if status:
+            query = query.where(Incident.status == status)
+        normalized_search = str(search or "").strip().lower()
+        if normalized_search:
+            query = query.join(Device, Device.id == Incident.device_id, isouter=True).where(
+                or_(
+                    func.lower(Incident.summary).like(f"%{normalized_search}%"),
+                    func.lower(Device.name).like(f"%{normalized_search}%"),
+                )
+            )
+        return int(await self.db.scalar(query) or 0)
+
+    async def create_incident(self, payload: dict, *, commit: bool = True) -> Incident:
+        """Repository method to create incident.
+
+        Args:
+            payload: Parameter input untuk routine ini.
+            commit: Parameter input untuk routine ini.
+
+        Returns:
+            TODO describe return value.
+
         """
         incident = Incident(**payload)
         self.db.add(incident)
@@ -88,15 +168,16 @@ class IncidentRepository:
         return incident
 
     async def resolve_incident(self, incident: Incident, ended_at, *, commit: bool = True) -> Incident:
-        """Resolve incident for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to return resolve incident.
 
         Args:
-            incident: incident value used by this routine (type `Incident`).
-            ended_at: ended at value used by this routine.
-            commit: commit keyword value used by this routine (type `bool`, optional).
+            incident: Parameter input untuk routine ini.
+            ended_at: Parameter input untuk routine ini.
+            commit: Parameter input untuk routine ini.
 
         Returns:
-            `Incident` result produced by the routine.
+            TODO describe return value.
+
         """
         incident.status = "resolved"
         incident.ended_at = ended_at

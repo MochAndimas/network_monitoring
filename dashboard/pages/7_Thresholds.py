@@ -1,4 +1,7 @@
-"""Provide Streamlit dashboard page rendering for the network monitoring project."""
+"""Define module logic for `dashboard/pages/7_Thresholds.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import altair as alt
 import pandas as pd
@@ -21,13 +24,14 @@ thresholds = get_json("/thresholds", [])
 
 
 def _threshold_category(key: str) -> str:
-    """Handle the internal threshold category helper logic for Streamlit dashboard page rendering.
+    """Perform threshold category.
 
     Args:
-        key: key value used by this routine (type `str`).
+        key: Parameter input untuk routine ini.
 
     Returns:
-        `str` result produced by the routine.
+        TODO describe return value.
+
     """
     normalized = str(key or "").strip()
     if not normalized:
@@ -132,7 +136,7 @@ if thresholds:
             st.altair_chart(category_chart, width="stretch")
             st.dataframe(
                 summary_frame,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "Kategori": st.column_config.TextColumn("Kategori", width="small"),
@@ -146,7 +150,7 @@ if thresholds:
             st.markdown("### Detail Threshold")
             st.dataframe(
                 detail_frame.head(int(max_rows)),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "Kategori": st.column_config.TextColumn("Kategori", width="small"),
@@ -177,7 +181,7 @@ if thresholds:
             format="%.4f",
         )
 
-        update_threshold_clicked = st.button("Simpan Perubahan Threshold", use_container_width=True)
+        update_threshold_clicked = st.button("Simpan Perubahan Threshold", width="stretch")
         if is_admin() and (update_threshold_clicked or has_pending_action("update_threshold")):
             result = put_json(
                 f"/thresholds/{selected_key}",

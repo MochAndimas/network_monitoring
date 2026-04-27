@@ -1,4 +1,7 @@
-"""Provide API response and request schemas for the network monitoring project."""
+"""Define module logic for `backend/app/api/schemas/auth.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from datetime import datetime
 
@@ -6,9 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class LoginRequest(BaseModel):
-    """Represent login request behavior and data for API response and request schemas.
+    """Perform LoginRequest.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=255)
@@ -16,9 +19,9 @@ class LoginRequest(BaseModel):
 
 
 class UserSessionInfo(BaseModel):
-    """Represent user session info behavior and data for API response and request schemas.
+    """Perform UserSessionInfo.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     id: int
     username: str
@@ -28,9 +31,9 @@ class UserSessionInfo(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    """Represent login response behavior and data for API response and request schemas.
+    """Perform LoginResponse.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     access_token: str
     token_type: str = "Bearer"
@@ -38,9 +41,9 @@ class LoginResponse(BaseModel):
 
 
 class CurrentUserResponse(BaseModel):
-    """Represent current user response behavior and data for API response and request schemas.
+    """Perform CurrentUserResponse.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     id: int
     username: str
@@ -52,9 +55,9 @@ class CurrentUserResponse(BaseModel):
 
 
 class AuthSessionItem(BaseModel):
-    """Represent auth session item behavior and data for API response and request schemas.
+    """Perform AuthSessionItem.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     session_id: int
     client_ip: str
@@ -66,18 +69,18 @@ class AuthSessionItem(BaseModel):
 
 
 class LogoutAllResponse(BaseModel):
-    """Represent logout all response behavior and data for API response and request schemas.
+    """Perform LogoutAllResponse.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     success: bool = True
     revoked_sessions: int
 
 
 class AuthAdminSessionItem(BaseModel):
-    """Represent auth admin session item behavior and data for API response and request schemas.
+    """Perform AuthAdminSessionItem.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     session_id: int
     user_id: int
@@ -94,9 +97,9 @@ class AuthAdminSessionItem(BaseModel):
 
 
 class UserAdminItem(BaseModel):
-    """Represent user admin item behavior and data for API response and request schemas.
+    """Perform UserAdminItem.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -113,9 +116,9 @@ class UserAdminItem(BaseModel):
 
 
 class UserAdminCreateRequest(BaseModel):
-    """Represent user admin create request behavior and data for API response and request schemas.
+    """Perform UserAdminCreateRequest.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     username: str = Field(min_length=3, max_length=100)
     full_name: str = Field(min_length=1, max_length=150)
@@ -124,9 +127,9 @@ class UserAdminCreateRequest(BaseModel):
 
 
 class UserAdminUpdateRequest(BaseModel):
-    """Represent user admin update request behavior and data for API response and request schemas.
+    """Perform UserAdminUpdateRequest.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     full_name: str | None = Field(default=None, min_length=1, max_length=150)
     role: str | None = Field(default=None, pattern="^(admin|viewer)$")
@@ -135,26 +138,26 @@ class UserAdminUpdateRequest(BaseModel):
 
 
 class UserPasswordResetRequest(BaseModel):
-    """Represent user password reset request behavior and data for API response and request schemas.
+    """Perform UserPasswordResetRequest.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     new_password: str = Field(min_length=1, max_length=255)
 
 
 class ChangePasswordRequest(BaseModel):
-    """Represent change password request behavior and data for API response and request schemas.
+    """Perform ChangePasswordRequest.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     current_password: str = Field(min_length=1, max_length=255)
     new_password: str = Field(min_length=1, max_length=255)
 
 
 class AdminAuditLogItem(BaseModel):
-    """Represent admin audit log item behavior and data for API response and request schemas.
+    """Perform AdminAuditLogItem.
 
-    Inherits from `BaseModel` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
     model_config = ConfigDict(from_attributes=True)
 

@@ -1,9 +1,13 @@
-"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+"""Define module logic for `backend/app/services/observability_service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -16,6 +20,15 @@ from ..core.config import settings
 from ..core.time import utcnow
 from ..models.scheduler_job_status import SchedulerJobStatus
 
+try:  # pragma: no cover - optional dependency wiring
+    from prometheus_client import CollectorRegistry, Counter as PromCounter, Summary, generate_latest, multiprocess
+except ImportError:  # pragma: no cover - fallback path when dependency is unavailable
+    CollectorRegistry = None
+    PromCounter = None
+    Summary = None
+    generate_latest = None
+    multiprocess = None
+
 
 request_id_context: ContextVar[str] = ContextVar("request_id", default="")
 job_name_context: ContextVar[str] = ContextVar("job_name", default="")
@@ -27,21 +40,83 @@ _scheduler_job_runs = Counter()
 _scheduler_job_failures = Counter()
 _scheduler_job_duration_ms = Counter()
 _exception_count = Counter()
+_api_payload_request_count = Counter()
+_api_payload_rows = Counter()
+_api_payload_total_rows = Counter()
+_api_payload_sampled = Counter()
+
+_prometheus_multiproc_dir = str(os.getenv("PROMETHEUS_MULTIPROC_DIR") or "").strip()
+_prometheus_multiprocess_enabled = bool(
+    _prometheus_multiproc_dir and PromCounter is not None and Summary is not None and multiprocess is not None
+)
+
+if _prometheus_multiprocess_enabled:
+    _prom_http_request_count = PromCounter(
+        "network_monitoring_http_requests",
+        "HTTP requests processed by the application",
+        ["method", "path", "status"],
+    )
+    _prom_http_request_duration_ms = Summary(
+        "network_monitoring_http_request_duration_ms",
+        "Sum of HTTP request duration in milliseconds",
+        ["method", "path"],
+    )
+    _prom_http_request_errors = PromCounter(
+        "network_monitoring_http_request_errors",
+        "HTTP requests that ended with status >= 500",
+        ["method", "path"],
+    )
+    _prom_api_payload_request_count = PromCounter(
+        "network_monitoring_api_payload_requests",
+        "Payload responses observed by endpoint and scope",
+        ["endpoint", "scope"],
+    )
+    _prom_api_payload_rows = PromCounter(
+        "network_monitoring_api_payload_rows",
+        "Rows returned in payload sections",
+        ["endpoint", "scope", "section"],
+    )
+    _prom_api_payload_total_rows = Summary(
+        "network_monitoring_api_payload_total_rows",
+        "Total rows represented by payload sections",
+        ["endpoint", "scope", "section"],
+    )
+    _prom_api_payload_sampled = PromCounter(
+        "network_monitoring_api_payload_sampled",
+        "Payload sections that were sampled/paged",
+        ["endpoint", "scope", "section"],
+    )
+    _prom_exception_count = PromCounter(
+        "network_monitoring_exceptions",
+        "Exceptions captured by source",
+        ["source"],
+    )
+else:
+    _prom_http_request_count = None
+    _prom_http_request_duration_ms = None
+    _prom_http_request_errors = None
+    _prom_api_payload_request_count = None
+    _prom_api_payload_rows = None
+    _prom_api_payload_total_rows = None
+    _prom_api_payload_sampled = None
+    _prom_exception_count = None
 
 
 class JsonLogFormatter(logging.Formatter):
-    """Represent json log formatter behavior and data for business services that coordinate repositories and domain workflows.
+    """Perform JsonLogFormatter.
 
-    Inherits from `logging.Formatter` to match the surrounding framework or persistence model.
+    This class encapsulates related behavior and data for this domain area.
     """
+
     def format(self, record: logging.LogRecord) -> str:
-        """Format the requested operation for business services that coordinate repositories and domain workflows.
+        """Render a log record as JSON with request/job context enrichment.
 
         Args:
-            record: record value used by this routine (type `logging.LogRecord`).
+            record: Parameter input untuk routine ini.
 
         Returns:
-            `str` result produced by the routine.
+            TODO describe return value.
+
         """
         payload = {
             "timestamp": self.formatTime(record, self.datefmt),
@@ -57,10 +132,11 @@ class JsonLogFormatter(logging.Formatter):
 
 
 def configure_structured_logging() -> None:
-    """Handle configure structured logging for business services that coordinate repositories and domain workflows.
+    """Configure structured JSON logging for API and worker processes.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     root_logger = logging.getLogger()
     formatter: logging.Formatter
@@ -74,13 +150,14 @@ def configure_structured_logging() -> None:
 
 @contextmanager
 def request_logging_context(request_id: str):
-    """Handle request logging context for business services that coordinate repositories and domain workflows.
+    """Build standard log context fields for one HTTP request.
 
     Args:
-        request_id: request id value used by this routine (type `str`).
+        request_id: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        TODO describe return value.
+
     """
     token = request_id_context.set(request_id)
     try:
@@ -91,13 +168,14 @@ def request_logging_context(request_id: str):
 
 @contextmanager
 def job_logging_context(job_name: str):
-    """Handle job logging context for business services that coordinate repositories and domain workflows.
+    """Build standard log context fields for one scheduler job.
 
     Args:
-        job_name: job name value used by this routine (type `str`).
+        job_name: Parameter input untuk routine ini.
 
     Returns:
-        The computed result, response payload, or side-effect outcome for the caller.
+        TODO describe return value.
+
     """
     token = job_name_context.set(job_name)
     try:
@@ -107,14 +185,15 @@ def job_logging_context(job_name: str):
 
 
 def normalized_http_metric_path(*, path: str, route_path: str | None = None) -> str:
-    """Handle normalized http metric path for business services that coordinate repositories and domain workflows.
+    """Normalize raw HTTP paths into metric-friendly route templates.
 
     Args:
-        path: path keyword value used by this routine (type `str`).
-        route_path: route path keyword value used by this routine (type `str | None`, optional).
+        path: Parameter input untuk routine ini.
+        route_path: Parameter input untuk routine ini.
 
     Returns:
-        `str` result produced by the routine.
+        TODO describe return value.
+
     """
     normalized_route = str(route_path or "").strip()
     if normalized_route:
@@ -124,65 +203,123 @@ def normalized_http_metric_path(*, path: str, route_path: str | None = None) -> 
 
 
 def record_http_request(*, path: str, method: str, status_code: int, duration_ms: float, route_path: str | None = None) -> None:
-    """Record http request for business services that coordinate repositories and domain workflows.
+    """Record HTTP request metrics including duration, status, and route labels.
 
     Args:
-        path: path keyword value used by this routine (type `str`).
-        method: method keyword value used by this routine (type `str`).
-        status_code: status code keyword value used by this routine (type `int`).
-        duration_ms: duration ms keyword value used by this routine (type `float`).
-        route_path: route path keyword value used by this routine (type `str | None`, optional).
+        path: Parameter input untuk routine ini.
+        method: Parameter input untuk routine ini.
+        status_code: Parameter input untuk routine ini.
+        duration_ms: Parameter input untuk routine ini.
+        route_path: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     metric_path = normalized_http_metric_path(path=path, route_path=route_path)
     key = (method.upper(), metric_path, str(status_code))
     _http_request_count[key] += 1
     _http_request_duration_ms[(method.upper(), metric_path)] += int(duration_ms)
+    if _prom_http_request_count is not None and _prom_http_request_duration_ms is not None:
+        _prom_http_request_count.labels(method.upper(), metric_path, str(status_code)).inc()
+        _prom_http_request_duration_ms.labels(method.upper(), metric_path).observe(float(duration_ms))
     if status_code >= 500:
         _http_request_errors[(method.upper(), metric_path)] += 1
+        if _prom_http_request_errors is not None:
+            _prom_http_request_errors.labels(method.upper(), metric_path).inc()
 
 
 def record_exception(*, source: str) -> None:
-    """Record exception for business services that coordinate repositories and domain workflows.
+    """Record exception counters for observability metrics.
 
     Args:
-        source: source keyword value used by this routine (type `str`).
+        source: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     _exception_count[source] += 1
+    if _prom_exception_count is not None:
+        _prom_exception_count.labels(source).inc()
 
 
-async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str) -> None:
-    """Handle mark scheduler job started for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+def record_api_payload_request(*, endpoint: str, scope: str) -> None:
+    """Record API payload request counters for observability tracking.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        job_name: job name keyword value used by this routine (type `str`).
+        endpoint: Parameter input untuk routine ini.
+        scope: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
+    """
+    _api_payload_request_count[(str(endpoint or "/unknown"), str(scope or "unknown"))] += 1
+    if _prom_api_payload_request_count is not None:
+        _prom_api_payload_request_count.labels(str(endpoint or "/unknown"), str(scope or "unknown")).inc()
+
+
+def record_api_payload_section(
+    *,
+    endpoint: str,
+    scope: str,
+    section: str,
+    rows: int,
+    total_rows: int | None = None,
+    sampled: bool = False,
+) -> None:
+    """Record API payload section/item counters for observability tracking.
+
+    Args:
+        endpoint: Parameter input untuk routine ini.
+        scope: Parameter input untuk routine ini.
+        section: Parameter input untuk routine ini.
+        rows: Parameter input untuk routine ini.
+        total_rows: Parameter input untuk routine ini.
+        sampled: Parameter input untuk routine ini.
+
+    """
+    metric_endpoint = str(endpoint or "/unknown")
+    metric_scope = str(scope or "unknown")
+    metric_section = str(section or "unknown")
+    section_key = (metric_endpoint, metric_scope, metric_section)
+    _api_payload_rows[section_key] += max(int(rows), 0)
+    if _prom_api_payload_rows is not None:
+        _prom_api_payload_rows.labels(metric_endpoint, metric_scope, metric_section).inc(max(int(rows), 0))
+    if total_rows is not None:
+        _api_payload_total_rows[section_key] += max(int(total_rows), 0)
+        if _prom_api_payload_total_rows is not None:
+            _prom_api_payload_total_rows.labels(metric_endpoint, metric_scope, metric_section).observe(
+                max(int(total_rows), 0)
+            )
+    if sampled:
+        _api_payload_sampled[section_key] += 1
+        if _prom_api_payload_sampled is not None:
+            _prom_api_payload_sampled.labels(metric_endpoint, metric_scope, metric_section).inc()
+
+
+async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str, commit: bool = True) -> None:
+    """Mark scheduler job as started and update running-state metadata.
+
+    Args:
+        db: Parameter input untuk routine ini.
+        job_name: Parameter input untuk routine ini.
+        commit: Parameter input untuk routine ini.
+
     """
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     status.last_started_at = utcnow()
     status.is_running = True
     status.updated_at = utcnow()
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
 
 
-async def mark_scheduler_job_succeeded(db: AsyncSession, *, job_name: str, duration_ms: float) -> None:
-    """Handle mark scheduler job succeeded for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+async def mark_scheduler_job_succeeded(
+    db: AsyncSession, *, job_name: str, duration_ms: float, commit: bool = True
+) -> None:
+    """Mark scheduler job as succeeded and persist duration/timestamp updates.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        job_name: job name keyword value used by this routine (type `str`).
-        duration_ms: duration ms keyword value used by this routine (type `float`).
+        db: Parameter input untuk routine ini.
+        job_name: Parameter input untuk routine ini.
+        duration_ms: Parameter input untuk routine ini.
+        commit: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     now = utcnow()
@@ -195,20 +332,24 @@ async def mark_scheduler_job_succeeded(db: AsyncSession, *, job_name: str, durat
     status.updated_at = now
     _scheduler_job_runs[job_name] += 1
     _scheduler_job_duration_ms[job_name] += int(duration_ms)
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
 
 
-async def mark_scheduler_job_failed(db: AsyncSession, *, job_name: str, duration_ms: float, error: str) -> None:
-    """Handle mark scheduler job failed for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+async def mark_scheduler_job_failed(
+    db: AsyncSession, *, job_name: str, duration_ms: float, error: str, commit: bool = True
+) -> None:
+    """Mark scheduler job as failed and increment failure-state metadata.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        job_name: job name keyword value used by this routine (type `str`).
-        duration_ms: duration ms keyword value used by this routine (type `float`).
-        error: error keyword value used by this routine (type `str`).
+        db: Parameter input untuk routine ini.
+        job_name: Parameter input untuk routine ini.
+        duration_ms: Parameter input untuk routine ini.
+        error: Parameter input untuk routine ini.
+        commit: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     now = utcnow()
@@ -223,30 +364,35 @@ async def mark_scheduler_job_failed(db: AsyncSession, *, job_name: str, duration
     _scheduler_job_failures[job_name] += 1
     _scheduler_job_duration_ms[job_name] += int(duration_ms)
     record_exception(source=f"scheduler:{job_name}")
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
 
 
 async def list_scheduler_job_statuses(db: AsyncSession) -> list[SchedulerJobStatus]:
-    """Return a list of scheduler job statuses for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """List scheduler job status rows for observability dashboards.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `list[SchedulerJobStatus]` result produced by the routine.
+        TODO describe return value.
+
     """
     rows = await db.scalars(select(SchedulerJobStatus).order_by(SchedulerJobStatus.job_name.asc()))
     return list(rows.all())
 
 
 def scheduler_job_is_stale(job: SchedulerJobStatus) -> bool:
-    """Handle scheduler job is stale for business services that coordinate repositories and domain workflows.
+    """Determine whether scheduler job heartbeat is stale beyond allowed interval.
 
     Args:
-        job: job value used by this routine (type `SchedulerJobStatus`).
+        job: Parameter input untuk routine ini.
 
     Returns:
-        `bool` result produced by the routine.
+        TODO describe return value.
+
     """
     expected_interval = _expected_scheduler_interval_seconds(job.job_name)
     if expected_interval is None:
@@ -257,13 +403,14 @@ def scheduler_job_is_stale(job: SchedulerJobStatus) -> bool:
 
 
 def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -> list[dict]:
-    """Build scheduler operational alerts for business services that coordinate repositories and domain workflows.
+    """Build operational alert payloads from scheduler job status state.
 
     Args:
-        job_statuses: job statuses value used by this routine (type `list[SchedulerJobStatus]`).
+        job_statuses: Parameter input untuk routine ini.
 
     Returns:
-        `list[dict]` result produced by the routine.
+        TODO describe return value.
+
     """
     alerts: list[dict] = []
     for job in job_statuses:
@@ -291,34 +438,62 @@ def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -
 
 
 def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, scheduler_statuses: list[SchedulerJobStatus]) -> str:
-    """Render prometheus metrics for business services that coordinate repositories and domain workflows.
+    """Render in-memory observability counters in Prometheus text format.
 
     Args:
-        database_up: database up keyword value used by this routine (type `bool`).
-        scheduler_alert_count: scheduler alert count keyword value used by this routine (type `int`).
-        scheduler_statuses: scheduler statuses keyword value used by this routine (type `list[SchedulerJobStatus]`).
+        database_up: Parameter input untuk routine ini.
+        scheduler_alert_count: Parameter input untuk routine ini.
+        scheduler_statuses: Parameter input untuk routine ini.
 
     Returns:
-        `str` result produced by the routine.
+        TODO describe return value.
+
     """
-    lines = [
+    lines = []
+    if _prometheus_multiprocess_enabled and CollectorRegistry is not None and generate_latest is not None and multiprocess is not None:
+        registry = CollectorRegistry()
+        multiprocess.MultiProcessCollector(registry)
+        lines.extend(generate_latest(registry).decode("utf-8").splitlines())
+    lines.extend(
+        [
         "# HELP network_monitoring_database_up Database connectivity status",
         "# TYPE network_monitoring_database_up gauge",
         f"network_monitoring_database_up {1 if database_up else 0}",
         "# HELP network_monitoring_scheduler_operational_alerts Active operational alerts for scheduler jobs",
         "# TYPE network_monitoring_scheduler_operational_alerts gauge",
         f"network_monitoring_scheduler_operational_alerts {scheduler_alert_count}",
-    ]
-    for (method, path, status_code), count in sorted(_http_request_count.items()):
-        lines.append(
-            f'network_monitoring_http_requests_total{{method="{method}",path="{path}",status="{status_code}"}} {count}'
-        )
-    for (method, path), total_ms in sorted(_http_request_duration_ms.items()):
-        lines.append(
-            f'network_monitoring_http_request_duration_ms_sum{{method="{method}",path="{path}"}} {total_ms}'
-        )
-    for source, count in sorted(_exception_count.items()):
-        lines.append(f'network_monitoring_exceptions_total{{source="{source}"}} {count}')
+        ]
+    )
+    if not _prometheus_multiprocess_enabled:
+        for (method, path, status_code), count in sorted(_http_request_count.items()):
+            lines.append(
+                f'network_monitoring_http_requests_total{{method="{method}",path="{path}",status="{status_code}"}} {count}'
+            )
+        for (method, path), total_ms in sorted(_http_request_duration_ms.items()):
+            lines.append(
+                f'network_monitoring_http_request_duration_ms_sum{{method="{method}",path="{path}"}} {total_ms}'
+            )
+        for (endpoint, scope), count in sorted(_api_payload_request_count.items()):
+            lines.append(
+                f'network_monitoring_api_payload_requests_total{{endpoint="{endpoint}",scope="{scope}"}} {count}'
+            )
+        for (endpoint, scope, section), count in sorted(_api_payload_rows.items()):
+            lines.append(
+                "network_monitoring_api_payload_rows_total"
+                f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
+            )
+        for (endpoint, scope, section), count in sorted(_api_payload_total_rows.items()):
+            lines.append(
+                "network_monitoring_api_payload_total_rows_sum"
+                f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
+            )
+        for (endpoint, scope, section), count in sorted(_api_payload_sampled.items()):
+            lines.append(
+                "network_monitoring_api_payload_sampled_total"
+                f'{{endpoint="{endpoint}",scope="{scope}",section="{section}"}} {count}'
+            )
+        for source, count in sorted(_exception_count.items()):
+            lines.append(f'network_monitoring_exceptions_total{{source="{source}"}} {count}')
     for job in scheduler_statuses:
         lines.append(
             f'network_monitoring_scheduler_job_consecutive_failures{{job_name="{job.job_name}"}} {job.consecutive_failures}'
@@ -337,14 +512,15 @@ def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, 
 
 
 async def _get_or_create_scheduler_job_status(db: AsyncSession, *, job_name: str) -> SchedulerJobStatus:
-    """Return or create scheduler job status for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Retrieve or create scheduler job status.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        job_name: job name keyword value used by this routine (type `str`).
+        db: Parameter input untuk routine ini.
+        job_name: Parameter input untuk routine ini.
 
     Returns:
-        `SchedulerJobStatus` result produced by the routine.
+        TODO describe return value.
+
     """
     status = await db.scalar(select(SchedulerJobStatus).where(SchedulerJobStatus.job_name == job_name))
     if status is None:
@@ -355,13 +531,14 @@ async def _get_or_create_scheduler_job_status(db: AsyncSession, *, job_name: str
 
 
 def _expected_scheduler_interval_seconds(job_name: str) -> int | None:
-    """Handle the internal expected scheduler interval seconds helper logic for business services that coordinate repositories and domain workflows.
+    """Perform expected scheduler interval seconds.
 
     Args:
-        job_name: job name value used by this routine (type `str`).
+        job_name: Parameter input untuk routine ini.
 
     Returns:
-        `int | None` result produced by the routine.
+        TODO describe return value.
+
     """
     mapping = {
         "internet_checks": settings.scheduler_interval_internet_seconds,

@@ -1,4 +1,7 @@
-"""Provide background scheduler and worker jobs for the network monitoring project."""
+"""Define module logic for `backend/app/scheduler/jobs.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import logging
 from time import perf_counter
@@ -26,13 +29,11 @@ logger = logging.getLogger("network_monitoring.scheduler")
 
 
 def register_jobs(scheduler) -> None:
-    """Handle register jobs for background scheduler and worker jobs.
+    """Return register jobs for scheduler execution workflows.
 
     Args:
-        scheduler: scheduler value used by this routine.
+        scheduler: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     scheduler.add_job(
         run_internet_job,
@@ -97,55 +98,61 @@ def register_jobs(scheduler) -> None:
 
 
 async def run_internet_job() -> None:
-    """Run internet job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run internet job for scheduler execution workflows.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     await _run_scheduler_job("internet_checks", lambda db: _persist_runner(run_internet_checks, db))
 
 
 async def run_device_job() -> None:
-    """Run device job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run device job for scheduler execution workflows.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     await _run_scheduler_job("device_checks", lambda db: _persist_runner(run_device_checks, db))
 
 
 async def run_server_job() -> None:
-    """Run server job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run server job for scheduler execution workflows.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     await _run_scheduler_job("server_checks", lambda db: _persist_runner(run_server_checks, db))
 
 
 async def run_mikrotik_job() -> None:
-    """Run mikrotik job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run mikrotik job for scheduler execution workflows.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     await _run_scheduler_job("mikrotik_checks", lambda db: _persist_runner(run_mikrotik_checks, db))
 
 
 async def run_alert_job() -> None:
-    """Run alert job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run alert job for scheduler execution workflows.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     await _run_scheduler_job("alert_evaluation", _run_alert_job_inner)
 
 
 async def run_cleanup_job() -> None:
-    """Run cleanup job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run cleanup job for scheduler execution workflows.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     await _run_scheduler_job("retention_cleanup", _run_cleanup_job_inner)
 
@@ -153,71 +160,64 @@ async def run_cleanup_job() -> None:
 async def _persist_runner(runner, db) -> None:
     # Metric jobs share one pipeline lock so they don't trample each other,
     # but they should queue instead of being dropped when schedules overlap.
-    """Handle the internal persist runner helper logic for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Perform persist runner.
 
     Args:
-        runner: runner value used by this routine.
-        db: db value used by this routine.
+        runner: Parameter input untuk routine ini.
+        db: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     async with monitoring_pipeline_guard(wait=True):
-        await persist_metrics(db, await runner(db))
+        await persist_metrics(db, await runner(db), commit=False)
         # Re-evaluate alerts immediately after fresh metrics land so alerting
         # doesn't get starved by the separate scheduler tick.
-        await evaluate_alerts(db)
+        await evaluate_alerts(db, commit=False)
 
 
 async def _run_alert_job_inner(db) -> None:
-    """Run alert job inner for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run alert job inner.
 
     Args:
-        db: db value used by this routine.
+        db: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     async with monitoring_pipeline_guard(wait=False) as acquired:
         if not acquired:
             logger.info("Skipping alert evaluation because another monitoring pipeline run is active")
             return
-        await evaluate_alerts(db)
+        await evaluate_alerts(db, commit=False)
 
 
 async def _run_cleanup_job_inner(db) -> None:
-    """Run cleanup job inner for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run cleanup job inner.
 
     Args:
-        db: db value used by this routine.
+        db: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     async with monitoring_pipeline_guard(wait=False) as acquired:
         if not acquired:
             logger.info("Skipping retention cleanup because another monitoring pipeline run is active")
             return
-        await cleanup_monitoring_data(db)
-        await cleanup_auth_data(db)
+        await cleanup_monitoring_data(db, commit=False)
+        await cleanup_auth_data(db, commit=False)
 
 
 async def _run_scheduler_job(job_name: str, operation) -> None:
-    """Run scheduler job for background scheduler and worker jobs. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run scheduler job.
 
     Args:
-        job_name: job name value used by this routine (type `str`).
-        operation: operation value used by this routine.
+        job_name: Parameter input untuk routine ini.
+        operation: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     started_at = perf_counter()
     async with SessionLocal() as db:
         with job_logging_context(job_name):
             await mark_scheduler_job_started(db, job_name=job_name)
             try:
-                await operation(db)
+                async with db.begin():
+                    await operation(db)
             except Exception as exc:
                 duration_ms = (perf_counter() - started_at) * 1000
                 await mark_scheduler_job_failed(db, job_name=job_name, duration_ms=duration_ms, error=str(exc))
@@ -230,12 +230,13 @@ async def _run_scheduler_job(job_name: str, operation) -> None:
 
 
 def _misfire_grace_time(period_seconds: int) -> int:
-    """Handle the internal misfire grace time helper logic for background scheduler and worker jobs.
+    """Perform misfire grace time.
 
     Args:
-        period_seconds: period seconds value used by this routine (type `int`).
+        period_seconds: Parameter input untuk routine ini.
 
     Returns:
-        `int` result produced by the routine.
+        TODO describe return value.
+
     """
     return max(period_seconds * 2, 30)

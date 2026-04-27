@@ -1,4 +1,7 @@
-"""Provide database query and persistence repositories for the network monitoring project."""
+"""Define module logic for `backend/app/repositories/device_repository.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from sqlalchemy import Select, and_, case, delete, func, or_, select, update
 from sqlalchemy.orm import aliased
@@ -14,25 +17,29 @@ from ..models.metric_daily_rollup import MetricDailyRollup
 
 
 class DeviceRepository:
-    """Represent device repository behavior and data for database query and persistence repositories.
+    """Perform DeviceRepository.
+
+    This class encapsulates related behavior and data for this domain area.
     """
     def __init__(self, db: AsyncSession):
-        """Handle the internal init helper logic for database query and persistence repositories.
+        """Perform init.
 
         Args:
-            db: db value used by this routine (type `AsyncSession`).
+            db: Parameter input untuk routine ini.
 
         Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
+            TODO describe return value.
+
         """
         self.db = db
 
     @staticmethod
     def _latest_ping_metrics_subquery():
-        """Handle the internal latest ping metrics subquery helper logic for database query and persistence repositories.
+        """Perform latest ping metrics subquery.
 
         Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
+            TODO describe return value.
+
         """
         mikrotik_device_filter = or_(
             func.lower(Device.device_type) == "mikrotik",
@@ -87,13 +94,14 @@ class DeviceRepository:
 
     @staticmethod
     def _search_filter(search: str | None):
-        """Handle the internal search filter helper logic for database query and persistence repositories.
+        """Perform search filter.
 
         Args:
-            search: search value used by this routine (type `str | None`).
+            search: Parameter input untuk routine ini.
 
         Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
+            TODO describe return value.
+
         """
         if not search:
             return None
@@ -113,17 +121,18 @@ class DeviceRepository:
         latest_status: str | list[str] | tuple[str, ...] | None = None,
         search: str | None = None,
     ):
-        """Handle the internal device status query helper logic for database query and persistence repositories.
+        """Perform device status query.
 
         Args:
-            active_only: active only keyword value used by this routine (type `bool`, optional).
-            device_id: device id keyword value used by this routine (type `int | None`, optional).
-            device_type: device type keyword value used by this routine (type `str | None`, optional).
-            latest_status: latest status keyword value used by this routine (type `str | list[str] | tuple[str, ...] | None`, optional).
-            search: search keyword value used by this routine (type `str | None`, optional).
+            active_only: Parameter input untuk routine ini.
+            device_id: Parameter input untuk routine ini.
+            device_type: Parameter input untuk routine ini.
+            latest_status: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
 
         Returns:
-            The computed result, response payload, or side-effect outcome for the caller.
+            TODO describe return value.
+
         """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
@@ -165,13 +174,14 @@ class DeviceRepository:
         return query, latest_ping
 
     async def list_devices(self, active_only: bool = False) -> list[Device]:
-        """Return a list of devices for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to list devices.
 
         Args:
-            active_only: active only value used by this routine (type `bool`, optional).
+            active_only: Parameter input untuk routine ini.
 
         Returns:
-            `list[Device]` result produced by the routine.
+            TODO describe return value.
+
         """
         query: Select[tuple[Device]] = select(Device).order_by(Device.name.asc())
         if active_only:
@@ -186,16 +196,17 @@ class DeviceRepository:
         limit: int = 300,
         offset: int = 0,
     ) -> list[dict]:
-        """Return a list of device options for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to list device options.
 
         Args:
-            active_only: active only keyword value used by this routine (type `bool`, optional).
-            search: search keyword value used by this routine (type `str | None`, optional).
-            limit: limit keyword value used by this routine (type `int`, optional).
-            offset: offset keyword value used by this routine (type `int`, optional).
+            active_only: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
 
         Returns:
-            `list[dict]` result produced by the routine.
+            TODO describe return value.
+
         """
         query = select(
             Device.id,
@@ -228,13 +239,14 @@ class DeviceRepository:
         ]
 
     async def count_devices(self, active_only: bool = False) -> int:
-        """Count devices for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to count devices.
 
         Args:
-            active_only: active only value used by this routine (type `bool`, optional).
+            active_only: Parameter input untuk routine ini.
 
         Returns:
-            `int` result produced by the routine.
+            TODO describe return value.
+
         """
         query = select(func.count()).select_from(Device)
         if active_only:
@@ -251,19 +263,20 @@ class DeviceRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[dict]:
-        """Return a list of device status rows for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to list device status rows.
 
         Args:
-            active_only: active only value used by this routine (type `bool`, optional).
-            device_id: device id value used by this routine (type `int | None`, optional).
-            device_type: device type value used by this routine (type `str | None`, optional).
-            latest_status: latest status value used by this routine (type `str | list[str] | tuple[str, ...] | None`, optional).
-            search: search value used by this routine (type `str | None`, optional).
-            limit: limit value used by this routine (type `int | None`, optional).
-            offset: offset value used by this routine (type `int`, optional).
+            active_only: Parameter input untuk routine ini.
+            device_id: Parameter input untuk routine ini.
+            device_type: Parameter input untuk routine ini.
+            latest_status: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
 
         Returns:
-            `list[dict]` result produced by the routine.
+            TODO describe return value.
+
         """
         query, _latest_ping = self._device_status_query(
             active_only=active_only,
@@ -304,18 +317,19 @@ class DeviceRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[list[dict], int]:
-        """Return a list of device status rows paged for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to list device status rows paged.
 
         Args:
-            active_only: active only keyword value used by this routine (type `bool`, optional).
-            device_type: device type keyword value used by this routine (type `str | None`, optional).
-            latest_status: latest status keyword value used by this routine (type `str | list[str] | tuple[str, ...] | None`, optional).
-            search: search keyword value used by this routine (type `str | None`, optional).
-            limit: limit keyword value used by this routine (type `int`, optional).
-            offset: offset keyword value used by this routine (type `int`, optional).
+            active_only: Parameter input untuk routine ini.
+            device_type: Parameter input untuk routine ini.
+            latest_status: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
+            limit: Parameter input untuk routine ini.
+            offset: Parameter input untuk routine ini.
 
         Returns:
-            `tuple[list[dict], int]` result produced by the routine.
+            TODO describe return value.
+
         """
         query, _latest_ping = self._device_status_query(
             active_only=active_only,
@@ -353,10 +367,11 @@ class DeviceRepository:
         ], total
 
     async def summarize_active_device_statuses(self) -> dict[str, dict[str, int]]:
-        """Summarize active device statuses for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to summarize active device statuses.
 
         Returns:
-            `dict[str, dict[str, int]]` result produced by the routine.
+            TODO describe return value.
+
         """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
@@ -387,10 +402,11 @@ class DeviceRepository:
         return summary
 
     async def _summarize_active_mikrotik_named_statuses(self) -> dict[str, int]:
-        """Summarize active mikrotik named statuses for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Summarize active mikrotik named statuses.
 
         Returns:
-            `dict[str, int]` result produced by the routine.
+            TODO describe return value.
+
         """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
@@ -419,13 +435,14 @@ class DeviceRepository:
         return {str(status or "unknown"): int(device_count) for status, device_count in rows}
 
     async def summarize_device_status_counts(self, *, active_only: bool = False) -> dict[str, int]:
-        """Summarize device status counts for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to summarize device status counts.
 
         Args:
-            active_only: active only keyword value used by this routine (type `bool`, optional).
+            active_only: Parameter input untuk routine ini.
 
         Returns:
-            `dict[str, int]` result produced by the routine.
+            TODO describe return value.
+
         """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
@@ -449,13 +466,14 @@ class DeviceRepository:
         return {str(status or "unknown"): int(device_count) for status, device_count in rows}
 
     async def latest_device_check_at(self, *, active_only: bool = False) -> object | None:
-        """Handle latest device check at for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to return latest device check at.
 
         Args:
-            active_only: active only keyword value used by this routine (type `bool`, optional).
+            active_only: Parameter input untuk routine ini.
 
         Returns:
-            `object | None` result produced by the routine.
+            TODO describe return value.
+
         """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
@@ -477,16 +495,17 @@ class DeviceRepository:
         latest_status: str | list[str] | tuple[str, ...] | None = None,
         search: str | None = None,
     ) -> int:
-        """Count device status rows for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to count device status rows.
 
         Args:
-            active_only: active only keyword value used by this routine (type `bool`, optional).
-            device_type: device type keyword value used by this routine (type `str | None`, optional).
-            latest_status: latest status keyword value used by this routine (type `str | list[str] | tuple[str, ...] | None`, optional).
-            search: search keyword value used by this routine (type `str | None`, optional).
+            active_only: Parameter input untuk routine ini.
+            device_type: Parameter input untuk routine ini.
+            latest_status: Parameter input untuk routine ini.
+            search: Parameter input untuk routine ini.
 
         Returns:
-            `int` result produced by the routine.
+            TODO describe return value.
+
         """
         query, _latest_ping = self._device_status_query(
             active_only=active_only,
@@ -498,14 +517,15 @@ class DeviceRepository:
         return int(await self.db.scalar(query) or 0)
 
     async def list_by_type(self, device_type: str, active_only: bool = True) -> list[Device]:
-        """Return a list of by type for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to list by type.
 
         Args:
-            device_type: device type value used by this routine (type `str`).
-            active_only: active only value used by this routine (type `bool`, optional).
+            device_type: Parameter input untuk routine ini.
+            active_only: Parameter input untuk routine ini.
 
         Returns:
-            `list[Device]` result produced by the routine.
+            TODO describe return value.
+
         """
         query: Select[tuple[Device]] = select(Device).where(Device.device_type == device_type)
         if active_only:
@@ -514,14 +534,15 @@ class DeviceRepository:
         return list((await self.db.scalars(query)).all())
 
     async def list_by_types(self, device_types: list[str], active_only: bool = True) -> list[Device]:
-        """Return a list of by types for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to list by types.
 
         Args:
-            device_types: device types value used by this routine (type `list[str]`).
-            active_only: active only value used by this routine (type `bool`, optional).
+            device_types: Parameter input untuk routine ini.
+            active_only: Parameter input untuk routine ini.
 
         Returns:
-            `list[Device]` result produced by the routine.
+            TODO describe return value.
+
         """
         query: Select[tuple[Device]] = select(Device).where(Device.device_type.in_(device_types))
         if active_only:
@@ -530,36 +551,39 @@ class DeviceRepository:
         return list((await self.db.scalars(query)).all())
 
     async def get_by_id(self, device_id: int) -> Device | None:
-        """Return by id for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to get by id.
 
         Args:
-            device_id: device id value used by this routine (type `int`).
+            device_id: Parameter input untuk routine ini.
 
         Returns:
-            `Device | None` result produced by the routine.
+            TODO describe return value.
+
         """
         return await self.db.get(Device, device_id)
 
     async def get_by_ip_address(self, ip_address: str) -> Device | None:
-        """Return by ip address for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to get by IP address.
 
         Args:
-            ip_address: ip address value used by this routine (type `str`).
+            ip_address: Parameter input untuk routine ini.
 
         Returns:
-            `Device | None` result produced by the routine.
+            TODO describe return value.
+
         """
         query: Select[tuple[Device]] = select(Device).where(Device.ip_address == ip_address)
         return (await self.db.scalars(query)).first()
 
     async def upsert_devices(self, payloads: list[dict]) -> list[Device]:
-        """Handle upsert devices for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to upsert devices.
 
         Args:
-            payloads: payloads value used by this routine (type `list[dict]`).
+            payloads: Parameter input untuk routine ini.
 
         Returns:
-            `list[Device]` result produced by the routine.
+            TODO describe return value.
+
         """
         if not payloads:
             return []
@@ -587,13 +611,14 @@ class DeviceRepository:
         return devices
 
     async def create_device(self, payload: dict) -> Device:
-        """Create device for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to create device.
 
         Args:
-            payload: payload value used by this routine (type `dict`).
+            payload: Parameter input untuk routine ini.
 
         Returns:
-            `Device` result produced by the routine.
+            TODO describe return value.
+
         """
         device = Device(**payload)
         self.db.add(device)
@@ -602,14 +627,15 @@ class DeviceRepository:
         return device
 
     async def update_device(self, device: Device, payload: dict) -> Device:
-        """Update device for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to update device.
 
         Args:
-            device: device value used by this routine (type `Device`).
-            payload: payload value used by this routine (type `dict`).
+            device: Parameter input untuk routine ini.
+            payload: Parameter input untuk routine ini.
 
         Returns:
-            `Device` result produced by the routine.
+            TODO describe return value.
+
         """
         for field, value in payload.items():
             setattr(device, field, value)
@@ -618,13 +644,11 @@ class DeviceRepository:
         return device
 
     async def delete_device(self, device: Device) -> None:
-        """Delete device for database query and persistence repositories. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+        """Repository method to delete device.
 
         Args:
-            device: device value used by this routine (type `Device`).
+            device: Parameter input untuk routine ini.
 
-        Returns:
-            None. The routine is executed for its side effects.
         """
         device_id = device.id
         await self.db.execute(update(Alert).where(Alert.device_id == device_id).values(device_id=None))

@@ -1,4 +1,7 @@
-"""Provide operator and maintenance scripts for the network monitoring project."""
+"""Define module logic for `scripts/test_snmp.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import argparse
 import asyncio
@@ -27,17 +30,18 @@ DEFAULT_OIDS = [
 
 
 async def snmp_get(ip: str, community: str, oid: str, timeout: int, retries: int) -> tuple[bool, str]:
-    """Handle snmp get for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Return snmp get.
 
     Args:
-        ip: ip value used by this routine (type `str`).
-        community: community value used by this routine (type `str`).
-        oid: oid value used by this routine (type `str`).
-        timeout: timeout value used by this routine (type `int`).
-        retries: retries value used by this routine (type `int`).
+        ip: Parameter input untuk routine ini.
+        community: Parameter input untuk routine ini.
+        oid: Parameter input untuk routine ini.
+        timeout: Parameter input untuk routine ini.
+        retries: Parameter input untuk routine ini.
 
     Returns:
-        `tuple[bool, str]` result produced by the routine.
+        TODO describe return value.
+
     """
     engine = SnmpEngine()
     try:
@@ -64,15 +68,13 @@ async def snmp_get(ip: str, community: str, oid: str, timeout: int, retries: int
 
 
 async def run_targets(targets: list[tuple[str, str, str]], timeout: int, retries: int) -> None:
-    """Run targets for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run targets.
 
     Args:
-        targets: targets value used by this routine (type `list[tuple[str, str, str]]`).
-        timeout: timeout value used by this routine (type `int`).
-        retries: retries value used by this routine (type `int`).
+        targets: Parameter input untuk routine ini.
+        timeout: Parameter input untuk routine ini.
+        retries: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     for label, ip, community in targets:
         print(f"[{label}] {ip}")
@@ -83,10 +85,11 @@ async def run_targets(targets: list[tuple[str, str, str]], timeout: int, retries
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse args for operator and maintenance scripts.
+    """Return parse args.
 
     Returns:
-        `argparse.Namespace` result produced by the routine.
+        TODO describe return value.
+
     """
     parser = argparse.ArgumentParser(description="Test SNMP v2c reachability to one or more targets.")
     parser.add_argument("--ip", help="Target IP address.")
@@ -98,13 +101,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_targets(args: argparse.Namespace) -> list[tuple[str, str, str]]:
-    """Build targets for operator and maintenance scripts.
+    """Build targets.
 
     Args:
-        args: args value used by this routine (type `argparse.Namespace`).
+        args: Parameter input untuk routine ini.
 
     Returns:
-        `list[tuple[str, str, str]]` result produced by the routine.
+        TODO describe return value.
+
     """
     if args.ip and args.community:
         return [(args.label, args.ip, args.community)]
@@ -114,10 +118,11 @@ def build_targets(args: argparse.Namespace) -> list[tuple[str, str, str]]:
 
 
 async def main() -> None:
-    """Handle main for operator and maintenance scripts. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run the module entrypoint.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     args = parse_args()
     await run_targets(build_targets(args), args.timeout, args.retries)

@@ -1,4 +1,7 @@
-"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+"""Define module logic for `backend/app/services/run_cycle_service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import asyncio
 import logging
@@ -23,19 +26,21 @@ MonitorRunner = Callable[[AsyncSession], Awaitable[list[dict]]]
 
 
 async def run_monitoring_cycle(db: AsyncSession) -> dict:
-    """Run monitoring cycle for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Run one end-to-end monitoring cycle including collection and persistence.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     started_at = perf_counter()
     metrics = await collect_monitoring_metrics()
 
-    persisted = await persist_metrics(db, metrics)
-    alert_events = await evaluate_alerts(db)
+    async with db.begin():
+        persisted = await persist_metrics(db, metrics, commit=False)
+        alert_events = await evaluate_alerts(db, commit=False)
 
     result = {
         "metrics_collected": len(persisted),
@@ -57,23 +62,25 @@ async def run_monitoring_cycle(db: AsyncSession) -> dict:
 
 
 async def collect_monitoring_metrics() -> list[dict]:
-    """Collect monitoring metrics for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Collect monitoring metrics from all configured monitor runners.
 
     Returns:
-        `list[dict]` result produced by the routine.
+        TODO describe return value.
+
     """
     runner_results = await asyncio.gather(*[_collect_runner_metrics(runner) for runner in _monitor_runners()])
     return [metric for metrics in runner_results for metric in metrics]
 
 
 async def _collect_runner_metrics(runner: MonitorRunner) -> list[dict]:
-    """Collect runner metrics for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Collect runner metrics.
 
     Args:
-        runner: runner value used by this routine (type `MonitorRunner`).
+        runner: Parameter input untuk routine ini.
 
     Returns:
-        `list[dict]` result produced by the routine.
+        TODO describe return value.
+
     """
     started_at = perf_counter()
     async with SessionLocal() as db:
@@ -88,10 +95,11 @@ async def _collect_runner_metrics(runner: MonitorRunner) -> list[dict]:
 
 
 def _monitor_runners() -> tuple[MonitorRunner, ...]:
-    """Handle the internal monitor runners helper logic for business services that coordinate repositories and domain workflows.
+    """Perform monitor runners.
 
     Returns:
-        `tuple[MonitorRunner, ...]` result produced by the routine.
+        TODO describe return value.
+
     """
     return (
         run_internet_checks,

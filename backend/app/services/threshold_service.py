@@ -1,4 +1,7 @@
-"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+"""Define module logic for `backend/app/services/threshold_service.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,14 +31,16 @@ DEFAULT_THRESHOLDS = {
 }
 
 
-async def ensure_default_thresholds(db: AsyncSession) -> list:
-    """Ensure default thresholds for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+async def ensure_default_thresholds(db: AsyncSession, *, commit: bool = True) -> list:
+    """Ensure default threshold records exist in persistent storage.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
+        db: Parameter input untuk routine ini.
+        commit: Parameter input untuk routine ini.
 
     Returns:
-        `list` result produced by the routine.
+        TODO describe return value.
+
     """
     repository = ThresholdRepository(db)
     existing_thresholds = {threshold.key: threshold for threshold in await repository.list_thresholds()}
@@ -52,50 +57,57 @@ async def ensure_default_thresholds(db: AsyncSession) -> list:
         created_any = True
 
     if created_any:
-        await db.commit()
+        if commit:
+            await db.commit()
+        else:
+            await db.flush()
 
     return sorted(thresholds, key=lambda threshold: threshold.key)
 
 
 async def list_threshold_rows(db: AsyncSession) -> list[dict]:
-    """Return a list of threshold rows for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """List threshold rows sorted by key.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
+        db: Parameter input untuk routine ini.
 
     Returns:
-        `list[dict]` result produced by the routine.
+        TODO describe return value.
+
     """
-    await ensure_default_thresholds(db)
+    await ensure_default_thresholds(db, commit=True)
     return [
         {"id": threshold.id, "key": threshold.key, "value": threshold.value, "description": threshold.description}
         for threshold in await ThresholdRepository(db).list_thresholds()
     ]
 
 
-async def get_threshold_map(db: AsyncSession) -> dict[str, float]:
-    """Return threshold map for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+async def get_threshold_map(db: AsyncSession, *, commit: bool = True) -> dict[str, float]:
+    """Return threshold values as a key-to-float mapping.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
+        db: Parameter input untuk routine ini.
+        commit: Parameter input untuk routine ini.
 
     Returns:
-        `dict[str, float]` result produced by the routine.
+        TODO describe return value.
+
     """
-    await ensure_default_thresholds(db)
+    await ensure_default_thresholds(db, commit=commit)
     return {threshold.key: threshold.value for threshold in await ThresholdRepository(db).list_thresholds()}
 
 
 async def update_threshold_value(db: AsyncSession, key: str, value: float) -> dict:
-    """Update threshold value for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Update one threshold key with a validated numeric value.
 
     Args:
-        db: db value used by this routine (type `AsyncSession`).
-        key: key value used by this routine (type `str`).
-        value: value value used by this routine (type `float`).
+        db: Parameter input untuk routine ini.
+        key: Parameter input untuk routine ini.
+        value: Parameter input untuk routine ini.
 
     Returns:
-        `dict` result produced by the routine.
+        TODO describe return value.
+
     """
     if key not in DEFAULT_THRESHOLDS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Threshold not found")

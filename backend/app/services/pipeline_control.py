@@ -1,4 +1,7 @@
-"""Provide business services that coordinate repositories and domain workflows for the network monitoring project."""
+"""Define module logic for `backend/app/services/pipeline_control.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -18,25 +21,27 @@ logger = logging.getLogger("network_monitoring.pipeline")
 
 
 def _mysql_lock_timeout_seconds(*, wait: bool) -> int:
-    """Handle the internal mysql lock timeout seconds helper logic for business services that coordinate repositories and domain workflows.
+    """Perform mysql lock timeout seconds.
 
     Args:
-        wait: wait keyword value used by this routine (type `bool`).
+        wait: Parameter input untuk routine ini.
 
     Returns:
-        `int` result produced by the routine.
+        TODO describe return value.
+
     """
     return max(settings.monitoring_lock_timeout_seconds, 1) if wait else 0
 
 
 async def _acquire_mysql_lock(*, wait: bool) -> tuple[object | None, bool]:
-    """Handle the internal acquire mysql lock helper logic for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Perform acquire mysql lock.
 
     Args:
-        wait: wait keyword value used by this routine (type `bool`).
+        wait: Parameter input untuk routine ini.
 
     Returns:
-        `tuple[object | None, bool]` result produced by the routine.
+        TODO describe return value.
+
     """
     connection = await engine.connect()
     try:
@@ -58,13 +63,11 @@ async def _acquire_mysql_lock(*, wait: bool) -> tuple[object | None, bool]:
 
 
 async def _release_mysql_lock(connection) -> None:
-    """Handle the internal release mysql lock helper logic for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Perform release mysql lock.
 
     Args:
-        connection: connection value used by this routine.
+        connection: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     try:
         await connection.execute(
@@ -77,13 +80,14 @@ async def _release_mysql_lock(connection) -> None:
 
 @asynccontextmanager
 async def monitoring_pipeline_guard(*, wait: bool) -> AsyncIterator[bool]:
-    """Handle monitoring pipeline guard for business services that coordinate repositories and domain workflows. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Guard monitoring pipeline execution with cooperative distributed locking.
 
     Args:
-        wait: wait keyword value used by this routine (type `bool`).
+        wait: Parameter input untuk routine ini.
 
     Returns:
-        `AsyncIterator[bool]` result produced by the routine.
+        TODO describe return value.
+
     """
     if engine.dialect.name == "mysql":
         connection, acquired = await _acquire_mysql_lock(wait=wait)

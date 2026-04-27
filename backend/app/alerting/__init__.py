@@ -1,1 +1,4 @@
-"""Provide alert evaluation and notification workflows for the network monitoring project."""
+"""Define module logic for `backend/app/alerting/__init__.py`.
+
+This module contains project-specific implementation details.
+"""

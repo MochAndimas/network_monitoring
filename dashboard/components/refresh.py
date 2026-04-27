@@ -1,4 +1,7 @@
-"""Provide shared Streamlit dashboard UI and API helpers for the network monitoring project."""
+"""Define module logic for `dashboard/components/refresh.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -18,15 +21,16 @@ def refresh_controls(
     default_enabled: bool = True,
     default_interval: int = 15,
 ) -> tuple[bool, int]:
-    """Refresh controls for shared Streamlit dashboard UI and API helpers.
+    """Return refresh controls.
 
     Args:
-        page_key: page key value used by this routine (type `str`).
-        default_enabled: default enabled keyword value used by this routine (type `bool`, optional).
-        default_interval: default interval keyword value used by this routine (type `int`, optional).
+        page_key: Parameter input untuk routine ini.
+        default_enabled: Parameter input untuk routine ini.
+        default_interval: Parameter input untuk routine ini.
 
     Returns:
-        `tuple[bool, int]` result produced by the routine.
+        TODO describe return value.
+
     """
     st.sidebar.markdown("### Pembaruan Data")
     with st.sidebar.container(border=True):
@@ -48,14 +52,15 @@ def refresh_controls(
 
 
 def live_status_text(auto_refresh: bool, interval_seconds: int) -> str:
-    """Handle live status text for shared Streamlit dashboard UI and API helpers.
+    """Return live status text.
 
     Args:
-        auto_refresh: auto refresh value used by this routine (type `bool`).
-        interval_seconds: interval seconds value used by this routine (type `int`).
+        auto_refresh: Parameter input untuk routine ini.
+        interval_seconds: Parameter input untuk routine ini.
 
     Returns:
-        `str` result produced by the routine.
+        TODO describe return value.
+
     """
     if auto_refresh:
         return f"Aktif, data diperbarui setiap {interval_seconds} detik."
@@ -63,33 +68,27 @@ def live_status_text(auto_refresh: bool, interval_seconds: int) -> str:
 
 
 def rendered_at_label() -> str:
-    """Handle rendered at label for shared Streamlit dashboard UI and API helpers.
+    """Return rendered at label.
 
     Returns:
-        `str` result produced by the routine.
+        TODO describe return value.
+
     """
     return datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
 
 
 def render_live_section(auto_refresh: bool, interval_seconds: int, render_fn) -> None:
-    """Render live section for shared Streamlit dashboard UI and API helpers.
+    """Render live section.
 
     Args:
-        auto_refresh: auto refresh value used by this routine (type `bool`).
-        interval_seconds: interval seconds value used by this routine (type `int`).
-        render_fn: render fn value used by this routine.
+        auto_refresh: Parameter input untuk routine ini.
+        interval_seconds: Parameter input untuk routine ini.
+        render_fn: Parameter input untuk routine ini.
 
-    Returns:
-        None. The routine is executed for its side effects.
     """
     if auto_refresh:
         @st.fragment(run_every=f"{interval_seconds}s")
         def _live_fragment():
-            """Handle the internal live fragment helper logic for shared Streamlit dashboard UI and API helpers.
-
-            Returns:
-                The computed result, response payload, or side-effect outcome for the caller.
-            """
             render_fn()
 
         _live_fragment()

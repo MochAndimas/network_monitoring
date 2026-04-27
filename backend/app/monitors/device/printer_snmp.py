@@ -1,4 +1,7 @@
-"""Provide monitoring collectors for network, device, server, and Mikrotik metrics for the network monitoring project."""
+"""Define module logic for `backend/app/monitors/device/printer_snmp.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 
@@ -95,7 +98,9 @@ WARNING_ERROR_FLAGS = {
 
 @dataclass(slots=True)
 class SnmpPrinterMetric:
-    """Represent snmp printer metric behavior and data for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Perform SnmpPrinterMetric.
+
+    This class encapsulates related behavior and data for this domain area.
     """
     metric_name: str
     metric_value: str
@@ -104,14 +109,15 @@ class SnmpPrinterMetric:
 
 
 async def collect_printer_snmp_metrics(device_id: int, ip_address: str) -> list[dict]:
-    """Collect printer snmp metrics for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Collect printer snmp metrics as part of monitoring collection workflows.
 
     Args:
-        device_id: device id value used by this routine (type `int`).
-        ip_address: ip address value used by this routine (type `str`).
+        device_id: Parameter input untuk routine ini.
+        ip_address: Parameter input untuk routine ini.
 
     Returns:
-        `list[dict]` result produced by the routine.
+        TODO describe return value.
+
     """
     community = printer_snmp_community_for_ip(ip_address)
     if not community:
@@ -155,15 +161,16 @@ async def collect_printer_snmp_metrics(device_id: int, ip_address: str) -> list[
 
 
 async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str]) -> dict[str, object | None]:
-    """Fetch oid values for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Perform fetch oid values.
 
     Args:
-        ip_address: ip address value used by this routine (type `str`).
-        community: community value used by this routine (type `str`).
-        oids: oids value used by this routine (type `dict[str, str]`).
+        ip_address: Parameter input untuk routine ini.
+        community: Parameter input untuk routine ini.
+        oids: Parameter input untuk routine ini.
 
     Returns:
-        `dict[str, object | None]` result produced by the routine.
+        TODO describe return value.
+
     """
     tasks = {
         key: asyncio.create_task(_snmp_get_value(ip_address, community, oid))
@@ -173,15 +180,16 @@ async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str
 
 
 async def _snmp_get_value(ip_address: str, community: str, oid: str) -> object | None:
-    """Handle the internal snmp get value helper logic for monitoring collectors for network, device, server, and Mikrotik metrics. This coroutine may perform asynchronous I/O or coordinate async dependencies.
+    """Perform snmp get value.
 
     Args:
-        ip_address: ip address value used by this routine (type `str`).
-        community: community value used by this routine (type `str`).
-        oid: oid value used by this routine (type `str`).
+        ip_address: Parameter input untuk routine ini.
+        community: Parameter input untuk routine ini.
+        oid: Parameter input untuk routine ini.
 
     Returns:
-        `object | None` result produced by the routine.
+        TODO describe return value.
+
     """
     engine = SnmpEngine()
     try:
@@ -205,13 +213,14 @@ async def _snmp_get_value(ip_address: str, community: str, oid: str) -> object |
 
 
 def _build_uptime_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
-    """Build uptime metric for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Build uptime metric.
 
     Args:
-        raw_values: raw values value used by this routine (type `dict[str, object | None]`).
+        raw_values: Parameter input untuk routine ini.
 
     Returns:
-        `SnmpPrinterMetric` result produced by the routine.
+        TODO describe return value.
+
     """
     uptime_ticks = _safe_int(raw_values.get("printer_uptime_ticks"))
     if uptime_ticks is None:
@@ -220,13 +229,14 @@ def _build_uptime_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMet
 
 
 def _build_printer_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
-    """Build printer status metric for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Build printer status metric.
 
     Args:
-        raw_values: raw values value used by this routine (type `dict[str, object | None]`).
+        raw_values: Parameter input untuk routine ini.
 
     Returns:
-        `SnmpPrinterMetric` result produced by the routine.
+        TODO describe return value.
+
     """
     status_code = _safe_int(raw_values.get("printer_status_code"))
     status_label = PRINTER_STATUS_LABELS.get(status_code, "unknown")
@@ -235,13 +245,14 @@ def _build_printer_status_metric(raw_values: dict[str, object | None]) -> SnmpPr
 
 
 def _build_error_state_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
-    """Build error state metric for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Build error state metric.
 
     Args:
-        raw_values: raw values value used by this routine (type `dict[str, object | None]`).
+        raw_values: Parameter input untuk routine ini.
 
     Returns:
-        `SnmpPrinterMetric` result produced by the routine.
+        TODO describe return value.
+
     """
     flags = _decode_error_state(raw_values.get("printer_error_state_raw"))
     if not flags:
@@ -251,13 +262,14 @@ def _build_error_state_metric(raw_values: dict[str, object | None]) -> SnmpPrint
 
 
 def _build_ink_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
-    """Build ink status metric for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Build ink status metric.
 
     Args:
-        raw_values: raw values value used by this routine (type `dict[str, object | None]`).
+        raw_values: Parameter input untuk routine ini.
 
     Returns:
-        `SnmpPrinterMetric` result produced by the routine.
+        TODO describe return value.
+
     """
     flags = set(_decode_error_state(raw_values.get("printer_error_state_raw")))
     if "no_toner" in flags:
@@ -268,13 +280,14 @@ def _build_ink_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinte
 
 
 def _build_paper_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
-    """Build paper status metric for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Build paper status metric.
 
     Args:
-        raw_values: raw values value used by this routine (type `dict[str, object | None]`).
+        raw_values: Parameter input untuk routine ini.
 
     Returns:
-        `SnmpPrinterMetric` result produced by the routine.
+        TODO describe return value.
+
     """
     flags = set(_decode_error_state(raw_values.get("printer_error_state_raw")))
     if "no_paper" in flags or "input_tray_empty" in flags:
@@ -290,13 +303,14 @@ def _build_paper_status_metric(raw_values: dict[str, object | None]) -> SnmpPrin
 
 
 def _build_total_pages_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
-    """Build total pages metric for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Build total pages metric.
 
     Args:
-        raw_values: raw values value used by this routine (type `dict[str, object | None]`).
+        raw_values: Parameter input untuk routine ini.
 
     Returns:
-        `SnmpPrinterMetric` result produced by the routine.
+        TODO describe return value.
+
     """
     total_pages = _safe_int(raw_values.get("printer_total_pages"))
     if total_pages is None:
@@ -305,13 +319,14 @@ def _build_total_pages_metric(raw_values: dict[str, object | None]) -> SnmpPrint
 
 
 def _decode_error_state(raw_value: object | None) -> list[str]:
-    """Handle the internal decode error state helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Decode error state.
 
     Args:
-        raw_value: raw value value used by this routine (type `object | None`).
+        raw_value: Parameter input untuk routine ini.
 
     Returns:
-        `list[str]` result produced by the routine.
+        TODO describe return value.
+
     """
     if raw_value is None:
         return []
@@ -332,13 +347,14 @@ def _decode_error_state(raw_value: object | None) -> list[str]:
 
 
 def _safe_int(raw_value: object | None) -> int | None:
-    """Handle the internal safe int helper logic for monitoring collectors for network, device, server, and Mikrotik metrics.
+    """Perform safe int.
 
     Args:
-        raw_value: raw value value used by this routine (type `object | None`).
+        raw_value: Parameter input untuk routine ini.
 
     Returns:
-        `int | None` result produced by the routine.
+        TODO describe return value.
+
     """
     try:
         if raw_value is None:

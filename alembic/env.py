@@ -1,4 +1,7 @@
-"""Provide Alembic migration environment for the network monitoring project."""
+"""Define module logic for `alembic/env.py`.
+
+This module contains project-specific implementation details.
+"""
 
 from __future__ import annotations
 

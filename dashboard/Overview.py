@@ -1,4 +1,7 @@
-"""Provide project functionality for the network monitoring project."""
+"""Define module logic for `dashboard/Overview.py`.
+
+This module contains project-specific implementation details.
+"""
 
 import altair as alt
 import pandas as pd
@@ -13,13 +16,14 @@ from components.ui import normalize_status_label, render_kpi_cards, render_meta_
 
 
 def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
-    """Handle the internal prepare devices frame helper logic for project functionality.
+    """Perform prepare devices frame.
 
     Args:
-        devices: devices value used by this routine (type `list[dict]`).
+        devices: Parameter input untuk routine ini.
 
     Returns:
-        `pd.DataFrame` result produced by the routine.
+        TODO describe return value.
+
     """
     dataframe = pd.DataFrame(devices)
     if dataframe.empty:
@@ -36,13 +40,14 @@ def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
 
 
 def _prepare_alerts_frame(alerts: list[dict]) -> pd.DataFrame:
-    """Handle the internal prepare alerts frame helper logic for project functionality.
+    """Perform prepare alerts frame.
 
     Args:
-        alerts: alerts value used by this routine (type `list[dict]`).
+        alerts: Parameter input untuk routine ini.
 
     Returns:
-        `pd.DataFrame` result produced by the routine.
+        TODO describe return value.
+
     """
     dataframe = pd.DataFrame(alerts)
     if dataframe.empty:
@@ -54,13 +59,14 @@ def _prepare_alerts_frame(alerts: list[dict]) -> pd.DataFrame:
 
 
 def _prepare_incidents_frame(incidents: list[dict]) -> pd.DataFrame:
-    """Handle the internal prepare incidents frame helper logic for project functionality.
+    """Perform prepare incidents frame.
 
     Args:
-        incidents: incidents value used by this routine (type `list[dict]`).
+        incidents: Parameter input untuk routine ini.
 
     Returns:
-        `pd.DataFrame` result produced by the routine.
+        TODO describe return value.
+
     """
     dataframe = pd.DataFrame(incidents)
     if dataframe.empty:
@@ -72,13 +78,14 @@ def _prepare_incidents_frame(incidents: list[dict]) -> pd.DataFrame:
 
 
 def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
-    """Handle the internal prepare snapshot frame helper logic for project functionality.
+    """Perform prepare snapshot frame.
 
     Args:
-        snapshot_payload: snapshot payload value used by this routine (type `dict`).
+        snapshot_payload: Parameter input untuk routine ini.
 
     Returns:
-        `pd.DataFrame` result produced by the routine.
+        TODO describe return value.
+
     """
     dataframe = pd.DataFrame(snapshot_payload.get("items", []))
     if dataframe.empty:
@@ -92,10 +99,11 @@ def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
 
 
 def _render_overview_body() -> None:
-    """Render overview body for project functionality.
+    """Render overview body.
 
     Returns:
-        None. The routine is executed for its side effects.
+        Nilai balik routine atau efek samping yang dihasilkan.
+
     """
     payload = get_json(
         "/dashboard/overview-data",
