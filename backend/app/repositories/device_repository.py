@@ -3,6 +3,8 @@
 This module contains project-specific implementation details.
 """
 
+from typing import cast
+
 from sqlalchemy import Select, and_, case, delete, func, or_, select, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +30,7 @@ class DeviceRepository:
             db: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         self.db = db
@@ -38,7 +40,7 @@ class DeviceRepository:
         """Perform latest ping metrics subquery.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         mikrotik_device_filter = or_(
@@ -100,7 +102,7 @@ class DeviceRepository:
             search: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         if not search:
@@ -131,7 +133,7 @@ class DeviceRepository:
             search: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
@@ -180,7 +182,7 @@ class DeviceRepository:
             active_only: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query: Select[tuple[Device]] = select(Device).order_by(Device.name.asc())
@@ -205,7 +207,7 @@ class DeviceRepository:
             offset: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(
@@ -245,7 +247,7 @@ class DeviceRepository:
             active_only: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(func.count()).select_from(Device)
@@ -275,7 +277,7 @@ class DeviceRepository:
             offset: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query, _latest_ping = self._device_status_query(
@@ -328,7 +330,7 @@ class DeviceRepository:
             offset: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query, _latest_ping = self._device_status_query(
@@ -370,7 +372,7 @@ class DeviceRepository:
         """Repository method to summarize active device statuses.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
@@ -405,7 +407,7 @@ class DeviceRepository:
         """Summarize active mikrotik named statuses.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
@@ -441,7 +443,7 @@ class DeviceRepository:
             active_only: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
@@ -472,7 +474,7 @@ class DeviceRepository:
             active_only: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         latest_ping_metrics = self._latest_ping_metrics_subquery()
@@ -485,7 +487,7 @@ class DeviceRepository:
         )
         if active_only:
             query = query.where(Device.is_active.is_(True))
-        return await self.db.scalar(query)
+        return cast(object | None, await self.db.scalar(query))
 
     async def count_device_status_rows(
         self,
@@ -504,7 +506,7 @@ class DeviceRepository:
             search: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query, _latest_ping = self._device_status_query(
@@ -524,7 +526,7 @@ class DeviceRepository:
             active_only: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query: Select[tuple[Device]] = select(Device).where(Device.device_type == device_type)
@@ -541,7 +543,7 @@ class DeviceRepository:
             active_only: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query: Select[tuple[Device]] = select(Device).where(Device.device_type.in_(device_types))
@@ -557,7 +559,7 @@ class DeviceRepository:
             device_id: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         return await self.db.get(Device, device_id)
@@ -569,7 +571,7 @@ class DeviceRepository:
             ip_address: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query: Select[tuple[Device]] = select(Device).where(Device.ip_address == ip_address)
@@ -582,7 +584,7 @@ class DeviceRepository:
             payloads: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         if not payloads:
@@ -610,23 +612,24 @@ class DeviceRepository:
         await self.db.commit()
         return devices
 
-    async def create_device(self, payload: dict) -> Device:
+    async def create_device(self, payload: dict, *, commit: bool = True) -> Device:
         """Repository method to create device.
 
         Args:
             payload: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         device = Device(**payload)
         self.db.add(device)
         await self.db.flush()
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
         return device
 
-    async def update_device(self, device: Device, payload: dict) -> Device:
+    async def update_device(self, device: Device, payload: dict, *, commit: bool = True) -> Device:
         """Repository method to update device.
 
         Args:
@@ -634,16 +637,17 @@ class DeviceRepository:
             payload: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         for field, value in payload.items():
             setattr(device, field, value)
         await self.db.flush()
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
         return device
 
-    async def delete_device(self, device: Device) -> None:
+    async def delete_device(self, device: Device, *, commit: bool = True) -> None:
         """Repository method to delete device.
 
         Args:
@@ -653,7 +657,9 @@ class DeviceRepository:
         device_id = device.id
         await self.db.execute(update(Alert).where(Alert.device_id == device_id).values(device_id=None))
         await self.db.execute(update(Incident).where(Incident.device_id == device_id).values(device_id=None))
+        await self.db.execute(delete(LatestMetric).where(LatestMetric.device_id == device_id))
         await self.db.execute(delete(MetricDailyRollup).where(MetricDailyRollup.device_id == device_id))
         await self.db.execute(delete(MetricColdArchive).where(MetricColdArchive.device_id == device_id))
         await self.db.delete(device)
-        await self.db.commit()
+        if commit:
+            await self.db.commit()

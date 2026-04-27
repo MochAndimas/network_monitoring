@@ -30,7 +30,7 @@ async def get_metric_names(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return await MetricRepository(db).list_metric_names(device_id=device_id)
@@ -60,7 +60,7 @@ async def get_metrics_history(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     apply_legacy_deprecation_headers(response, legacy_endpoint="/metrics/history")
@@ -104,7 +104,7 @@ async def get_metrics_history_paged(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     repository = MetricRepository(db)
@@ -180,7 +180,7 @@ async def get_metrics_history_context(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     repository = MetricRepository(db)
@@ -193,7 +193,7 @@ async def get_metrics_history_context(
         checked_from=checked_from,
         checked_to=checked_to,
     )
-    selected_device_history_rows = []
+    selected_device_history_rows: list[dict] = []
     selected_device_history_total = 0
     if device_id is not None:
         if selected_device_offset == 0 and selected_device_limit <= limit:
@@ -217,7 +217,7 @@ async def get_metrics_history_context(
         latest_snapshot_status_summary = repository.summarize_latest_snapshot_status_counts_for_rows(latest_snapshot_rows)
     else:
         latest_snapshot_status_summary = await repository.summarize_latest_snapshot_status_counts()
-    selected_device_snapshot_rows = []
+    selected_device_snapshot_rows: list[dict] = []
     selected_device_snapshot_total = 0
     if include_selected_device_snapshot and device_id is not None:
         selected_device_snapshot_rows, selected_device_snapshot_total = await repository.list_latest_metric_rows_paged(
@@ -327,7 +327,7 @@ async def get_metrics_history_live(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     repository = MetricRepository(db)
@@ -343,7 +343,7 @@ async def get_metrics_history_live(
         checked_from=live_checked_from,
         checked_to=live_checked_to,
     )
-    selected_device_history_rows = []
+    selected_device_history_rows: list[dict] = []
     if device_id is not None:
         if selected_device_limit <= limit:
             selected_device_history_rows = history_rows[:selected_device_limit]
@@ -368,7 +368,7 @@ async def get_metrics_history_live(
         latest_snapshot_status_summary = await repository.summarize_latest_snapshot_status_counts()
     else:
         latest_snapshot_status_summary = repository.summarize_latest_snapshot_status_counts_for_rows(latest_snapshot_rows)
-    selected_device_snapshot_rows = []
+    selected_device_snapshot_rows: list[dict] = []
     if include_selected_device_snapshot and device_id is not None:
         selected_device_snapshot_rows = await repository.list_latest_metric_rows(
             limit=500,
@@ -468,7 +468,7 @@ async def get_metrics_daily_summary(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rows, total = await MetricRepository(db).list_daily_summary_rows_paged(
@@ -510,7 +510,7 @@ async def get_latest_metrics_snapshot_paged(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     repository = MetricRepository(db)
@@ -541,7 +541,7 @@ async def get_latest_snapshot_status_summary(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return await MetricRepository(db).summarize_latest_snapshot_status_counts()
@@ -561,7 +561,7 @@ async def get_latest_snapshot_uptime_map(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return await MetricRepository(db).latest_snapshot_uptime_map(limit=limit, offset=offset)
@@ -574,7 +574,7 @@ def _metric_history_response_items(metrics: list[dict]) -> list[MetricHistoryIte
         metrics: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return [MetricHistoryItem(**metric) for metric in _metric_history_dicts(metrics)]
@@ -587,7 +587,7 @@ def _metric_history_dicts(metrics: list[dict]) -> list[dict]:
         metrics: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return [

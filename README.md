@@ -19,6 +19,7 @@ Project ini cocok untuk:
 - APScheduler untuk worker monitoring periodik
 - `ping3`, `httpx`, `psutil`, `librouteros`, dan `pysnmp` untuk collector
 - Ruff, pytest, mypy/pyright, pip-audit, Bandit, Semgrep, Gitleaks, dan GitHub Actions untuk quality gate
+- pre-commit, `just`, dan `make` untuk developer workflow standar
 
 ## Arsitektur Singkat
 
@@ -145,7 +146,13 @@ venv\Scripts\activate
 python -m pip install -r requirements/dev.txt
 ```
 
-Untuk install lebih ringan:
+`requirements.txt` sekarang diposisikan sebagai entrypoint runtime gabungan backend + dashboard.
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Untuk install tersegmentasi:
 
 ```bash
 python -m pip install -r requirements/backend.txt
@@ -784,6 +791,13 @@ Cleanup scheduler menjalankan:
 
 Raw metric tetap dipakai untuk history detail jangka pendek. Rollup/archive dipakai agar data lama tetap punya ringkasan tanpa membesarkan tabel raw metrics terus-menerus.
 
+Baseline default retention raw metric adalah `7` hari di:
+- `backend/app/core/config.py`
+- `.env.example`
+- `docker-compose.yml` (backend + scheduler)
+
+Jika ingin lebih pendek/panjang, override eksplisit `RAW_METRIC_RETENTION_DAYS` di `.env` agar keputusan retention tercatat.
+
 ## Scripts
 
 ### Bootstrap demo
@@ -907,6 +921,21 @@ python scripts/observability_payload_smoke.py --base-url http://localhost:8000 -
 
 ## Testing, Lint, Dan Audit
 
+Task runner standar:
+
+```bash
+just ci
+# atau
+make ci
+```
+
+Aktifkan pre-commit hooks (sekali per clone):
+
+```bash
+pre-commit install
+pre-commit run --all-files
+```
+
 Test:
 
 ```bash
@@ -1021,6 +1050,15 @@ docker compose logs --tail=100 backend
 docker compose logs --tail=100 scheduler
 docker compose logs --tail=100 dashboard
 ```
+
+## Runbook Operasional Dan Release Policy
+
+- Runbook backup/restore DB, DR drill, incident SOP, dan SLO actionability:
+  - `docs/ops/runbook.md`
+- Policy release/versioning/changelog:
+  - `docs/release-policy.md`
+- Changelog project:
+  - `CHANGELOG.md`
 
 ### Apply migration setelah deploy
 

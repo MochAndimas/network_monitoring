@@ -40,7 +40,7 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     devices = await _list_mikrotik_devices(db)
@@ -249,7 +249,7 @@ async def _list_mikrotik_devices(db: AsyncSession) -> list:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     devices = await DeviceRepository(db).list_devices(active_only=True)
@@ -263,7 +263,7 @@ def _should_collect_ping(device) -> bool:
         device: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return is_mikrotik_device(device.device_type, device.name)
@@ -276,7 +276,7 @@ def _resolve_api_target_device(devices: list):
         devices: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     host = str(settings.mikrotik_host or "").strip().lower()
@@ -298,7 +298,7 @@ async def _build_ping_metrics(device_id: int, ip_address: str) -> list[dict]:
         ip_address: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     samples = await collect_ping_samples(ip_address)
@@ -315,7 +315,7 @@ def _mikrotik_memory_percent(resource: dict) -> str:
         resource: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     total = int(resource.get("total-memory", 0) or 0)
@@ -334,7 +334,7 @@ async def _latest_metric_map(db: AsyncSession, device_id: int) -> dict[str, Metr
         device_id: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     repository = MetricRepository(db)
@@ -361,7 +361,7 @@ def _interface_metrics(
         max_items: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     metrics: list[dict] = []
@@ -422,7 +422,7 @@ def _firewall_metrics(
         max_items: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     metrics: list[dict] = []
@@ -472,7 +472,7 @@ def _queue_metrics(
         max_items: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     metrics: list[dict] = []
@@ -511,7 +511,7 @@ def _metric(device_id: int, metric_name: str, value: int | float | str, status: 
         checked_at: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if isinstance(value, float):
@@ -535,7 +535,7 @@ def _mikrotik_disk_percent(resource: dict) -> str:
         resource: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     total = _safe_int(resource.get("total-hdd-space"))
@@ -552,7 +552,7 @@ def _memory_used_bytes(resource: dict) -> int:
         resource: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return max(_safe_int(resource.get("total-memory")) - _safe_int(resource.get("free-memory")), 0)
@@ -565,7 +565,7 @@ def _disk_used_bytes(resource: dict) -> int:
         resource: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return max(_safe_int(resource.get("total-hdd-space")) - _safe_int(resource.get("free-hdd-space")), 0)
@@ -578,7 +578,7 @@ def _active_dhcp_lease_count(leases: list[dict]) -> int:
         leases: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return sum(1 for lease in leases if _is_active_dhcp_lease(lease))
@@ -592,7 +592,7 @@ def _connected_client_count(leases: list[dict], arp_entries: list[dict]) -> int:
         arp_entries: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     mac_addresses = {
@@ -615,7 +615,7 @@ def _is_active_dhcp_lease(lease: dict) -> bool:
         lease: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     status = str(lease.get("status") or "").strip().lower()
@@ -631,7 +631,7 @@ def _counter_rate(current_value: int, previous_metric: Metric | None, checked_at
         checked_at: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return (_counter_per_second(current_value, previous_metric, checked_at) * 8) / 1_000_000
@@ -646,7 +646,7 @@ def _counter_per_second(current_value: int, previous_metric: Metric | None, chec
         checked_at: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if previous_metric is None:
@@ -665,7 +665,7 @@ def _split_counter_pair(raw_value) -> tuple[int, int]:
         raw_value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if raw_value is None:
@@ -688,7 +688,7 @@ def _bits_to_mbps(bits_per_second: int) -> float:
         bits_per_second: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return bits_per_second / 1_000_000
@@ -702,7 +702,7 @@ def _firewall_rule_name(rule: dict, index: int) -> str:
         index: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     chain = str(rule.get("chain") or "rule").strip()
@@ -720,7 +720,7 @@ def _object_name(item: dict, *, fallback_prefix: str) -> str:
         fallback_prefix: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return str(item.get("name") or item.get("comment") or item.get(".id") or fallback_prefix).strip()
@@ -733,7 +733,7 @@ def _dynamic_metric_name(*parts: str) -> str:
         *parts: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized_parts = [_slugify(part) for part in parts if str(part or "").strip()]
@@ -752,7 +752,7 @@ def _slugify(value: str) -> str:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(value).strip().lower()).strip("_")
@@ -766,7 +766,7 @@ def _truthy(value) -> bool:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if isinstance(value, bool):
@@ -782,7 +782,7 @@ def _is_allowed_dynamic_name(name: str, allowlist: set[str] | None) -> bool:
         allowlist: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if not allowlist:
@@ -801,7 +801,7 @@ def _limit_items(items: list[dict], max_items: int | None):
         max_items: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if max_items is None or max_items < 1:
@@ -816,7 +816,7 @@ def _safe_int(value) -> int:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:

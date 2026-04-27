@@ -31,7 +31,7 @@ async def list_device_rows_filtered(
         offset: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return await DeviceRepository(db).list_device_status_rows(
@@ -52,7 +52,7 @@ async def get_device_row(db: AsyncSession, device_id: int) -> dict:
         device_id: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rows = await DeviceRepository(db).list_device_status_rows(device_id=device_id)
@@ -61,7 +61,7 @@ async def get_device_row(db: AsyncSession, device_id: int) -> dict:
     return rows[0]
 
 
-async def create_device(db: AsyncSession, payload: dict):
+async def create_device(db: AsyncSession, payload: dict, *, commit: bool = True):
     """Create and persist a new managed device entity.
 
     Args:
@@ -69,17 +69,17 @@ async def create_device(db: AsyncSession, payload: dict):
         payload: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     repository = DeviceRepository(db)
     existing = await repository.get_by_ip_address(payload["ip_address"])
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="IP address already exists")
-    return await repository.create_device(payload)
+    return await repository.create_device(payload, commit=commit)
 
 
-async def update_device(db: AsyncSession, device_id: int, payload: dict):
+async def update_device(db: AsyncSession, device_id: int, payload: dict, *, commit: bool = True):
     """Update an existing managed device entity.
 
     Args:
@@ -88,7 +88,7 @@ async def update_device(db: AsyncSession, device_id: int, payload: dict):
         payload: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     repository = DeviceRepository(db)
@@ -102,10 +102,10 @@ async def update_device(db: AsyncSession, device_id: int, payload: dict):
         if existing is not None and existing.id != device_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="IP address already exists")
 
-    return await repository.update_device(device, payload)
+    return await repository.update_device(device, payload, commit=commit)
 
 
-async def delete_device(db: AsyncSession, device_id: int) -> None:
+async def delete_device(db: AsyncSession, device_id: int, *, commit: bool = True) -> None:
     """Delete a managed device entity by identifier.
 
     Args:
@@ -117,4 +117,4 @@ async def delete_device(db: AsyncSession, device_id: int) -> None:
     device = await repository.get_by_id(device_id)
     if device is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
-    await repository.delete_device(device)
+    await repository.delete_device(device, commit=commit)

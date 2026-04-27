@@ -6,6 +6,7 @@ This module contains project-specific implementation details.
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.config import settings
@@ -21,7 +22,7 @@ async def ensure_bootstrap_admin(db: AsyncSession) -> bool:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if not settings.bootstrap_admin_password:
@@ -41,6 +42,10 @@ async def ensure_bootstrap_admin(db: AsyncSession) -> bool:
         password_changed_at=utcnow(),
     )
     db.add(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return False
     return True
 

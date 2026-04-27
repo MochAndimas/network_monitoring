@@ -6,6 +6,7 @@ This module contains automated regression and validation scenarios.
 from __future__ import annotations
 
 from datetime import timedelta
+import uuid
 
 import pytest
 from sqlalchemy import func, select
@@ -46,13 +47,20 @@ def test_mysql_monitoring_pipeline_guard_is_exclusive_for_nonblocking_acquire():
     """
     _require_mysql()
 
+    original_lock_name = settings.monitoring_lock_name
+    settings.monitoring_lock_name = f"network_monitoring.test.lock.{uuid.uuid4().hex}"
+
     async def scenario() -> None:
         async with monitoring_pipeline_guard(wait=False) as first_acquired:
             assert first_acquired is True
             async with monitoring_pipeline_guard(wait=False) as second_acquired:
                 assert second_acquired is False
 
-    run(scenario())
+    try:
+        run(scenario())
+    finally:
+        settings.monitoring_lock_name = original_lock_name
+        run(engine.dispose())
 
 
 def test_mysql_cleanup_monitoring_data_rolls_back_when_transaction_fails():
@@ -63,6 +71,9 @@ def test_mysql_cleanup_monitoring_data_rolls_back_when_transaction_fails():
 
     """
     _require_mysql()
+
+    original_lock_name = settings.monitoring_lock_name
+    settings.monitoring_lock_name = f"network_monitoring.test.lock.{uuid.uuid4().hex}"
 
     async def scenario() -> None:
         unique_suffix = utcnow().strftime("%Y%m%d%H%M%S%f")
@@ -75,7 +86,7 @@ def test_mysql_cleanup_monitoring_data_rolls_back_when_transaction_fails():
                 device_type="server",
                 site="integration",
                 description="mysql retention integration test",
-                is_active=True,
+                is_active=False,
             )
             db.add(device)
             await db.flush()
@@ -93,6 +104,9 @@ def test_mysql_cleanup_monitoring_data_rolls_back_when_transaction_fails():
             metric_id = int(old_metric.id)
 
         async with SessionLocal() as db:
+            baseline_rollup_rows = int(await db.scalar(select(func.count()).select_from(MetricDailyRollup)) or 0)
+            baseline_archive_rows = int(await db.scalar(select(func.count()).select_from(MetricColdArchive)) or 0)
+            await db.rollback()
             try:
                 async with db.begin():
                     await cleanup_monitoring_data(db, commit=False)
@@ -107,11 +121,15 @@ def test_mysql_cleanup_monitoring_data_rolls_back_when_transaction_fails():
             archive_rows = int(await db.scalar(select(func.count()).select_from(MetricColdArchive)) or 0)
 
             assert remaining_metric == 1
-            assert rollup_rows == 0
-            assert archive_rows == 0
+            assert rollup_rows == baseline_rollup_rows
+            assert archive_rows == baseline_archive_rows
 
             await db.execute(Metric.__table__.delete().where(Metric.id == metric_id))
             await db.execute(Device.__table__.delete().where(Device.name == f"MySQL Retention Device {unique_suffix}"))
             await db.commit()
 
-    run(scenario())
+    try:
+        run(scenario())
+    finally:
+        settings.monitoring_lock_name = original_lock_name
+        run(engine.dispose())

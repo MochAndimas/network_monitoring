@@ -29,7 +29,7 @@ def refresh_controls(
         default_interval: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     st.sidebar.markdown("### Pembaruan Data")
@@ -59,7 +59,7 @@ def live_status_text(auto_refresh: bool, interval_seconds: int) -> str:
         interval_seconds: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if auto_refresh:
@@ -71,7 +71,7 @@ def rendered_at_label() -> str:
     """Return rendered at label.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")

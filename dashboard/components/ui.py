@@ -70,7 +70,7 @@ def normalize_status_label(value: object) -> str:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized = str(value or "").strip().lower()
@@ -96,7 +96,7 @@ def status_priority(value: object) -> int:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized = str(value or "").strip().lower()

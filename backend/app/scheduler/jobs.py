@@ -236,7 +236,7 @@ def _misfire_grace_time(period_seconds: int) -> int:
         period_seconds: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return max(period_seconds * 2, 30)

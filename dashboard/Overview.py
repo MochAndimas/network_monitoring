@@ -22,7 +22,7 @@ def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
         devices: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     dataframe = pd.DataFrame(devices)
@@ -46,7 +46,7 @@ def _prepare_alerts_frame(alerts: list[dict]) -> pd.DataFrame:
         alerts: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     dataframe = pd.DataFrame(alerts)
@@ -65,7 +65,7 @@ def _prepare_incidents_frame(incidents: list[dict]) -> pd.DataFrame:
         incidents: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     dataframe = pd.DataFrame(incidents)
@@ -84,7 +84,7 @@ def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
         snapshot_payload: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     dataframe = pd.DataFrame(snapshot_payload.get("items", []))

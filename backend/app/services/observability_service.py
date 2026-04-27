@@ -115,7 +115,7 @@ class JsonLogFormatter(logging.Formatter):
             record: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         payload = {
@@ -156,7 +156,7 @@ def request_logging_context(request_id: str):
         request_id: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     token = request_id_context.set(request_id)
@@ -174,7 +174,7 @@ def job_logging_context(job_name: str):
         job_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     token = job_name_context.set(job_name)
@@ -192,7 +192,7 @@ def normalized_http_metric_path(*, path: str, route_path: str | None = None) -> 
         route_path: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized_route = str(route_path or "").strip()
@@ -377,7 +377,7 @@ async def list_scheduler_job_statuses(db: AsyncSession) -> list[SchedulerJobStat
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rows = await db.scalars(select(SchedulerJobStatus).order_by(SchedulerJobStatus.job_name.asc()))
@@ -391,7 +391,7 @@ def scheduler_job_is_stale(job: SchedulerJobStatus) -> bool:
         job: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     expected_interval = _expected_scheduler_interval_seconds(job.job_name)
@@ -409,7 +409,7 @@ def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -
         job_statuses: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     alerts: list[dict] = []
@@ -446,7 +446,7 @@ def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, 
         scheduler_statuses: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     lines = []
@@ -519,7 +519,7 @@ async def _get_or_create_scheduler_job_status(db: AsyncSession, *, job_name: str
         job_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     status = await db.scalar(select(SchedulerJobStatus).where(SchedulerJobStatus.job_name == job_name))
@@ -537,7 +537,7 @@ def _expected_scheduler_interval_seconds(job_name: str) -> int | None:
         job_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     mapping = {

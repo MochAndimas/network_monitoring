@@ -34,7 +34,7 @@ async def _hit_endpoint(client: httpx.AsyncClient, path: str, semaphore: asyncio
         semaphore: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     async with semaphore:
@@ -60,7 +60,7 @@ async def _measure_path(
         semaphore: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     results = await asyncio.gather(*[_hit_endpoint(client, path, semaphore) for _ in range(max(requests, 1))])
@@ -75,7 +75,7 @@ def _summarize_results(*, path: str, results: list[tuple[int, float]]) -> dict:
         results: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     statuses = [status for status, _duration_ms in results]
@@ -105,7 +105,7 @@ def _collect_gate_failures(
         max_max_ms: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     failures: list[str] = []
@@ -129,7 +129,7 @@ def _resolve_thresholds(*, profile: str, max_p95_ms: float, max_max_ms: float) -
         max_max_ms: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if profile == "ci":

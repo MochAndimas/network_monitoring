@@ -26,7 +26,7 @@ async def run_server_checks(db: AsyncSession) -> list[dict]:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     servers = await DeviceRepository(db).list_by_type("server", active_only=True)
@@ -94,7 +94,7 @@ def _resolve_server_resource_target(servers: list):
         servers: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     configured_ip = str(settings.server_resource_device_ip or "").strip()
@@ -132,7 +132,7 @@ def _is_loopback_ip(value: str) -> bool:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:

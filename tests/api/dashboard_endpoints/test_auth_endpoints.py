@@ -3,7 +3,16 @@
 This module contains automated regression and validation scenarios.
 """
 
-from .common import *  # noqa: F401,F403
+from fastapi.testclient import TestClient
+
+from .common import (
+    _create_user,
+    app,
+    AuthConfigurationError,
+    client_context,
+    run,
+    validate_auth_configuration,
+)
 
 def test_auth_login_me_and_logout_flow():
     """Validate that auth login me and logout flow.
@@ -234,6 +243,73 @@ def test_refresh_token_reuse_revokes_session_chain():
 
         me_after_reuse = client.get("/auth/me", headers={"authorization": f"Bearer {rotated_access}"})
         assert me_after_reuse.status_code == 401
+
+def test_restore_rejects_untrusted_origin_when_refresh_cookie_present():
+    """Validate that restore rejects untrusted origin when refresh cookie present.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    with client_context() as (client, session_factory):
+        run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
+        login_response = client.post("/auth/login", json={"username": "viewer", "password": "StrongPass123!"})
+        assert login_response.status_code == 200
+
+        restore_response = client.post("/auth/restore", headers={"origin": "https://evil.example"})
+        assert restore_response.status_code == 403
+
+def test_restore_accepts_trusted_origin_when_refresh_cookie_present():
+    """Validate that restore accepts trusted origin when refresh cookie present.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    with client_context() as (client, session_factory):
+        run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
+        login_response = client.post("/auth/login", json={"username": "viewer", "password": "StrongPass123!"})
+        assert login_response.status_code == 200
+
+        restore_response = client.post("/auth/restore", headers={"origin": "http://localhost:8501"})
+        assert restore_response.status_code == 200
+
+def test_logout_rejects_untrusted_origin_for_cookie_session():
+    """Validate that logout rejects untrusted origin for cookie session.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    with client_context() as (client, session_factory):
+        run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
+        login_response = client.post("/auth/login", json={"username": "viewer", "password": "StrongPass123!"})
+        assert login_response.status_code == 200
+
+        logout_response = client.post("/auth/logout", headers={"origin": "https://evil.example"})
+        assert logout_response.status_code == 403
+        assert client.cookies.get("network_monitoring_session") is not None
+        assert client.cookies.get("network_monitoring_refresh") is not None
+
+def test_logout_with_bearer_only_allows_untrusted_origin():
+    """Validate that logout with bearer only allows untrusted origin.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    with client_context() as (client, session_factory):
+        run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
+        login_response = client.post("/auth/login", json={"username": "viewer", "password": "StrongPass123!"})
+        assert login_response.status_code == 200
+        token = login_response.json()["access_token"]
+
+        client.cookies.clear()
+        logout_response = client.post(
+            "/auth/logout",
+            headers={"authorization": f"Bearer {token}", "origin": "https://evil.example"},
+        )
+        assert logout_response.status_code == 200
 
 def test_user_can_list_active_sessions_with_current_marker():
     """Validate that user can list active sessions with current marker.

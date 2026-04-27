@@ -80,7 +80,7 @@ class DeviceCreate(BaseModel):
             value: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         ip_address(value)
@@ -95,7 +95,7 @@ class DeviceCreate(BaseModel):
             value: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         if value not in DEVICE_TYPE_CHOICES:
@@ -124,7 +124,7 @@ class DeviceUpdate(BaseModel):
             value: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         if value is None:
@@ -141,7 +141,7 @@ class DeviceUpdate(BaseModel):
             value: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         if value is None:

@@ -4,6 +4,7 @@ This module contains project-specific implementation details.
 """
 
 from time import time
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +54,7 @@ def _client_ip_from_request(request: Request) -> str:
         request: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     remote_ip = request.client.host if request.client and request.client.host else ""
@@ -73,7 +74,7 @@ def _user_agent_from_request(request: Request) -> str:
         request: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return (request.headers.get("user-agent") or "").strip()[:255]
@@ -86,7 +87,7 @@ def _max_age_from_expiry(expires_at) -> int:
         expires_at: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return max(int(as_wib_aware(expires_at).timestamp() - time()), 0)
@@ -177,7 +178,7 @@ def _build_login_response(user, token: str, expiry) -> LoginResponse:
         expiry: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return LoginResponse(
@@ -210,10 +211,94 @@ def _client_metadata(request: Request) -> tuple[str, str]:
         request: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _client_ip_from_request(request), _user_agent_from_request(request)
+
+
+def _normalize_origin(value: str | None) -> str | None:
+    """Normalize origin/referer value into origin tuple string.
+
+    Args:
+        value: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+    parsed = urlparse(raw_value)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+
+def _trusted_cookie_origins() -> set[str]:
+    """Build normalized trusted origins for cookie-bearing requests.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    return {origin.strip().lower() for origin in settings.normalized_cors_origins if origin.strip()}
+
+
+def _trusted_cookie_hosts() -> set[str]:
+    """Build normalized trusted hosts for cookie-bearing requests.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    return {host.strip().lower() for host in settings.normalized_trusted_hosts if host.strip()}
+
+
+def _is_trusted_host_header(host_header: str | None) -> bool:
+    """Validate request host against trusted host set.
+
+    Args:
+        host_header: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    raw_host = str(host_header or "").strip().lower()
+    if not raw_host:
+        return False
+    if raw_host.startswith("[") and "]" in raw_host:
+        normalized_host = raw_host.split("]", 1)[0].lstrip("[")
+    else:
+        normalized_host = raw_host.split(":", 1)[0]
+    return normalized_host in _trusted_cookie_hosts()
+
+
+def _enforce_cookie_request_origin(request: Request) -> None:
+    """Reject cookie-bearing state changes from untrusted request origins.
+
+    Args:
+        request: Parameter input untuk routine ini.
+
+    """
+    origin = _normalize_origin(request.headers.get("origin"))
+    referer_origin = _normalize_origin(request.headers.get("referer"))
+    trusted_origins = _trusted_cookie_origins()
+
+    if origin is not None:
+        if origin not in trusted_origins:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Untrusted request origin")
+        return
+
+    if referer_origin is not None:
+        if referer_origin not in trusted_origins:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Untrusted request origin")
+        return
+
+    if not _is_trusted_host_header(request.headers.get("host")):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Untrusted request origin")
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -232,7 +317,7 @@ async def login(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     _set_no_store_headers(response)
@@ -251,6 +336,7 @@ async def login(
 
 @router.post("/restore", response_model=LoginResponse)
 async def restore_session(
+    request: Request,
     response: Response,
     session_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
     refresh_cookie: str | None = Cookie(default=None, alias=settings.auth_refresh_cookie_name),
@@ -259,19 +345,21 @@ async def restore_session(
     """Restore an authenticated session using refresh token context.
 
     Args:
+        request: Parameter input untuk routine ini.
         response: Parameter input untuk routine ini.
         session_cookie: Parameter input untuk routine ini.
         refresh_cookie: Parameter input untuk routine ini.
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     _set_no_store_headers(response)
     refresh_token = refresh_cookie or session_cookie
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    _enforce_cookie_request_origin(request)
     user, tokens = await refresh_user_session(db, refresh_token)
     _set_auth_cookie(response, tokens.access_token, expires_at=tokens.access_expires_at)
     _set_refresh_cookie(response, tokens.refresh_token, expires_at=tokens.refresh_expires_at)
@@ -286,7 +374,7 @@ async def me(actor=Depends(require_api_access_with_session_cookie)) -> CurrentUs
         actor: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     user = actor.user
@@ -319,7 +407,7 @@ async def list_my_sessions(actor=Depends(require_api_access), db: AsyncSession =
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if actor.user is None or actor.session is None:
@@ -353,7 +441,7 @@ async def logout_all_sessions(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     _set_no_store_headers(response)
@@ -383,7 +471,7 @@ async def admin_list_sessions(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rows = await list_sessions_for_admin(db, username=username, include_revoked=include_revoked)
@@ -422,7 +510,7 @@ async def admin_logout_all_user_sessions(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     revoked_sessions = await revoke_all_sessions_for_user(db, user_id=user_id)
@@ -448,7 +536,7 @@ async def admin_list_users(db: AsyncSession = Depends(get_db)) -> list[UserAdmin
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return [UserAdminItem.model_validate(user) for user in await list_users_for_admin(db)]
@@ -470,7 +558,7 @@ async def admin_create_user(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     user = await create_user_for_admin(
@@ -512,7 +600,7 @@ async def admin_update_user(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     user = await update_user_for_admin(
@@ -555,7 +643,7 @@ async def admin_reset_password(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     user = await reset_user_password_for_admin(db, user_id=user_id, new_password=payload.new_password)
@@ -585,7 +673,7 @@ async def admin_list_audit_logs(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return [AdminAuditLogItem.model_validate(item) for item in await list_admin_audit_logs(db, limit=limit)]
@@ -607,7 +695,7 @@ async def change_password(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if actor.user is None or actor.session is None:
@@ -643,6 +731,7 @@ async def change_password(
 
 @router.post("/logout")
 async def logout(
+    request: Request,
     response: Response,
     authorization: str | None = Header(default=None),
     session_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
@@ -652,6 +741,7 @@ async def logout(
     """Logout current session and clear authentication cookies.
 
     Args:
+        request: Parameter input untuk routine ini.
         response: Parameter input untuk routine ini.
         authorization: Parameter input untuk routine ini.
         session_cookie: Parameter input untuk routine ini.
@@ -659,10 +749,12 @@ async def logout(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     _set_no_store_headers(response)
+    if refresh_cookie or session_cookie:
+        _enforce_cookie_request_origin(request)
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
         if token:

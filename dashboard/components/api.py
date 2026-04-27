@@ -25,7 +25,7 @@ def _request_headers(auth_token: str) -> dict[str, str]:
         auth_token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     headers: dict[str, str] = {}
@@ -42,7 +42,7 @@ def _client(api_base_url: str) -> httpx.Client:
         api_base_url: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return httpx.Client(
@@ -92,7 +92,7 @@ def _request_json(
         auth_token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     client = _client(api_base_url)
@@ -129,7 +129,7 @@ def _pending_api_request(action_key: str | None = None) -> dict | None:
         action_key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     payload = st.session_state.get(PENDING_API_REQUEST_KEY)
@@ -147,7 +147,7 @@ def has_pending_action(action_key: str) -> bool:
         action_key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _pending_api_request(action_key) is not None
@@ -215,7 +215,7 @@ def _request_with_auth_recovery(
         action_key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     pending_request = _pending_api_request(action_key) if action_key else None
@@ -266,7 +266,7 @@ def _cached_get_json(path: str, timeout: float, api_base_url: str, auth_token: s
         auth_token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _request_json("GET", path, timeout=timeout, api_base_url=api_base_url, auth_token=auth_token)
@@ -286,7 +286,7 @@ def _cached_get_json_map(
         auth_token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     payload: dict[str, object] = {}
@@ -306,7 +306,7 @@ def _cached_get_json_slow(path: str, timeout: float, api_base_url: str, auth_tok
         auth_token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _request_json("GET", path, timeout=timeout, api_base_url=api_base_url, auth_token=auth_token)
@@ -326,7 +326,7 @@ def _cached_get_json_map_slow(
         auth_token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     payload: dict[str, object] = {}
@@ -342,7 +342,7 @@ def _is_slow_changing_path(path: str) -> bool:
         path: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized = str(path or "").lower()
@@ -363,7 +363,7 @@ def _cached_get_by_profile(path: str, timeout: float, api_base_url: str, auth_to
         auth_token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if _is_slow_changing_path(path):
@@ -384,7 +384,7 @@ def _cached_get_map_by_profile(
         auth_token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if request_items and all(_is_slow_changing_path(path) for _, path in request_items):
@@ -400,7 +400,7 @@ def get_json(path: str, fallback):
         fallback: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _request_with_auth_recovery(
@@ -425,7 +425,7 @@ def post_json(path: str, payload: dict | None, fallback, *, action_key: str | No
         action_key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _request_with_auth_recovery(
@@ -450,7 +450,7 @@ def put_json(path: str, payload: dict, fallback, *, action_key: str | None = Non
         action_key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _request_with_auth_recovery(
@@ -474,7 +474,7 @@ def delete_json(path: str, fallback=False, *, action_key: str | None = None):
         action_key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _request_with_auth_recovery(
@@ -495,7 +495,7 @@ def get_json_map(requests: Mapping[str, tuple[str, object]]) -> dict[str, object
         requests: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     request_items = tuple((name, path) for name, (path, _fallback) in requests.items())
@@ -524,7 +524,7 @@ def paged_items(payload, fallback: list[dict] | None = None) -> list[dict]:
         fallback: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if isinstance(payload, dict):
@@ -541,7 +541,7 @@ def paged_meta(payload) -> dict:
         payload: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if isinstance(payload, dict):

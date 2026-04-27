@@ -24,7 +24,7 @@ async def list_active_sessions_for_user(db: AsyncSession, *, user_id: int, curre
         current_jwt_id: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rows = await db.scalars(
@@ -49,7 +49,7 @@ async def revoke_other_sessions_for_user(db: AsyncSession, *, user_id: int, curr
         current_jwt_id: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     current_time = utcnow()
@@ -78,7 +78,7 @@ async def cleanup_auth_data(db: AsyncSession, *, commit: bool = True) -> dict[st
         commit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     now = utcnow()
@@ -118,7 +118,7 @@ async def list_sessions_for_admin(
         include_revoked: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     query = (
@@ -142,7 +142,7 @@ async def revoke_all_sessions_for_user(db: AsyncSession, *, user_id: int) -> int
         user_id: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     current_time = utcnow()

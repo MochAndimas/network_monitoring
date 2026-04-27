@@ -24,7 +24,6 @@ def upgrade() -> None:
         None. The routine is executed for its side effects.
     """
     bind = op.get_bind()
-    dialect_name = bind.dialect.name
     inspector = inspect(bind)
 
     metric_columns = {column["name"] for column in inspector.get_columns("metrics")}

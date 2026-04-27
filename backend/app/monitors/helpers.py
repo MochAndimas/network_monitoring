@@ -24,7 +24,7 @@ def build_ping_metric(device_id: int, latency_seconds: float | None) -> dict:
         latency_seconds: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     checked_at = utcnow()
@@ -56,7 +56,7 @@ def build_ping_quality_metrics(device_id: int, samples: list[float | None]) -> l
         samples: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     checked_at = utcnow()
@@ -94,7 +94,7 @@ async def collect_ping_samples(ip_address: str) -> list[float | None]:
         ip_address: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     sample_count = max(settings.ping_sample_count, 1)
@@ -108,7 +108,7 @@ def latest_successful_ping(samples: list[float | None]) -> float | None:
         samples: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     successful_samples = [sample for sample in samples if sample is not None]
@@ -122,7 +122,7 @@ async def safe_ping(ip_address: str) -> float | None:
         ip_address: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:
@@ -140,7 +140,7 @@ async def bounded_gather(coroutines, *, limit: int | None = None) -> list:
         limit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     coroutines = list(coroutines)
@@ -163,7 +163,7 @@ def _calculate_jitter_ms(samples: list[float]) -> float | None:
         samples: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if len(samples) < 2:

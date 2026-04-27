@@ -7,6 +7,7 @@ import json
 import logging
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import model_validator
@@ -20,7 +21,7 @@ def _split_csv(raw_value: str) -> list[str]:
         raw_value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return [item.strip() for item in str(raw_value or "").split(",") if item.strip()]
@@ -125,7 +126,7 @@ class Settings(BaseSettings):
         """Load file backed secrets.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         secret_fields = {
@@ -166,7 +167,7 @@ class Settings(BaseSettings):
         """Return normalized cors origins.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         return [item.rstrip("/") for item in _split_csv(self.cors_origins)]
@@ -176,7 +177,7 @@ class Settings(BaseSettings):
         """Return normalized trusted hosts.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         hosts = set(_split_csv(self.trusted_hosts))
@@ -191,29 +192,32 @@ class Settings(BaseSettings):
         """Return normalized trusted proxy ips.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         return set(_split_csv(self.trusted_proxy_ips))
 
     @property
-    def normalized_auth_cookie_samesite(self) -> str:
+    def normalized_auth_cookie_samesite(self) -> Literal["lax", "strict", "none"]:
         """Return normalized auth cookie samesite.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
-        allowed = {"lax", "strict", "none"}
         value = str(self.auth_cookie_samesite or "lax").strip().lower()
-        return value if value in allowed else "lax"
+        if value == "strict":
+            return "strict"
+        if value == "none":
+            return "none"
+        return "lax"
 
     @property
     def normalized_mikrotik_dynamic_sections(self) -> set[str]:
         """Return normalized mikrotik dynamic sections.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         sections = {item.lower() for item in _split_csv(self.mikrotik_dynamic_sections)}
@@ -224,7 +228,7 @@ class Settings(BaseSettings):
         """Return normalized mikrotik dynamic firewall sections.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         sections = {item.lower() for item in _split_csv(self.mikrotik_dynamic_firewall_section_allowlist)}
@@ -235,7 +239,7 @@ class Settings(BaseSettings):
         """Return normalized mikrotik interface allowlist.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         return {item.lower() for item in _split_csv(self.mikrotik_dynamic_interface_allowlist)}
@@ -245,7 +249,7 @@ class Settings(BaseSettings):
         """Return normalized mikrotik queue allowlist.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         return {item.lower() for item in _split_csv(self.mikrotik_dynamic_queue_allowlist)}
@@ -255,7 +259,7 @@ class Settings(BaseSettings):
         """Return is production.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         return str(self.app_env or "").strip().lower() == "production"
@@ -268,7 +272,7 @@ def printer_snmp_community_map() -> dict[str, str]:
     """Return printer snmp community map.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _parse_printer_snmp_community_map(settings.printer_snmp_communities or "")
@@ -282,7 +286,7 @@ def _parse_printer_snmp_community_map(raw_value: str) -> dict[str, str]:
         raw_value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     raw_value = raw_value.strip()
@@ -322,7 +326,7 @@ def printer_snmp_community_for_ip(ip_address: str) -> str | None:
         ip_address: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return printer_snmp_community_map().get(str(ip_address).strip())
@@ -337,7 +341,7 @@ def _parse_internal_api_key_map(raw_keys: str, legacy_key: str) -> dict[str, dic
         legacy_key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     payload: dict[str, dict[str, object]] = {}
@@ -378,7 +382,7 @@ def internal_api_key_map() -> dict[str, dict[str, object]]:
     """Return internal API key map.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _parse_internal_api_key_map(settings.internal_api_keys or "", settings.internal_api_key or "")

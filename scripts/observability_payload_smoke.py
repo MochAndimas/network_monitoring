@@ -44,7 +44,7 @@ def _parse_metric_lines(metrics_text: str, metric_name: str) -> list[tuple[dict[
         metric_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     parsed: list[tuple[dict[str, str], float]] = []
@@ -76,7 +76,7 @@ def _find_missing_request_coverage(metrics_text: str, endpoints: list[str]) -> l
         endpoints: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     records = _parse_metric_lines(metrics_text, "network_monitoring_api_payload_requests_total")
@@ -96,7 +96,7 @@ def _find_missing_rows_coverage(metrics_text: str, endpoints: list[str]) -> list
         endpoints: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     records = _parse_metric_lines(metrics_text, "network_monitoring_api_payload_rows_total")

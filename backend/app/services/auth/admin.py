@@ -22,7 +22,7 @@ async def list_users_for_admin(db: AsyncSession) -> list[User]:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rows = await db.scalars(select(User).order_by(User.username.asc()))
@@ -47,7 +47,7 @@ async def create_user_for_admin(
         role: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized_username = username.strip().lower()
@@ -89,7 +89,7 @@ async def update_user_for_admin(
         disabled_reason: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     user = await db.get(User, user_id)
@@ -124,7 +124,7 @@ async def reset_user_password_for_admin(db: AsyncSession, *, user_id: int, new_p
         new_password: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     user = await db.get(User, user_id)
@@ -157,7 +157,7 @@ async def change_password_for_user(
         current_jwt_id: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     user = await db.get(User, user_id)

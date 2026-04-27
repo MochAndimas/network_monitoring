@@ -43,7 +43,7 @@ def _route_template(request) -> str | None:
         request: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     route = request.scope.get("route")
@@ -65,7 +65,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             call_next: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         request_id = str(uuid.uuid4())
@@ -124,7 +124,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             call_next: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         response = await call_next(request)
@@ -157,7 +157,7 @@ async def lifespan(_: FastAPI):
         _: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     configure_logging()
@@ -206,7 +206,7 @@ async def root() -> dict:
     """Return lightweight root endpoint metadata for service identification.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return {"message": f"{settings.app_name} API is running"}

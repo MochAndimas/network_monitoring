@@ -36,7 +36,7 @@ def _format_number(value, suffix: str = "", decimals: int = 2) -> str:
         decimals: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if value is None or pd.isna(value):
@@ -51,7 +51,7 @@ def _prepare_summary_frame(rows: list[dict]) -> pd.DataFrame:
         rows: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     dataframe = pd.DataFrame(rows)
@@ -85,7 +85,7 @@ def _weighted_average(dataframe: pd.DataFrame, value_column: str, weight_column:
         weight_column: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if dataframe.empty or value_column not in dataframe.columns or weight_column not in dataframe.columns:
@@ -110,7 +110,7 @@ def _weighted_average_for_group(group: pd.DataFrame, value_column: str, weight_c
         weight_column: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _weighted_average(group, value_column, weight_column)
@@ -123,7 +123,7 @@ def _aggregate_all_devices_weighted(frame: pd.DataFrame) -> pd.DataFrame:
         frame: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rows: list[dict] = []

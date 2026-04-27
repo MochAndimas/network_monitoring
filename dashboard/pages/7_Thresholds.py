@@ -30,7 +30,7 @@ def _threshold_category(key: str) -> str:
         key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized = str(key or "").strip()

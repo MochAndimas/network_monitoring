@@ -37,7 +37,7 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> t
         password: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     user, tokens = await authenticate_user_with_options(db, username, password, remember=False)
@@ -64,7 +64,7 @@ async def authenticate_user_with_options(
         user_agent: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized_username = username.strip().lower()
@@ -110,7 +110,7 @@ async def authenticate_token(db: AsyncSession, token: str) -> tuple[User, AuthSe
         token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     actor = await get_user_from_access_token(db, token)
@@ -127,7 +127,7 @@ async def refresh_user_session(db: AsyncSession, refresh_token: str) -> tuple[Us
         refresh_token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     actor, payload = await _authenticate_session_for_refresh(db, refresh_token)
@@ -160,7 +160,7 @@ def actor_has_permission(actor: AuthenticatedActor, permission: str) -> bool:
         permission: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if actor.user is not None:
@@ -176,7 +176,7 @@ async def get_user_from_access_token(db: AsyncSession, token: str) -> Authentica
         token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:
@@ -199,7 +199,7 @@ async def get_user_from_refresh_token(db: AsyncSession, token: str) -> Authentic
         token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:
@@ -217,7 +217,7 @@ async def get_user_from_token(db: AsyncSession, token: str) -> AuthenticatedActo
         token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:
@@ -358,7 +358,7 @@ def _build_session_tokens(
         access_expires_at: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return SessionTokens(
@@ -391,7 +391,7 @@ async def _authenticate_session_for_refresh(db: AsyncSession, token: str) -> tup
         token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:
@@ -411,7 +411,7 @@ async def _authenticate_refresh_token(db: AsyncSession, token: str) -> tuple[Aut
         token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     payload = decode_access_token(token)
@@ -437,7 +437,7 @@ async def _get_active_session_by_jwt_id(db: AsyncSession, jwt_id: str) -> AuthSe
         jwt_id: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     session = await db.scalar(select(AuthSession).where(AuthSession.jwt_id == jwt_id))
@@ -455,7 +455,7 @@ async def _get_active_user_for_session(db: AsyncSession, session: AuthSession, *
         subject: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     user = await db.get(User, subject)
@@ -468,7 +468,7 @@ def _legacy_payload() -> TokenPayload:
     """Perform legacy payload.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return TokenPayload(
@@ -492,7 +492,7 @@ async def _get_user_from_legacy_token(db: AsyncSession, token: str) -> Authentic
         token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     token_hash = hash_session_token(token)

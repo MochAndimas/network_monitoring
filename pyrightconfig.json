@@ -2,12 +2,26 @@
   "include": [
     "backend/app/services/auth",
     "backend/app/repositories/alert_repository.py",
-    "backend/app/repositories/incident_repository.py"
+    "backend/app/repositories/device_repository.py",
+    "backend/app/repositories/incident_repository.py",
+    "backend/app/api",
+    "backend/app/core",
+    "backend/app/main.py",
+    "shared"
   ],
   "exclude": [
-    "**/__pycache__"
+    "**/__pycache__",
+    "dashboard",
+    "scripts",
+    "tests",
+    "venv",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache"
   ],
   "pythonVersion": "3.12",
+  "venvPath": ".",
+  "venv": "venv",
   "typeCheckingMode": "basic",
   "reportMissingTypeStubs": "none",
   "reportUnknownParameterType": "none",

@@ -3,7 +3,6 @@
 This module contains project-specific implementation details.
 """
 
-from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 import altair as alt
@@ -11,12 +10,9 @@ import pandas as pd
 import streamlit as st
 
 from shared.device_utils import format_device_label, is_mikrotik_device
-from components.auth import require_dashboard_login
 from components.api import get_json, paged_items, paged_meta
-from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
-from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp, wib_date_boundary_to_utc_iso
-from components.ui import normalize_status_label, render_meta_row, render_page_header, status_priority
+from components.ui import normalize_status_label, status_priority
 
 STATUS_OPTIONS = ["All", "up", "down", "ok", "error", "warning", "unknown"]
 CHART_WINDOW_OPTIONS = {
@@ -72,7 +68,7 @@ def _default_device_option_label(devices: list[dict]) -> str:
         devices: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     internet_targets = [device for device in devices if device.get("device_type") == "internet_target"]
@@ -109,7 +105,7 @@ def _format_metric_value(row: pd.Series) -> str:
         row: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _format_metric_value_components(
@@ -136,7 +132,7 @@ def _format_metric_value_components(
         unit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     metric_name = str(metric_name or "")
@@ -159,7 +155,7 @@ def _friendly_metric_name(metric_name: str) -> str:
         metric_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     dynamic_label = _dynamic_mikrotik_metric_label(metric_name)
@@ -175,7 +171,7 @@ def _metric_filter_label(metric_name: str) -> str:
         metric_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if metric_name == "All Metrics":
@@ -190,7 +186,7 @@ def _dynamic_mikrotik_metric_label(metric_name: str) -> str | None:
         metric_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     parts = str(metric_name or "").split(":")
@@ -228,7 +224,7 @@ def _humanize_printer_text(value: str) -> str:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized = value.replace(",", ", ").replace("_", " ").strip()
@@ -246,7 +242,7 @@ def _should_hide_metric_for_device(metric_name: str, device_type: str | None, de
         device_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return is_mikrotik_device(device_type, device_name) and metric_name in INTERNET_ONLY_METRICS
@@ -261,7 +257,7 @@ def _filter_metric_names(metric_names: list[str], device_type: str | None, devic
         device_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return [
@@ -285,7 +281,7 @@ def _filter_history_rows(
         device_name_by_id: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     filtered_rows: list[dict] = []
@@ -308,7 +304,7 @@ def _y_axis_label(metric_name: str, unit: str | None) -> str:
         unit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     friendly_name = _friendly_metric_name(metric_name)
@@ -324,7 +320,7 @@ def _format_duration(delta: pd.Timedelta | None) -> str:
         delta: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if delta is None or pd.isna(delta):
@@ -353,7 +349,7 @@ def _prepare_history_frame(history: list[dict], *, sort_desc: bool = True) -> pd
         sort_desc: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     dataframe = pd.DataFrame(history)
@@ -381,7 +377,7 @@ def _format_metric_values(dataframe: pd.DataFrame) -> pd.Series:
         dataframe: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     unit_suffix = dataframe["unit"].map(lambda unit: f" {unit}" if unit else "")
@@ -432,7 +428,7 @@ def _fetch_device_history_rows(
         initial_payload: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if metric_names:
@@ -498,7 +494,7 @@ def _history_query_params(
         per_metric_limit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     query_params: dict[str, object] = {
@@ -543,7 +539,7 @@ def _fetch_history_pages(
         initial_payload: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     page_size = 500
@@ -602,7 +598,7 @@ def _fetch_history_rows_bulk(
         per_metric_limit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if not metric_names:
@@ -631,7 +627,7 @@ def _fetch_latest_device_snapshot(device_id: int, limit: int = 500) -> list[dict
         limit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     payload = get_json(
@@ -648,7 +644,7 @@ def _latest_snapshot_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
         dataframe: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return dataframe.drop_duplicates(subset=["device_name", "metric_name"]).copy()
@@ -661,7 +657,7 @@ def _snapshot_pagination_controls(total_rows: int) -> tuple[int, int]:
         total_rows: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     page_size_col, page_col, _ = st.columns([1, 1, 4])
@@ -695,7 +691,7 @@ def _paginate_frame(dataframe: pd.DataFrame, *, key_prefix: str, page_size: int 
         page_size: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if dataframe.empty:
@@ -845,7 +841,7 @@ def _status_counts_frame(
         fallback_frame: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if latest_snapshot_status_summary:
@@ -867,7 +863,7 @@ def _status_color_scale() -> alt.Scale:
     """Perform status color scale.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return alt.Scale(
@@ -883,7 +879,7 @@ def _health_score_percent(status_counts: pd.DataFrame) -> int:
         status_counts: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if status_counts.empty:
@@ -917,7 +913,7 @@ def _entity_volume_frame(dataframe: pd.DataFrame, column_name: str, label_name: 
         top_n: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if dataframe.empty or column_name not in dataframe.columns:
@@ -942,7 +938,7 @@ def _recent_anomaly_frame(dataframe: pd.DataFrame, top_n: int = 20) -> pd.DataFr
         top_n: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if dataframe.empty:
@@ -962,7 +958,7 @@ def _format_metric_numeric(value: float | int | None, unit: str | None = None) -
         unit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if value is None or pd.isna(value):
@@ -978,7 +974,7 @@ def _trend_direction_text(delta_value: float | None) -> str:
         delta_value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if delta_value is None or pd.isna(delta_value):
@@ -996,7 +992,7 @@ def _metric_kpi_summary(metric_frame: pd.DataFrame) -> dict[str, object]:
         metric_frame: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if metric_frame.empty:
@@ -1039,7 +1035,7 @@ def _raw_history_view(raw_history_frame: pd.DataFrame, *, metric_selected: bool)
         metric_selected: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if raw_history_frame.empty:
@@ -1095,7 +1091,7 @@ def _status_label_for_display(status_value: object) -> str:
         status_value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized = str(status_value or "").strip().lower()
@@ -1115,7 +1111,7 @@ def _non_numeric_metric_timeline(metric_frame: pd.DataFrame) -> pd.DataFrame:
         metric_frame: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if metric_frame.empty:
@@ -1142,7 +1138,7 @@ def _latest_metric_snapshot_map(dataframe: pd.DataFrame) -> dict[str, pd.Series]
         dataframe: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if dataframe.empty:
@@ -1164,7 +1160,7 @@ def _latest_metric_value_from_map(
         default: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     row = latest_map.get(metric_name)
@@ -1180,7 +1176,7 @@ def _format_percent(value: str) -> str:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:
@@ -1196,7 +1192,7 @@ def _format_bytes(value: float | int | None) -> str:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if value is None or pd.isna(value):
@@ -1216,7 +1212,7 @@ def _format_mbps(value: float | int | None) -> str:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if value is None or pd.isna(value):
@@ -1232,7 +1228,7 @@ def _dynamic_mikrotik_metric_table(dataframe: pd.DataFrame, prefix: str) -> pd.D
         prefix: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if dataframe.empty:
@@ -1289,7 +1285,7 @@ def _interface_view(dataframe: pd.DataFrame) -> pd.DataFrame:
         dataframe: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     table = _dynamic_mikrotik_metric_table(dataframe, "interface")
@@ -1322,7 +1318,7 @@ def _firewall_view(dataframe: pd.DataFrame) -> pd.DataFrame:
         dataframe: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     table = _dynamic_mikrotik_metric_table(dataframe, "firewall")
@@ -1444,7 +1440,7 @@ def _is_dynamic_mikrotik_metric(metric_name: str) -> bool:
         metric_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return str(metric_name or "").startswith(("interface:", "queue:", "firewall:"))
@@ -1457,7 +1453,7 @@ def _default_mikrotik_trend_metrics(metric_names: list[str]) -> list[str]:
         metric_names: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     preferred_metrics = [

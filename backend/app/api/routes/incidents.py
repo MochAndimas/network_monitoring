@@ -33,7 +33,7 @@ async def list_incidents(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     apply_legacy_deprecation_headers(response, legacy_endpoint="/incidents")
@@ -61,7 +61,7 @@ async def list_incidents_paged(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rows, total = await IncidentRepository(db).list_incident_rows_paged(

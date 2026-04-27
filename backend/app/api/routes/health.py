@@ -23,7 +23,7 @@ async def health(response: Response, db: AsyncSession = Depends(get_db)) -> dict
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     database_ok = await check_database_connection()
@@ -42,7 +42,7 @@ async def health_live() -> dict:
     """Liveness probe that confirms API process responsiveness.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return {"status": "ok"}
@@ -57,7 +57,7 @@ async def health_dependencies(response: Response, db: AsyncSession = Depends(get
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     database_ok = await check_database_connection()
@@ -90,7 +90,7 @@ async def health_ready(response: Response, db: AsyncSession = Depends(get_db)) -
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     database_ok = await check_database_connection()

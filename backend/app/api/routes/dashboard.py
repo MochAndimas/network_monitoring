@@ -33,7 +33,7 @@ async def _build_overview_panels(
         incidents_limit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     device_repository = DeviceRepository(db)
@@ -73,7 +73,7 @@ async def get_summary(db: AsyncSession = Depends(get_db)) -> DashboardSummary:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return DashboardSummary(**await build_dashboard_summary(db))
@@ -95,7 +95,7 @@ async def get_overview_panels(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return await _build_overview_panels(
@@ -118,7 +118,7 @@ async def get_problem_devices(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return await DeviceRepository(db).list_device_status_rows(
@@ -137,7 +137,7 @@ async def get_overview_data(db: AsyncSession = Depends(get_db)) -> dict:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     payload = await _build_overview_panels(db, snapshot_limit=12, alerts_limit=5, incidents_limit=5)
@@ -152,7 +152,7 @@ def _metric_history_items(rows: list[dict]) -> list[dict]:
         rows: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return [

@@ -3,13 +3,19 @@
 This module contains project-specific implementation details.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db.base import Base
 from ..core.time import now
+
+if TYPE_CHECKING:
+    from .device import Device
 
 
 class Alert(Base):
@@ -32,4 +38,4 @@ class Alert(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    device: Mapped["Device | None"] = relationship(back_populates="alerts")
+    device: Mapped[Device | None] = relationship(back_populates="alerts")

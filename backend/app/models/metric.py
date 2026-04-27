@@ -3,13 +3,19 @@
 This module contains project-specific implementation details.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Float, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db.base import Base
 from ..core.time import now
+
+if TYPE_CHECKING:
+    from .device import Device
 
 
 class Metric(Base):
@@ -35,4 +41,4 @@ class Metric(Base):
     unit: Mapped[str | None] = mapped_column(String(30), nullable=True)
     checked_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
 
-    device: Mapped["Device"] = relationship(back_populates="metrics")
+    device: Mapped[Device] = relationship(back_populates="metrics")

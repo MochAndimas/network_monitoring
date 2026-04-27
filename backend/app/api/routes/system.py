@@ -30,7 +30,7 @@ async def run_cycle(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     async with monitoring_pipeline_guard(wait=False) as acquired:

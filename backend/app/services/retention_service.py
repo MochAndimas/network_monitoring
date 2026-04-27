@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.config import settings
 from ..models.alert import Alert
 from ..models.incident import Incident
+from ..models.latest_metric import LatestMetric
 from ..models.metric import Metric
 from ..models.metric_cold_archive import MetricColdArchive
 from ..models.metric_daily_rollup import MetricDailyRollup
@@ -33,7 +34,7 @@ async def cleanup_monitoring_data(db: AsyncSession, *, commit: bool = True) -> d
         commit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rolled_up_days = await rollup_completed_raw_metrics(db, commit=False)
@@ -62,7 +63,7 @@ async def rollup_completed_raw_metrics(db: AsyncSession, *, commit: bool = True)
         commit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     cutoff = _today_start()
@@ -97,10 +98,16 @@ async def delete_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -
         commit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
-    result = await db.execute(delete(Metric).where(Metric.checked_at < _raw_metric_cutoff()))
+    cutoff = _raw_metric_cutoff()
+    await db.execute(
+        delete(LatestMetric).where(
+            LatestMetric.metric_id.in_(select(Metric.id).where(Metric.checked_at < cutoff))
+        )
+    )
+    result = await db.execute(delete(Metric).where(Metric.checked_at < cutoff))
     if commit:
         await db.commit()
     else:
@@ -116,7 +123,7 @@ async def archive_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) 
         commit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     cutoff = _raw_metric_cutoff()
@@ -151,7 +158,7 @@ async def delete_expired_alerts(db: AsyncSession, *, commit: bool = True) -> int
         commit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     cutoff = utcnow() - timedelta(days=settings.alert_retention_days)
@@ -179,7 +186,7 @@ async def delete_expired_incidents(db: AsyncSession, *, commit: bool = True) -> 
         commit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     cutoff = utcnow() - timedelta(days=settings.incident_retention_days)
@@ -203,7 +210,7 @@ def _raw_metric_cutoff() -> datetime:
     """Perform raw metric cutoff.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     cutoff_date = (utcnow() - timedelta(days=settings.raw_metric_retention_days)).date()
@@ -214,7 +221,7 @@ def _today_start() -> datetime:
     """Perform today start.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return datetime.combine(utcnow().date(), time.min)
@@ -228,7 +235,7 @@ async def _iter_rollup_payloads(db: AsyncSession, cutoff: datetime):
         cutoff: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     query = (
@@ -266,7 +273,7 @@ async def _iter_archive_payloads(db: AsyncSession, cutoff: datetime):
         cutoff: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     query = (
@@ -364,7 +371,7 @@ async def _load_existing_rollups(db: AsyncSession, keys) -> dict[tuple[int, obje
         keys: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     key_list = list(keys)
@@ -389,7 +396,7 @@ async def _load_existing_archives(db: AsyncSession, keys) -> dict[tuple[int, obj
         keys: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     key_list = list(keys)
@@ -482,7 +489,7 @@ class _RollupAccumulator:
         """Build ORM-ready rollup payload from accumulated counters.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         return {
@@ -607,7 +614,7 @@ class _ArchiveAccumulator:
         """Build ORM-ready cold-archive payload from accumulated counters.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         archive_month = self.archive_date.replace(day=1)

@@ -39,7 +39,7 @@ async def ensure_default_thresholds(db: AsyncSession, *, commit: bool = True) ->
         commit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     repository = ThresholdRepository(db)
@@ -72,7 +72,7 @@ async def list_threshold_rows(db: AsyncSession) -> list[dict]:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     await ensure_default_thresholds(db, commit=True)
@@ -90,7 +90,7 @@ async def get_threshold_map(db: AsyncSession, *, commit: bool = True) -> dict[st
         commit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     await ensure_default_thresholds(db, commit=commit)
@@ -106,7 +106,7 @@ async def update_threshold_value(db: AsyncSession, key: str, value: float) -> di
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if key not in DEFAULT_THRESHOLDS:

@@ -6,6 +6,7 @@ This module contains automated regression and validation scenarios.
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import Iterable
 
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -23,6 +24,8 @@ def run(coro):
         Nilai balik routine atau efek samping yang dihasilkan.
 
     """
+    if sys.platform.startswith("win"):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     return asyncio.run(coro)
 
 

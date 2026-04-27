@@ -109,7 +109,7 @@ def _resolve_bridge_host() -> str:
     """Resolve bridge host.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return PUBLIC_API_BASE_URL or API_BASE_URL
@@ -123,7 +123,7 @@ def start_auth_bridge_request(action: str, payload: dict | None = None) -> str:
         payload: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     request_id = str(uuid.uuid4())
@@ -142,7 +142,7 @@ def _bridge_component_key(action: str) -> str:
         action: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized = str(action or "").strip().lower() or "unknown"
@@ -156,7 +156,7 @@ def consume_auth_bridge_response(*, component_key: str) -> dict | None:
         component_key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     pending_request = st.session_state.get("auth_bridge_request")
@@ -181,7 +181,7 @@ def _restore_not_needed() -> bool:
     """Perform restore not needed.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if st.session_state.get("auth_restore_completed") is True and not st.session_state.get("dashboard_authenticated"):
@@ -202,7 +202,7 @@ def _parsed_auth_expiry() -> datetime | None:
     """Perform parsed auth expiry.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     raw_value = st.session_state.get("auth_expires_at")
@@ -224,7 +224,7 @@ def _login_error_message(bridge_response: dict) -> str:
         bridge_response: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     status = int(bridge_response.get("status", 0) or 0)
@@ -252,7 +252,7 @@ def _restore_login_state() -> bool:
     """Perform restore login state.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if _restore_not_needed():
@@ -281,7 +281,7 @@ def _consume_logout_request() -> bool:
     """Perform consume logout request.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     pending_request = st.session_state.get("auth_bridge_request")
@@ -380,7 +380,7 @@ def current_role() -> str | None:
     """Return current role.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return st.session_state.get("auth_role")
@@ -390,7 +390,7 @@ def is_admin() -> bool:
     """Return is admin.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return current_role() == "admin"
@@ -400,7 +400,7 @@ def session_expiry_label() -> str:
     """Return session expiry label.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     raw_value = st.session_state.get("auth_expires_at")

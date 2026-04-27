@@ -51,7 +51,7 @@ def _device_type_label(device_type: str) -> str:
         device_type: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return type_label_by_value.get(device_type, device_type.replace("_", " ").title())
@@ -64,7 +64,7 @@ def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
         rows: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     dataframe = pd.DataFrame(rows)

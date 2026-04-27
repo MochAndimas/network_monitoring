@@ -22,7 +22,7 @@ async def build_auth_observability_summary(db: AsyncSession) -> dict[str, int]:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     window_start = utcnow() - timedelta(minutes=settings.auth_login_rate_limit_window_minutes)

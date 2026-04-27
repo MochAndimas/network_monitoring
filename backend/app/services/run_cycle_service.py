@@ -32,7 +32,7 @@ async def run_monitoring_cycle(db: AsyncSession) -> dict:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     started_at = perf_counter()
@@ -65,7 +65,7 @@ async def collect_monitoring_metrics() -> list[dict]:
     """Collect monitoring metrics from all configured monitor runners.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     runner_results = await asyncio.gather(*[_collect_runner_metrics(runner) for runner in _monitor_runners()])
@@ -79,7 +79,7 @@ async def _collect_runner_metrics(runner: MonitorRunner) -> list[dict]:
         runner: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     started_at = perf_counter()
@@ -98,7 +98,7 @@ def _monitor_runners() -> tuple[MonitorRunner, ...]:
     """Perform monitor runners.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return (

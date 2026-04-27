@@ -14,7 +14,7 @@ def now() -> datetime:
     """Return now.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return datetime.now(WIB).replace(tzinfo=None)
@@ -27,7 +27,7 @@ def as_wib_aware(value: datetime) -> datetime:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if value.tzinfo is None:
@@ -42,7 +42,7 @@ def from_unix_timestamp(value: int) -> datetime:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return datetime.fromtimestamp(value, tz=WIB).replace(tzinfo=None)
@@ -52,7 +52,7 @@ def utcnow() -> datetime:
     """Return utcnow.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return now()

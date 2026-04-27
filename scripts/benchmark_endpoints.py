@@ -41,7 +41,7 @@ async def _measure_path(client: httpx.AsyncClient, path: str, runs: int) -> dict
         runs: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     samples_ms: list[float] = []
@@ -70,7 +70,7 @@ def _resolve_thresholds(*, profile: str, max_p95_ms: float, max_max_ms: float) -
         max_max_ms: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if profile == "ci":

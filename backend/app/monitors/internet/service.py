@@ -25,7 +25,7 @@ async def run_internet_checks(db: AsyncSession) -> list[dict]:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     devices = await DeviceRepository(db).list_by_type("internet_target", active_only=True)
@@ -59,7 +59,7 @@ def _select_internet_anchor_device(devices):
         devices: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     def priority(device) -> tuple[int, str]:
@@ -83,7 +83,7 @@ async def _build_device_ping_metrics(device_id: int, ip_address: str) -> list[di
         ip_address: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     samples = await collect_ping_samples(ip_address)
@@ -100,7 +100,7 @@ async def _build_dns_metric(device_id: int) -> dict:
         device_id: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     checked_at = utcnow()
@@ -136,7 +136,7 @@ async def _build_http_metric(device_id: int, client: httpx.AsyncClient) -> dict:
         client: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     checked_at = utcnow()
@@ -174,7 +174,7 @@ async def _build_public_ip_metric(db: AsyncSession, device_id: int, client: http
         client: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     checked_at = utcnow()

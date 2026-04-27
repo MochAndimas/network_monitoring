@@ -31,7 +31,7 @@ async def get_active_alerts(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     apply_legacy_deprecation_headers(response, legacy_endpoint="/alerts/active")
@@ -56,7 +56,7 @@ async def get_active_alerts_paged(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rows, total = await AlertRepository(db).list_active_alert_rows_paged(

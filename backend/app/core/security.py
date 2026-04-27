@@ -64,7 +64,7 @@ def _required_secret(secret_value: str, env_name: str) -> bytes:
         env_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if not secret_value.strip():
@@ -76,7 +76,7 @@ def _password_secret() -> bytes:
     """Perform password secret.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _required_secret(settings.auth_password_secret, "AUTH_PASSWORD_SECRET")
@@ -86,7 +86,7 @@ def _jwt_secret() -> bytes:
     """Perform JWT secret.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _required_secret(settings.auth_jwt_secret, "AUTH_JWT_SECRET")
@@ -172,7 +172,7 @@ def _b64url_encode(value: bytes) -> str:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
@@ -185,7 +185,7 @@ def _b64url_decode(value: str) -> bytes:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     padding = "=" * (-len(value) % 4)
@@ -202,7 +202,7 @@ def _json_dumps(payload: dict[str, Any]) -> bytes:
         payload: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -215,7 +215,7 @@ def _timestamp(value: datetime) -> int:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return int(as_wib_aware(value).timestamp())
@@ -229,7 +229,7 @@ def _datetime_from_timestamp(value: Any, claim_name: str) -> datetime:
         claim_name: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if not isinstance(value, int):
@@ -244,7 +244,7 @@ def hash_password(password: str) -> str:
         password: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     salt = os.urandom(16)
@@ -260,7 +260,7 @@ def verify_password(password: str, password_hash: str) -> bool:
         password_hash: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:
@@ -279,7 +279,7 @@ def generate_session_jwt_id() -> str:
     """Return generate session jwt id.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return uuid.uuid4().hex
@@ -292,7 +292,7 @@ def hash_session_token(token: str) -> str:
         token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -305,7 +305,7 @@ def session_expiry(ttl_minutes: int | None = None) -> datetime:
         ttl_minutes: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     minutes = ttl_minutes if ttl_minutes is not None else settings.auth_token_ttl_minutes
@@ -326,7 +326,7 @@ def create_access_token(
         access_nonce: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _create_signed_token(
@@ -354,7 +354,7 @@ def create_refresh_token(
         expires_at: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _create_signed_token(
@@ -392,7 +392,7 @@ def _create_signed_token(
         access_nonce: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     issued_at = utcnow()
@@ -426,7 +426,7 @@ def decode_access_token(token: str) -> TokenPayload:
         token: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:

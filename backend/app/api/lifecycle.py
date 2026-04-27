@@ -76,7 +76,7 @@ def _deprecation_phase(*, plan: LegacyEndpointDeprecation, today: date) -> str:
         today: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if today >= plan.removal_on:

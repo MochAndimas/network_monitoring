@@ -26,7 +26,7 @@ async def persist_metrics(db: AsyncSession, metrics: list[dict], *, commit: bool
         commit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return await MetricRepository(db).create_metrics(metrics, commit=commit)
@@ -39,7 +39,7 @@ async def build_dashboard_summary(db: AsyncSession) -> dict:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     started_at = perf_counter()
@@ -70,7 +70,7 @@ def status_rollup_from_counts(status_counts: dict[str, int] | None) -> str:
         status_counts: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if not status_counts:

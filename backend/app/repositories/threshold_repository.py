@@ -21,7 +21,7 @@ class ThresholdRepository:
             db: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         self.db = db
@@ -30,7 +30,7 @@ class ThresholdRepository:
         """Repository method to list thresholds.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query: Select[tuple[Threshold]] = select(Threshold).order_by(Threshold.key.asc())
@@ -40,7 +40,7 @@ class ThresholdRepository:
         """Repository method to count thresholds.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(func.count()).select_from(Threshold)
@@ -53,7 +53,7 @@ class ThresholdRepository:
             key: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query: Select[tuple[Threshold]] = select(Threshold).where(Threshold.key == key)
@@ -69,7 +69,7 @@ class ThresholdRepository:
             commit: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         threshold = await self.get_by_key(key)

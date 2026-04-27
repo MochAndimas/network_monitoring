@@ -28,7 +28,7 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
         commit: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     alert_repository = AlertRepository(db)
@@ -309,7 +309,7 @@ def _metric_numeric_value(metric) -> float | None:
         metric: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     numeric_value = getattr(metric, "metric_value_numeric", None)
@@ -398,7 +398,7 @@ def _highest_dynamic_metric(latest_metrics: dict, *, device_id: int, prefix: str
         suffixes: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     matches = [
@@ -426,7 +426,7 @@ def _build_alert_payload(device_id: int | None, alert_type: str, message: str) -
         message: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rule = ALERT_RULES[alert_type]
@@ -455,7 +455,7 @@ async def _ensure_incident_for_alert(
         message: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     active_incident = active_incidents_by_device.get(device_id)
@@ -491,7 +491,7 @@ async def _resolve_incident_if_cleared(
         resolved_at: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     remaining_count = max(active_alert_count_by_device.get(device_id, 0) - 1, 0)

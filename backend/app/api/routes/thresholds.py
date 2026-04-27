@@ -23,7 +23,7 @@ async def list_thresholds(db: AsyncSession = Depends(get_db)) -> list[ThresholdI
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return [ThresholdItem(**row) for row in await list_threshold_rows(db)]
@@ -47,7 +47,7 @@ async def update_threshold(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     threshold = await update_threshold_value(db, key, payload.value)

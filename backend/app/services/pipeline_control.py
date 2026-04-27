@@ -27,7 +27,7 @@ def _mysql_lock_timeout_seconds(*, wait: bool) -> int:
         wait: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return max(settings.monitoring_lock_timeout_seconds, 1) if wait else 0
@@ -40,7 +40,7 @@ async def _acquire_mysql_lock(*, wait: bool) -> tuple[object | None, bool]:
         wait: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     connection = await engine.connect()
@@ -86,7 +86,7 @@ async def monitoring_pipeline_guard(*, wait: bool) -> AsyncIterator[bool]:
         wait: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if engine.dialect.name == "mysql":

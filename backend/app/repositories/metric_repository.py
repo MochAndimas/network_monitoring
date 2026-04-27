@@ -32,7 +32,7 @@ class MetricRepository:
             db: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         self.db = db
@@ -45,7 +45,7 @@ class MetricRepository:
             row: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         metric_value_numeric = row.metric_value_numeric
@@ -71,7 +71,7 @@ class MetricRepository:
             metric_names: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         if not metric_names:
@@ -99,7 +99,7 @@ class MetricRepository:
             checked_to: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         conditions: list[object] = []
@@ -140,7 +140,7 @@ class MetricRepository:
             checked_to: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = (
@@ -177,7 +177,7 @@ class MetricRepository:
             commit: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         metrics = [
@@ -275,7 +275,7 @@ class MetricRepository:
             status: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query: Select[tuple[Metric]] = select(Metric)
@@ -303,7 +303,7 @@ class MetricRepository:
             per_device_limit: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         if not device_ids or per_device_limit < 1:
@@ -362,7 +362,7 @@ class MetricRepository:
             checked_to: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = self._recent_metric_rows_query(
@@ -407,7 +407,7 @@ class MetricRepository:
             checked_to: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         normalized_metric_names = self._normalize_metric_names(metric_names)
@@ -483,7 +483,7 @@ class MetricRepository:
             checked_to: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         conditions = self._recent_metric_filter_conditions(
@@ -551,7 +551,7 @@ class MetricRepository:
             checked_to: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(func.count()).select_from(Metric)
@@ -575,7 +575,7 @@ class MetricRepository:
             device_id: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         internet_target_name_priority = case(
@@ -650,7 +650,7 @@ class MetricRepository:
             device_id: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         rows = (await self.db.execute(self._latest_metrics_query(device_id=device_id).offset(offset).limit(limit))).all()
@@ -671,7 +671,7 @@ class MetricRepository:
             device_id: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         rows = (await self.db.execute(self._latest_metrics_query(device_id=device_id).offset(offset).limit(limit))).all()
@@ -686,7 +686,7 @@ class MetricRepository:
         """Repository method to list latest metrics.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         latest_metric = aliased(Metric)
@@ -701,7 +701,7 @@ class MetricRepository:
             metric_name: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = (
@@ -719,7 +719,7 @@ class MetricRepository:
         """Repository method to return latest metric map.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(Metric).join(LatestMetric, Metric.id == LatestMetric.metric_id)
@@ -733,7 +733,7 @@ class MetricRepository:
             device_id: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = (
@@ -751,7 +751,7 @@ class MetricRepository:
             device_id: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(func.count()).select_from(LatestMetric)
@@ -763,7 +763,7 @@ class MetricRepository:
         """Repository method to summarize latest snapshot status counts.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         rows = (
@@ -791,7 +791,7 @@ class MetricRepository:
             latest_rows: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         device_statuses: dict[int, list[str]] = {}
@@ -819,7 +819,7 @@ class MetricRepository:
             offset: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         latest_rows = await self.list_latest_metric_rows(limit=limit, offset=offset)
@@ -835,7 +835,7 @@ class MetricRepository:
             latest_rows: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         latest_pairs = [
@@ -897,7 +897,7 @@ class MetricRepository:
             device_id: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(distinct(LatestMetric.metric_name)).order_by(LatestMetric.metric_name)
@@ -920,7 +920,7 @@ class MetricRepository:
             rollup_to: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = (
@@ -971,7 +971,7 @@ class MetricRepository:
             rollup_to: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         rows = (
@@ -1030,7 +1030,7 @@ class MetricRepository:
             rollup_to: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(func.count()).select_from(MetricDailyRollup)
@@ -1052,7 +1052,7 @@ def _is_metric_newer(metric: Metric, existing_checked_at, existing_metric_id: in
         existing_metric_id: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if existing_checked_at is None:
@@ -1078,7 +1078,7 @@ def _next_uptime_streak_started_at(
         ordered_metric_batch: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     status = str(latest_metric.status or "").lower()
@@ -1113,7 +1113,7 @@ def _rollup_statuses(statuses: list[str]) -> str:
         statuses: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     normalized = [str(status).lower() for status in statuses if status]

@@ -13,7 +13,51 @@ from components.api import get_json
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.ui import render_meta_row, render_page_header
-from dashboard.pages.live_monitoring.helpers import *  # noqa: F401,F403
+from dashboard.pages.live_monitoring.helpers import (
+    CHART_WINDOW_OPTIONS,
+    INTERNET_ONLY_METRICS,
+    PRINTER_METRIC_NAMES,
+    STATUS_OPTIONS,
+    _default_device_option_label,
+    _default_mikrotik_trend_metrics,
+    _entity_volume_frame,
+    _fetch_device_history_rows,
+    _fetch_latest_device_snapshot,
+    _filter_history_rows,
+    _filter_metric_names,
+    _format_duration,
+    _format_metric_numeric,
+    _friendly_metric_name,
+    _health_score_percent,
+    _is_dynamic_mikrotik_metric,
+    _latest_snapshot_frame,
+    _metric_filter_label,
+    _metric_kpi_summary,
+    _non_numeric_metric_timeline,
+    _paginate_frame,
+    _prepare_history_frame,
+    _raw_history_view,
+    _recent_anomaly_frame,
+    _render_metric_trend_section,
+    _render_mikrotik_history_section,
+    _render_printer_history_section,
+    _render_stat_card,
+    _should_hide_metric_for_device,
+    _snapshot_pagination_controls,
+    _status_color_scale,
+    _status_counts_frame,
+    _status_label_for_display,
+    _trend_direction_text,
+    alt,
+    format_wib_timestamp,
+    is_mikrotik_device,
+    normalize_status_label,
+    paged_items,
+    paged_meta,
+    pd,
+    urlencode,
+    wib_date_boundary_to_utc_iso,
+)
 
 st.set_page_config(page_title="Live Monitoring", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
@@ -50,7 +94,7 @@ def _render_history_filters() -> dict:
     """Render history filters.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     default_device_label = _default_device_option_label(devices)
@@ -326,7 +370,6 @@ def _render_history_body() -> None:
         st.info("Belum ada histori metrik untuk filter ini. Ubah rentang waktu atau jalankan monitoring cycle.")
         return
 
-    latest_timestamp = dataframe["checked_at"].max()
     snapshot_frame = _prepare_history_frame_cached(snapshot_history, sort_desc=False)
     latest_per_series = snapshot_frame.copy() if not snapshot_frame.empty else _latest_snapshot_frame(dataframe)
     uptime_keys = latest_per_series["device_id"].astype(int).astype(str) + ":" + latest_per_series["metric_name"].astype(str)

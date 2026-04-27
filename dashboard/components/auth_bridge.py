@@ -26,7 +26,7 @@ def auth_bridge(*, action: str, host: str, request_id: str, payload: dict | None
         key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return _COMPONENT(

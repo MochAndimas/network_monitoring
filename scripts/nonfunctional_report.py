@@ -32,7 +32,7 @@ def _load_json(path: Path) -> dict[str, Any]:
         path: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if not path.exists():
@@ -52,7 +52,7 @@ def _top_latency_rows(results: list[dict[str, Any]], metric_key: str) -> list[di
         metric_key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return sorted(results, key=lambda item: float(item.get(metric_key) or 0.0), reverse=True)[:3]
@@ -66,7 +66,7 @@ def _ratio_percentage(passed_count: int, total_count: int) -> float:
         total_count: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if total_count <= 0:
@@ -81,7 +81,7 @@ def _week_range(reference_day: date) -> tuple[date, date]:
         reference_day: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     week_start = reference_day - timedelta(days=reference_day.weekday())
@@ -96,7 +96,7 @@ def _render_gate_row(gate: GateStatus) -> str:
         gate: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return f"| {gate.name} | {'PASS' if gate.passed else 'FAIL'} | {gate.details} |"
@@ -111,7 +111,7 @@ def _render_top_latency_lines(title: str, rows: list[dict[str, Any]], metric_key
         metric_key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     lines = [f"### {title}"]
@@ -143,7 +143,7 @@ def _build_triage_markdown(
         generated_at: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     benchmark_failures = list(benchmark_payload.get("failures") or [])
@@ -220,7 +220,7 @@ def _build_sla_summary(
         generated_day: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     benchmark_results = list(benchmark_payload.get("results") or [])
@@ -303,7 +303,7 @@ def _build_weekly_sla_markdown(sla_summary: dict[str, Any]) -> str:
         sla_summary: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     signals = dict(sla_summary.get("signals") or {})

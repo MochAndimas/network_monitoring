@@ -32,7 +32,7 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     database_ok = await check_database_connection()
@@ -76,7 +76,7 @@ async def observability_metrics(db: AsyncSession = Depends(get_db)) -> PlainText
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     database_ok = await check_database_connection()

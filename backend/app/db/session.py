@@ -20,7 +20,7 @@ def _async_database_url(database_url: str) -> str:
         database_url: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if database_url.startswith("sqlite:///") and not database_url.startswith("sqlite+aiosqlite:///"):
@@ -39,7 +39,7 @@ def _engine_options(database_url: str) -> dict:
         database_url: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     options = {
@@ -69,7 +69,7 @@ async def get_db() -> AsyncIterator[AsyncSession]:
     """Yield a request-scoped async database session.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     async with SessionLocal() as db:
@@ -80,7 +80,7 @@ async def check_database_connection() -> bool:
     """Return True when a simple database query succeeds.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:

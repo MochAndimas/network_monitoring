@@ -22,7 +22,7 @@ class AlertRepository:
             db: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         self.db = db
@@ -31,7 +31,7 @@ class AlertRepository:
         """Repository method to list active alerts.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query: Select[tuple[Alert]] = (
@@ -56,7 +56,7 @@ class AlertRepository:
             search: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = (
@@ -113,7 +113,7 @@ class AlertRepository:
             search: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         rows = await self.list_active_alert_rows(
@@ -131,7 +131,7 @@ class AlertRepository:
         """Repository method to summarize active alert severity counts.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         rows = (
@@ -156,7 +156,7 @@ class AlertRepository:
             search: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(func.count()).select_from(Alert).where(Alert.status == "active")
@@ -181,7 +181,7 @@ class AlertRepository:
             commit: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         alert = Alert(**payload)
@@ -201,7 +201,7 @@ class AlertRepository:
             commit: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         alert.status = "resolved"

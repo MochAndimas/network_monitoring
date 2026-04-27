@@ -60,7 +60,7 @@ def _duration_label(minutes_value: float | None) -> str:
         minutes_value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if minutes_value is None or pd.isna(minutes_value):

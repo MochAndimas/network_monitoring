@@ -40,7 +40,7 @@ async def snmp_get(ip: str, community: str, oid: str, timeout: int, retries: int
         retries: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     engine = SnmpEngine()
@@ -88,7 +88,7 @@ def parse_args() -> argparse.Namespace:
     """Return parse args.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     parser = argparse.ArgumentParser(description="Test SNMP v2c reachability to one or more targets.")
@@ -107,7 +107,7 @@ def build_targets(args: argparse.Namespace) -> list[tuple[str, str, str]]:
         args: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if args.ip and args.community:

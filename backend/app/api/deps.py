@@ -20,7 +20,7 @@ def _validate_internal_api_key(x_api_key: str | None) -> AuthenticatedActor | No
         x_api_key: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     api_keys = internal_api_key_map()
@@ -31,7 +31,12 @@ def _validate_internal_api_key(x_api_key: str | None) -> AuthenticatedActor | No
     if x_api_key and x_api_key in api_keys:
         for secret, spec in api_keys.items():
             if secrets.compare_digest(x_api_key, secret):
-                scopes = frozenset(str(scope) for scope in spec.get("scopes", []))
+                raw_scopes = spec.get("scopes", [])
+                scopes = (
+                    frozenset(str(scope) for scope in raw_scopes if str(scope).strip())
+                    if isinstance(raw_scopes, (list, tuple, set))
+                    else frozenset()
+                )
                 return AuthenticatedActor(
                     kind="api_key",
                     role="service",
@@ -56,7 +61,7 @@ async def _authenticate_api_access(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     api_key_actor = _validate_internal_api_key(x_api_key)
@@ -87,7 +92,7 @@ async def require_api_access(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return await _authenticate_api_access(authorization=authorization, x_api_key=x_api_key, db=db)
@@ -108,7 +113,7 @@ async def require_api_access_with_session_cookie(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return await _authenticate_api_access(
@@ -126,7 +131,7 @@ async def require_admin_access(actor: AuthenticatedActor = Depends(require_api_a
         actor: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if actor.role != "admin":
@@ -141,7 +146,7 @@ async def require_write_access(actor: AuthenticatedActor = Depends(require_api_a
         actor: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if actor.user is not None and actor.role == "admin":
@@ -158,7 +163,7 @@ async def require_ops_access(actor: AuthenticatedActor = Depends(require_api_acc
         actor: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if actor.user is not None and actor.role == "admin":

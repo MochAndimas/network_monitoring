@@ -21,7 +21,7 @@ async def run_device_checks(db: AsyncSession) -> list[dict]:
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     devices = await DeviceRepository(db).list_by_types(DEVICE_TYPES, active_only=True)
@@ -39,7 +39,7 @@ async def _build_device_metrics(device) -> list[dict]:
         device: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if device.device_type == "printer":

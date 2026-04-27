@@ -116,7 +116,7 @@ async def collect_printer_snmp_metrics(device_id: int, ip_address: str) -> list[
         ip_address: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     community = printer_snmp_community_for_ip(ip_address)
@@ -169,7 +169,7 @@ async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str
         oids: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     tasks = {
@@ -188,7 +188,7 @@ async def _snmp_get_value(ip_address: str, community: str, oid: str) -> object |
         oid: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     engine = SnmpEngine()
@@ -219,7 +219,7 @@ def _build_uptime_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMet
         raw_values: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     uptime_ticks = _safe_int(raw_values.get("printer_uptime_ticks"))
@@ -235,7 +235,7 @@ def _build_printer_status_metric(raw_values: dict[str, object | None]) -> SnmpPr
         raw_values: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     status_code = _safe_int(raw_values.get("printer_status_code"))
@@ -251,7 +251,7 @@ def _build_error_state_metric(raw_values: dict[str, object | None]) -> SnmpPrint
         raw_values: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     flags = _decode_error_state(raw_values.get("printer_error_state_raw"))
@@ -268,7 +268,7 @@ def _build_ink_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinte
         raw_values: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     flags = set(_decode_error_state(raw_values.get("printer_error_state_raw")))
@@ -286,7 +286,7 @@ def _build_paper_status_metric(raw_values: dict[str, object | None]) -> SnmpPrin
         raw_values: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     flags = set(_decode_error_state(raw_values.get("printer_error_state_raw")))
@@ -309,7 +309,7 @@ def _build_total_pages_metric(raw_values: dict[str, object | None]) -> SnmpPrint
         raw_values: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     total_pages = _safe_int(raw_values.get("printer_total_pages"))
@@ -325,7 +325,7 @@ def _decode_error_state(raw_value: object | None) -> list[str]:
         raw_value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if raw_value is None:
@@ -353,7 +353,7 @@ def _safe_int(raw_value: object | None) -> int | None:
         raw_value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     try:

@@ -22,7 +22,7 @@ class IncidentRepository:
             db: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         self.db = db
@@ -31,7 +31,7 @@ class IncidentRepository:
         """Repository method to list active incidents.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query: Select[tuple[Incident]] = (
@@ -43,7 +43,7 @@ class IncidentRepository:
         """Repository method to count active incidents.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(func.count()).select_from(Incident).where(Incident.status == "active")
@@ -66,7 +66,7 @@ class IncidentRepository:
             search: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(Incident, Device.name).outerjoin(Device, Device.id == Incident.device_id)
@@ -116,7 +116,7 @@ class IncidentRepository:
             search: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         rows = await self.list_incident_rows(status=status, limit=limit, offset=offset, search=search)
@@ -132,7 +132,7 @@ class IncidentRepository:
             search: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         query = select(func.count()).select_from(Incident)
@@ -156,7 +156,7 @@ class IncidentRepository:
             commit: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         incident = Incident(**payload)
@@ -176,7 +176,7 @@ class IncidentRepository:
             commit: Parameter input untuk routine ini.
 
         Returns:
-            TODO describe return value.
+            Nilai balik routine atau efek samping yang dihasilkan.
 
         """
         incident.status = "resolved"

@@ -12,7 +12,7 @@ def create_scheduler() -> AsyncIOScheduler:
     """Create scheduler for scheduler execution workflows.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     scheduler = AsyncIOScheduler(timezone="Asia/Jakarta")

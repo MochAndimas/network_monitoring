@@ -22,7 +22,7 @@ def to_wib_timestamp(value):
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     parsed = pd.to_datetime(value)
@@ -42,7 +42,7 @@ def format_wib_timestamp(value) -> str:
         value: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if pd.isna(value):
@@ -58,7 +58,7 @@ def wib_date_boundary_to_utc_iso(value, *, end_of_day: bool = False) -> str:
         end_of_day: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     boundary_time = time.max if end_of_day else time.min

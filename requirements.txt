@@ -1,1 +1,4 @@
--r requirements/dev.txt
+# Runtime entrypoint dependencies untuk local/prod-like environment.
+# Gunakan requirements/dev.txt jika butuh tooling test/lint/type/security scan.
+-r requirements/backend.txt
+-r requirements/dashboard.txt

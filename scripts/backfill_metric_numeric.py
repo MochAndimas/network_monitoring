@@ -28,7 +28,7 @@ async def _count_pending_metrics() -> int:
     """Count pending metrics.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     async with SessionLocal() as db:
@@ -50,7 +50,7 @@ async def _next_metric_ids(batch_size: int) -> list[int]:
         batch_size: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     async with SessionLocal() as db:
@@ -73,7 +73,7 @@ async def _backfill_batch(metric_ids: list[int]) -> int:
         metric_ids: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     if not metric_ids:

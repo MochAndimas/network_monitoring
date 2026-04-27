@@ -3,13 +3,20 @@
 This module contains project-specific implementation details.
 """
 
+from __future__ import annotations
+
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..core.time import now
 from ..db.base import Base
+
+if TYPE_CHECKING:
+    from .device import Device
+
 
 class MetricDailyRollup(Base):
     """Perform MetricDailyRollup.
@@ -35,4 +42,4 @@ class MetricDailyRollup(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
 
-    device: Mapped["Device"] = relationship()
+    device: Mapped[Device] = relationship()

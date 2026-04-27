@@ -34,6 +34,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements/dev.txt
 
+      - name: Pre-commit hygiene hooks
+        run: pre-commit run --all-files --show-diff-on-failure
+
       - name: Lint
         run: ruff check backend dashboard scripts tests
 

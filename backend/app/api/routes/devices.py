@@ -30,7 +30,7 @@ async def list_device_types() -> list[DeviceTypeOption]:
     """List available device-type options for filtering and forms.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return [
@@ -51,7 +51,7 @@ async def get_device_status_summary(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return await DeviceRepository(db).summarize_device_status_counts(active_only=active_only)
@@ -75,7 +75,7 @@ async def list_device_options(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return [
@@ -113,7 +113,7 @@ async def list_devices(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     apply_legacy_deprecation_headers(response, legacy_endpoint="/devices")
@@ -151,7 +151,7 @@ async def list_devices_paged(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     rows, total = await DeviceRepository(db).list_device_status_rows_paged(
@@ -187,7 +187,7 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
     return DeviceListItem(**await get_device_row(db, device_id))
@@ -209,20 +209,26 @@ async def create_device_endpoint(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
-    created_device = await create_device(db, payload.model_dump())
-    await record_admin_audit_log(
-        db,
-        actor=actor,
-        action="device.create",
-        target_type="device",
-        target_id=str(created_device.id),
-        ip_address=request.client.host if request.client else "",
-        user_agent=request.headers.get("user-agent", ""),
-        details=payload.model_dump(),
-    )
+    try:
+        created_device = await create_device(db, payload.model_dump(), commit=False)
+        await record_admin_audit_log(
+            db,
+            actor=actor,
+            action="device.create",
+            target_type="device",
+            target_id=str(created_device.id),
+            ip_address=request.client.host if request.client else "",
+            user_agent=request.headers.get("user-agent", ""),
+            details=payload.model_dump(),
+            commit=False,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     return DeviceListItem(**await get_device_row(db, created_device.id))
 
 
@@ -244,20 +250,26 @@ async def update_device_endpoint(
         db: Parameter input untuk routine ini.
 
     Returns:
-        TODO describe return value.
+        Nilai balik routine atau efek samping yang dihasilkan.
 
     """
-    updated_device = await update_device(db, device_id, payload.model_dump(exclude_unset=True))
-    await record_admin_audit_log(
-        db,
-        actor=actor,
-        action="device.update",
-        target_type="device",
-        target_id=str(device_id),
-        ip_address=request.client.host if request.client else "",
-        user_agent=request.headers.get("user-agent", ""),
-        details=payload.model_dump(exclude_unset=True),
-    )
+    try:
+        updated_device = await update_device(db, device_id, payload.model_dump(exclude_unset=True), commit=False)
+        await record_admin_audit_log(
+            db,
+            actor=actor,
+            action="device.update",
+            target_type="device",
+            target_id=str(device_id),
+            ip_address=request.client.host if request.client else "",
+            user_agent=request.headers.get("user-agent", ""),
+            details=payload.model_dump(exclude_unset=True),
+            commit=False,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     return DeviceListItem(**await get_device_row(db, updated_device.id))
 
 
@@ -277,19 +289,25 @@ async def delete_device_endpoint(
         db: Parameter input untuk routine ini.
 
     """
-    existing = await get_device_row(db, device_id)
-    await delete_device(db, device_id)
-    await record_admin_audit_log(
-        db,
-        actor=actor,
-        action="device.delete",
-        target_type="device",
-        target_id=str(device_id),
-        ip_address=request.client.host if request.client else "",
-        user_agent=request.headers.get("user-agent", ""),
-        details={
-            "name": existing["name"],
-            "ip_address": existing["ip_address"],
-            "device_type": existing["device_type"],
-        },
-    )
+    try:
+        existing = await get_device_row(db, device_id)
+        await delete_device(db, device_id, commit=False)
+        await record_admin_audit_log(
+            db,
+            actor=actor,
+            action="device.delete",
+            target_type="device",
+            target_id=str(device_id),
+            ip_address=request.client.host if request.client else "",
+            user_agent=request.headers.get("user-agent", ""),
+            details={
+                "name": existing["name"],
+                "ip_address": existing["ip_address"],
+                "device_type": existing["device_type"],
+            },
+            commit=False,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
