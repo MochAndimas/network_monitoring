@@ -328,6 +328,118 @@ def test_run_cycle_creates_internet_quality_alerts():
             "public_ip_changed",
         }
 
+
+def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monkeypatch):
+    """Validate voip quality alerts stay local and only down alerts send Telegram.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    sent_messages = []
+
+    async def fake_send_telegram_alert(message):
+        sent_messages.append(message)
+
+    monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
+
+    with client_context() as (client, session_factory):
+        voip_device_id = run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "Dinstar Gateway", "ip_address": "192.168.88.10", "device_type": "voip"}],
+                [],
+            )
+        )[0].id
+
+        import backend.app.services.run_cycle_service as run_cycle_module
+
+        original_internet = run_cycle_module.run_internet_checks
+        original_device = run_cycle_module.run_device_checks
+        original_server = run_cycle_module.run_server_checks
+        original_mikrotik = run_cycle_module.run_mikrotik_checks
+        state = {"down": False}
+
+        async def fake_device_checks(_db):
+            now = utcnow()
+            if state["down"]:
+                ping_metric = {
+                    "device_id": voip_device_id,
+                    "metric_name": "ping",
+                    "metric_value": "timeout",
+                    "status": "down",
+                    "unit": None,
+                    "checked_at": now,
+                }
+            else:
+                ping_metric = {
+                    "device_id": voip_device_id,
+                    "metric_name": "ping",
+                    "metric_value": "250.00",
+                    "status": "up",
+                    "unit": "ms",
+                    "checked_at": now,
+                }
+            return [
+                ping_metric,
+                {
+                    "device_id": voip_device_id,
+                    "metric_name": "packet_loss",
+                    "metric_value": "80.00",
+                    "status": "warning",
+                    "unit": "%",
+                    "checked_at": now,
+                },
+                {
+                    "device_id": voip_device_id,
+                    "metric_name": "jitter",
+                    "metric_value": "90.00",
+                    "status": "warning",
+                    "unit": "ms",
+                    "checked_at": now,
+                },
+            ]
+
+        try:
+            run_cycle_module.run_internet_checks = empty_checks
+            run_cycle_module.run_device_checks = fake_device_checks
+            run_cycle_module.run_server_checks = empty_checks
+            run_cycle_module.run_mikrotik_checks = empty_checks
+
+            quality_response = client.post("/system/run-cycle", headers=API_HEADERS)
+            quality_alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+            quality_sent_messages = list(sent_messages)
+            state["down"] = True
+            down_response = client.post("/system/run-cycle", headers=API_HEADERS)
+            down_alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+        finally:
+            run_cycle_module.run_internet_checks = original_internet
+            run_cycle_module.run_device_checks = original_device
+            run_cycle_module.run_server_checks = original_server
+            run_cycle_module.run_mikrotik_checks = original_mikrotik
+
+        assert quality_response.status_code == 200
+        assert quality_response.json()["alerts_created"] == 3
+        assert quality_alerts_response.status_code == 200
+        assert {alert["alert_type"] for alert in quality_alerts_response.json()} == {
+            "high_ping_latency_critical",
+            "high_packet_loss_critical",
+            "high_jitter_critical",
+        }
+        assert quality_sent_messages == []
+
+        assert down_response.status_code == 200
+        assert down_response.json()["alerts_created"] == 1
+        assert down_alerts_response.status_code == 200
+        alert_types = {alert["alert_type"] for alert in down_alerts_response.json()}
+        assert alert_types == {
+            "device_down",
+            "high_packet_loss_critical",
+            "high_jitter_critical",
+        }
+        assert sent_messages == ["Dinstar Gateway is unreachable"]
+
+
 def test_run_cycle_creates_printer_alerts_and_incident():
     """Validate that run cycle creates printer alerts and incident.
 
@@ -452,6 +564,110 @@ def test_run_cycle_creates_printer_alerts_and_incident():
 
         assert incidents_response.status_code == 200
         assert len(incidents_response.json()) == 1
+
+
+def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch):
+    """Validate printer quality alerts stay local while Telegram is filtered.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    sent_messages = []
+
+    async def fake_send_telegram_alert(message):
+        sent_messages.append(message)
+
+    monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
+
+    with client_context() as (client, session_factory):
+        printer_device_id = run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "EPSON L3250 - 1", "ip_address": "192.168.88.38", "device_type": "printer"}],
+                [],
+            )
+        )[0].id
+
+        import backend.app.services.run_cycle_service as run_cycle_module
+
+        original_internet = run_cycle_module.run_internet_checks
+        original_device = run_cycle_module.run_device_checks
+        original_server = run_cycle_module.run_server_checks
+        original_mikrotik = run_cycle_module.run_mikrotik_checks
+        state = {"down": False}
+
+        async def fake_device_checks(_db):
+            now = utcnow()
+            return [
+                {
+                    "device_id": printer_device_id,
+                    "metric_name": "ping",
+                    "metric_value": "timeout" if state["down"] else "250.00",
+                    "status": "down" if state["down"] else "up",
+                    "unit": None if state["down"] else "ms",
+                    "checked_at": now,
+                },
+                {
+                    "device_id": printer_device_id,
+                    "metric_name": "jitter",
+                    "metric_value": "90.00",
+                    "status": "warning",
+                    "unit": "ms",
+                    "checked_at": now,
+                },
+                {
+                    "device_id": printer_device_id,
+                    "metric_name": "printer_error_state",
+                    "metric_value": "jammed",
+                    "status": "error",
+                    "unit": None,
+                    "checked_at": now,
+                },
+            ]
+
+        try:
+            run_cycle_module.run_internet_checks = empty_checks
+            run_cycle_module.run_device_checks = fake_device_checks
+            run_cycle_module.run_server_checks = empty_checks
+            run_cycle_module.run_mikrotik_checks = empty_checks
+
+            quality_response = client.post("/system/run-cycle", headers=API_HEADERS)
+            quality_alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+            quality_sent_messages = list(sent_messages)
+            state["down"] = True
+            down_response = client.post("/system/run-cycle", headers=API_HEADERS)
+            down_alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+        finally:
+            run_cycle_module.run_internet_checks = original_internet
+            run_cycle_module.run_device_checks = original_device
+            run_cycle_module.run_server_checks = original_server
+            run_cycle_module.run_mikrotik_checks = original_mikrotik
+
+        assert quality_response.status_code == 200
+        assert quality_response.json()["alerts_created"] == 3
+        assert quality_alerts_response.status_code == 200
+        assert {alert["alert_type"] for alert in quality_alerts_response.json()} == {
+            "high_ping_latency_critical",
+            "high_jitter_critical",
+            "printer_error_state",
+        }
+        assert quality_sent_messages == ["EPSON L3250 - 1 printer error state: jammed"]
+
+        assert down_response.status_code == 200
+        assert down_response.json()["alerts_created"] == 1
+        assert down_alerts_response.status_code == 200
+        alert_types = {alert["alert_type"] for alert in down_alerts_response.json()}
+        assert alert_types == {
+            "device_down",
+            "high_jitter_critical",
+            "printer_error_state",
+        }
+        assert sent_messages == [
+            "EPSON L3250 - 1 printer error state: jammed",
+            "EPSON L3250 - 1 is unreachable",
+        ]
+
 
 def test_internal_api_key_protects_mutation_endpoints():
     """Validate that internal api key protects mutation endpoints.

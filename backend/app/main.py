@@ -162,7 +162,7 @@ async def lifespan(_: FastAPI):
     """
     configure_logging()
     validate_auth_configuration()
-    if settings.app_env.lower() != "production":
+    if not settings.is_production:
         await init_db()
     async with SessionLocal() as db:
         await ensure_bootstrap_admin(db)
@@ -172,9 +172,9 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     lifespan=lifespan,
-    docs_url=None if settings.app_env.lower() == "production" else "/docs",
-    redoc_url=None if settings.app_env.lower() == "production" else "/redoc",
-    openapi_url=None if settings.app_env.lower() == "production" else "/openapi.json",
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
 )
 app.add_middleware(
     CORSMiddleware,

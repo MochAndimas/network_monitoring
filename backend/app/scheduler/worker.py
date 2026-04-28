@@ -45,7 +45,7 @@ async def run_scheduler_worker() -> None:
     """
     configure_logging()
     validate_auth_configuration()
-    if settings.app_env.lower() != "production":
+    if not settings.is_production:
         await init_db()
     async with SessionLocal() as db:
         await ensure_bootstrap_admin(db)

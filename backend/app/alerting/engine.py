@@ -21,6 +21,24 @@ from .notifiers.telegram_notifier import send_telegram_alert
 from .rules import ALERT_RULES
 
 
+TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE = {
+    "voip": {
+        "high_ping_latency_warning",
+        "high_ping_latency_critical",
+        "high_packet_loss_warning",
+        "high_packet_loss_critical",
+        "high_jitter_warning",
+        "high_jitter_critical",
+    },
+    "printer": {
+        "high_ping_latency_warning",
+        "high_ping_latency_critical",
+        "high_jitter_warning",
+        "high_jitter_critical",
+    },
+}
+
+
 async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
     """Return evaluate alerts.
 
@@ -38,6 +56,7 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
     device_repository = DeviceRepository(db)
     latest_metrics = await metric_repository.latest_metric_map()
     devices = await device_repository.list_devices(active_only=True)
+    device_type_by_id = {device.id: device.device_type for device in devices}
     notifications: list[dict] = []
     telegram_messages: list[str] = []
     thresholds = await get_threshold_map(db, commit=commit)
@@ -263,7 +282,11 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
             "incident_action": incident_action,
         }
         notifications.append(notification)
-        telegram_messages.append(created_alert.message)
+        created_alert_device_type = (
+            device_type_by_id.get(created_alert.device_id) if created_alert.device_id is not None else None
+        )
+        if _should_send_telegram_alert(created_alert.alert_type, created_alert_device_type):
+            telegram_messages.append(created_alert.message)
 
     resolved_at = utcnow()
     for key, alert in list(active_alerts.items()):
@@ -320,6 +343,11 @@ def _metric_numeric_value(metric) -> float | None:
         except (TypeError, ValueError):
             pass
     return safe_float(getattr(metric, "metric_value", None))
+
+
+def _should_send_telegram_alert(alert_type: str, device_type: str | None) -> bool:
+    """Return whether a created alert should be sent to Telegram."""
+    return alert_type not in TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE.get(str(device_type or ""), set())
 
 
 def _evaluate_mikrotik_alerts(*, device, latest_metrics: dict, thresholds: dict[str, float], expected_alerts: dict) -> None:

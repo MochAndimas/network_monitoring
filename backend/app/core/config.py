@@ -13,6 +13,15 @@ from urllib.parse import urlparse
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+AppEnv = Literal["development", "production", "test"]
+
+PRODUCTION_REQUIRED_FIELDS = (
+    "auth_password_secret",
+    "auth_jwt_secret",
+    "cors_origins",
+    "trusted_hosts",
+)
+
 
 def _split_csv(raw_value: str) -> list[str]:
     """Perform split csv.
@@ -33,7 +42,7 @@ class Settings(BaseSettings):
     This class encapsulates related behavior and data for this domain area.
     """
     app_name: str = "Network Monitoring"
-    app_env: str = "development"
+    app_env: AppEnv = "development"
     database_url: str = "mysql+pymysql://network_monitoring:change-me@localhost:3306/network_monitoring"
     db_pool_size: int = 10
     db_max_overflow: int = 20
@@ -162,6 +171,22 @@ class Settings(BaseSettings):
             object.__setattr__(self, field_name, file_value)
         return self
 
+    @model_validator(mode="after")
+    def validate_environment_config(self) -> "Settings":
+        """Validate environment-specific configuration."""
+        if not self.is_production:
+            return self
+
+        missing_fields = [
+            field_name
+            for field_name in PRODUCTION_REQUIRED_FIELDS
+            if not str(getattr(self, field_name, "") or "").strip()
+        ]
+        if missing_fields:
+            formatted_fields = ", ".join(sorted(missing_fields))
+            raise ValueError(f"Production configuration is missing required fields: {formatted_fields}.")
+        return self
+
     @property
     def normalized_cors_origins(self) -> list[str]:
         """Return normalized cors origins.
@@ -263,6 +288,11 @@ class Settings(BaseSettings):
 
         """
         return str(self.app_env or "").strip().lower() == "production"
+
+    @property
+    def is_development(self) -> bool:
+        """Return True when running in local development mode."""
+        return str(self.app_env or "").strip().lower() == "development"
 
 
 settings = Settings()
