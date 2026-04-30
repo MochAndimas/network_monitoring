@@ -6,6 +6,8 @@ This module contains project-specific implementation details.
 from sqlalchemy import Select, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.time import utcnow
+from ..models.alert import Alert
 from ..models.device import Device
 from ..models.incident import Incident
 
@@ -86,13 +88,14 @@ class IncidentRepository:
         if limit is not None:
             query = query.limit(limit)
         rows = (await self.db.execute(query)).all()
+        incident_summaries = await self._incident_alert_summaries([incident for incident, _device_name in rows])
         return [
             {
                 "id": incident.id,
                 "device_id": incident.device_id,
                 "device_name": device_name,
                 "status": incident.status,
-                "summary": incident.summary,
+                "summary": incident_summaries.get(incident.id, incident.summary),
                 "started_at": incident.started_at,
                 "ended_at": incident.ended_at,
             }
@@ -148,6 +151,46 @@ class IncidentRepository:
             )
         return int(await self.db.scalar(query) or 0)
 
+    async def _incident_alert_summaries(self, incidents: list[Incident]) -> dict[int, str]:
+        """Build richer incident summaries from alerts inside each incident window."""
+        incident_windows = [
+            incident
+            for incident in incidents
+            if incident.id is not None and incident.device_id is not None and incident.started_at is not None
+        ]
+        if not incident_windows:
+            return {}
+
+        now = utcnow()
+        device_ids = {incident.device_id for incident in incident_windows if incident.device_id is not None}
+        min_started_at = min(incident.started_at for incident in incident_windows)
+        max_ended_at = max((incident.ended_at or now) for incident in incident_windows)
+        alert_rows = list(
+            (
+                await self.db.scalars(
+                    select(Alert)
+                    .where(Alert.device_id.in_(device_ids))
+                    .where(Alert.created_at >= min_started_at)
+                    .where(Alert.created_at <= max_ended_at)
+                    .order_by(Alert.created_at.asc(), Alert.id.asc())
+                )
+            ).all()
+        )
+
+        summaries: dict[int, str] = {}
+        for incident in incident_windows:
+            incident_ended_at = incident.ended_at or now
+            incident_alerts = [
+                alert
+                for alert in alert_rows
+                if alert.device_id == incident.device_id
+                and alert.created_at >= incident.started_at
+                and alert.created_at <= incident_ended_at
+            ]
+            if incident_alerts:
+                summaries[incident.id] = _format_incident_alert_summary(incident_alerts)
+        return summaries
+
     async def create_incident(self, payload: dict, *, commit: bool = True) -> Incident:
         """Repository method to create incident.
 
@@ -186,3 +229,16 @@ class IncidentRepository:
             await self.db.commit()
             await self.db.refresh(incident)
         return incident
+
+
+def _format_incident_alert_summary(alerts: list[Alert]) -> str:
+    """Format alert rows into a concise incident summary."""
+    latest_alert_by_type: dict[str, Alert] = {}
+    for alert in alerts:
+        latest_alert_by_type[alert.alert_type] = alert
+
+    ordered_alerts = sorted(latest_alert_by_type.values(), key=lambda item: (item.created_at, item.alert_type))
+    alert_parts = [f"{alert.alert_type}: {alert.message}" for alert in ordered_alerts[:5]]
+    extra_count = max(len(ordered_alerts) - len(alert_parts), 0)
+    suffix = f"; +{extra_count} alert lain" if extra_count else ""
+    return f"{len(ordered_alerts)} alert: " + "; ".join(alert_parts) + suffix

@@ -6,6 +6,7 @@ This module contains project-specific implementation details.
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 
 from shared.device_utils import is_mikrotik_device
 from shared.number_utils import safe_float
@@ -37,6 +38,8 @@ TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE = {
         "high_jitter_critical",
     },
 }
+TELEGRAM_NOTIFICATION_DEDUPE_TTL = timedelta(minutes=5)
+_recent_telegram_notification_keys: dict[tuple, object] = {}
 
 
 async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
@@ -56,9 +59,10 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
     device_repository = DeviceRepository(db)
     latest_metrics = await metric_repository.latest_metric_map()
     devices = await device_repository.list_devices(active_only=True)
+    device_by_id = {device.id: device for device in devices}
     device_type_by_id = {device.id: device.device_type for device in devices}
     notifications: list[dict] = []
-    telegram_messages: list[str] = []
+    telegram_events: list[dict] = []
     thresholds = await get_threshold_map(db, commit=commit)
     active_alerts = {(alert.device_id, alert.alert_type): alert for alert in await alert_repository.list_active_alerts()}
     active_incidents_by_device = {
@@ -286,7 +290,16 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
             device_type_by_id.get(created_alert.device_id) if created_alert.device_id is not None else None
         )
         if _should_send_telegram_alert(created_alert.alert_type, created_alert_device_type):
-            telegram_messages.append(created_alert.message)
+            telegram_events.append(
+                {
+                    "action": "active",
+                    "alert_id": created_alert.id,
+                    "alert_type": created_alert.alert_type,
+                    "severity": created_alert.severity,
+                    "message": created_alert.message,
+                    "device": device_by_id.get(created_alert.device_id),
+                }
+            )
 
     resolved_at = utcnow()
     for key, alert in list(active_alerts.items()):
@@ -302,6 +315,7 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
         )
         has_pending_writes = True
         active_alerts.pop(key, None)
+        resolved_alert_device_type = device_type_by_id.get(alert.device_id) if alert.device_id is not None else None
         notifications.append(
             {
                 "action": "resolved",
@@ -311,12 +325,26 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
                 "incident_action": incident_action,
             }
         )
+        if _should_send_telegram_alert(alert.alert_type, resolved_alert_device_type):
+            telegram_events.append(
+                {
+                    "action": "resolved",
+                    "alert_id": alert.id,
+                    "alert_type": alert.alert_type,
+                    "severity": alert.severity,
+                    "message": alert.message,
+                    "device": device_by_id.get(alert.device_id),
+                    "created_at": alert.created_at,
+                    "resolved_at": resolved_at,
+                }
+            )
 
     if has_pending_writes:
         if commit:
             await db.commit()
         else:
             await db.flush()
+    telegram_messages = _build_telegram_messages(_filter_recent_telegram_events(telegram_events))
     if telegram_messages:
         await asyncio.gather(
             *(send_telegram_alert(message) for message in telegram_messages),
@@ -346,8 +374,125 @@ def _metric_numeric_value(metric) -> float | None:
 
 
 def _should_send_telegram_alert(alert_type: str, device_type: str | None) -> bool:
-    """Return whether a created alert should be sent to Telegram."""
+    """Return whether an alert state change should be sent to Telegram."""
     return alert_type not in TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE.get(str(device_type or ""), set())
+
+
+def _filter_recent_telegram_events(events: list[dict]) -> list[dict]:
+    """Suppress duplicate Telegram events for the same alert state change."""
+    if not events:
+        return []
+    current_time = utcnow()
+    expired_keys = [
+        key
+        for key, last_seen_at in _recent_telegram_notification_keys.items()
+        if last_seen_at <= current_time - TELEGRAM_NOTIFICATION_DEDUPE_TTL
+    ]
+    for key in expired_keys:
+        _recent_telegram_notification_keys.pop(key, None)
+
+    filtered_events: list[dict] = []
+    for event in events:
+        notification_key = _telegram_notification_key(event)
+        if notification_key in _recent_telegram_notification_keys:
+            continue
+        _recent_telegram_notification_keys[notification_key] = current_time
+        filtered_events.append(event)
+    return filtered_events
+
+
+def _telegram_notification_key(event: dict) -> tuple:
+    """Build a stable dedupe key for one Telegram alert event."""
+    device = event.get("device")
+    return (
+        str(event.get("action") or "active").lower(),
+        getattr(device, "id", None),
+        event.get("alert_id"),
+        str(event.get("alert_type") or ""),
+    )
+
+
+def _build_telegram_messages(events: list[dict]) -> list[str]:
+    """Build grouped Telegram messages for alert state changes."""
+    grouped_events: dict[tuple[int | None, str], list[dict]] = {}
+    for event in events:
+        device = event.get("device")
+        group_key = (getattr(device, "id", None), str(event.get("action") or "active").lower())
+        grouped_events.setdefault(group_key, []).append(event)
+    return [_build_telegram_message(group) for group in grouped_events.values()]
+
+
+def _build_telegram_message(events: list[dict]) -> str:
+    """Build Telegram message for one device and one alert state."""
+    first_event = events[0]
+    action = str(first_event.get("action") or "").lower()
+    is_resolved = str(action or "").lower() == "resolved"
+    title = "ALERT RESOLVED" if is_resolved else "ALERT ACTIVE"
+    status = "RESOLVED" if is_resolved else "ACTIVE"
+    severity = _highest_severity(str(event.get("severity") or "unknown") for event in events)
+    device = first_event.get("device")
+    device_name = getattr(device, "name", None) or "-"
+    ip_address = getattr(device, "ip_address", None) or "-"
+    site = getattr(device, "site", None) or "-"
+    device_type = getattr(device, "device_type", None) or "-"
+    alert_lines = [
+        _format_telegram_alert_line(event, include_duration=is_resolved)
+        for event in sorted(events, key=lambda item: str(item.get("alert_type") or ""))
+    ]
+    return "\n".join(
+        [
+            f"[{str(severity or 'unknown').upper()}] {title}",
+            f"Device: {device_name}",
+            f"IP: {ip_address}",
+            f"Site: {site}",
+            f"Type: {device_type}",
+            f"Status: {status}",
+            "Alerts:",
+            *alert_lines,
+        ]
+    )
+
+
+def _format_telegram_alert_line(event: dict, *, include_duration: bool) -> str:
+    """Format one Telegram alert line, optionally including resolved duration."""
+    line = f"- {event['alert_type']}: {event['message']}"
+    if not include_duration:
+        return line
+
+    duration = _format_alert_duration(event.get("created_at"), event.get("resolved_at"))
+    if duration is None:
+        return line
+    return f"{line} (duration: {duration})"
+
+
+def _format_alert_duration(started_at, resolved_at) -> str | None:
+    """Format elapsed alert duration for resolved Telegram notifications."""
+    if started_at is None or resolved_at is None:
+        return None
+
+    total_seconds = int(max((resolved_at - started_at).total_seconds(), 0))
+    if total_seconds < 60:
+        return f"{max(total_seconds, 1)}s"
+
+    total_minutes, seconds = divmod(total_seconds, 60)
+    if total_minutes < 60:
+        return f"{total_minutes}m {seconds}s" if seconds else f"{total_minutes}m"
+
+    total_hours, minutes = divmod(total_minutes, 60)
+    if total_hours < 24:
+        return f"{total_hours}h {minutes}m" if minutes else f"{total_hours}h"
+
+    days, hours = divmod(total_hours, 24)
+    return f"{days}d {hours}h" if hours else f"{days}d"
+
+
+def _highest_severity(severities) -> str:
+    """Return highest severity label from an iterable."""
+    severity_order = {"critical": 3, "high": 2, "warning": 1, "unknown": 0}
+    normalized = [str(severity or "unknown").lower() for severity in severities]
+    if not normalized:
+        return "unknown"
+    return max(normalized, key=lambda severity: severity_order.get(severity, 0))
 
 
 def _evaluate_mikrotik_alerts(*, device, latest_metrics: dict, thresholds: dict[str, float], expected_alerts: dict) -> None:

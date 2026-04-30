@@ -125,13 +125,35 @@ class JsonLogFormatter(logging.Formatter):
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact_sensitive_log_message(record.getMessage()),
             "request_id": request_id_context.get(""),
             "job_name": job_name_context.get(""),
         }
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=True)
+
+
+class RedactingFormatter(logging.Formatter):
+    """Format plain-text logs with sensitive runtime values masked."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Render a log record and mask secrets in the final message."""
+        return redact_sensitive_log_message(super().format(record))
+
+
+def redact_sensitive_log_message(message: str) -> str:
+    """Mask configured secrets from log output."""
+    redacted_message = str(message)
+    sensitive_values = {
+        settings.telegram_bot_token: "[telegram_bot_token]",
+        settings.telegram_chat_id: "[telegram_chat_id]",
+    }
+    for secret_value, replacement in sensitive_values.items():
+        normalized_secret = str(secret_value or "").strip()
+        if normalized_secret:
+            redacted_message = redacted_message.replace(normalized_secret, replacement)
+    return redacted_message
 
 
 def configure_structured_logging() -> None:
@@ -146,7 +168,7 @@ def configure_structured_logging() -> None:
     if settings.log_as_json:
         formatter = JsonLogFormatter()
     else:
-        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+        formatter = RedactingFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
     for handler in root_logger.handlers:
         handler.setFormatter(formatter)
 

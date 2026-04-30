@@ -6,6 +6,24 @@ This module contains automated regression and validation scenarios.
 from backend.app.services import observability_service as observability_module
 
 
+def test_redact_sensitive_log_message_masks_telegram_credentials(monkeypatch):
+    """Validate Telegram credentials are masked before log output."""
+    monkeypatch.setattr(observability_module.settings, "telegram_bot_token", "123456:secret-token")
+    monkeypatch.setattr(observability_module.settings, "telegram_chat_id", "-987654321")
+
+    message = (
+        'HTTP Request: POST https://api.telegram.org/bot123456:secret-token/sendMessage '
+        'chat_id=-987654321 "HTTP/1.1 200 OK"'
+    )
+
+    redacted_message = observability_module.redact_sensitive_log_message(message)
+
+    assert "123456:secret-token" not in redacted_message
+    assert "-987654321" not in redacted_message
+    assert "[telegram_bot_token]" in redacted_message
+    assert "[telegram_chat_id]" in redacted_message
+
+
 def test_observability_payload_metrics_cover_paged_endpoints():
     """Validate that observability payload metrics cover paged endpoints.
 

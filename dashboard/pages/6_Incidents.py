@@ -3,6 +3,7 @@
 This module contains project-specific implementation details.
 """
 
+from html import escape
 from urllib.parse import quote_plus
 
 import altair as alt
@@ -68,6 +69,87 @@ def _duration_label(minutes_value: float | None) -> str:
     minutes = int(minutes_value)
     hours, mins = divmod(minutes, 60)
     return f"{hours}j {mins}m" if hours else f"{mins}m"
+
+
+def _render_detail_table(dataframe: pd.DataFrame) -> None:
+    """Render incident detail table with wrapped summary text."""
+    headers = list(dataframe.columns)
+    header_html = "".join(f"<th>{escape(str(header))}</th>" for header in headers)
+    rows_html = []
+    for _, row in dataframe.iterrows():
+        cells = []
+        for header in headers:
+            raw_value = "" if pd.isna(row[header]) else str(row[header])
+            cell_value = escape(raw_value)
+            cell_class = "summary-cell" if header == "Ringkasan" else ""
+            if header == "Ringkasan":
+                cell_value = cell_value.replace("; ", "<br>")
+            cells.append(f'<td class="{cell_class}">{cell_value}</td>')
+        rows_html.append(f"<tr>{''.join(cells)}</tr>")
+
+    st.markdown(
+        f"""
+        <style>
+        .incident-detail-table {{
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-size: 0.95rem;
+        }}
+        .incident-detail-table th {{
+            color: #a7b0bf;
+            background: #171a22;
+            border: 1px solid #2a2f3a;
+            padding: 0.72rem 0.7rem;
+            text-align: left;
+            font-weight: 600;
+        }}
+        .incident-detail-table td {{
+            border: 1px solid #252a34;
+            padding: 0.72rem 0.7rem;
+            vertical-align: top;
+            overflow-wrap: anywhere;
+            word-break: normal;
+        }}
+        .incident-detail-table th:nth-child(1),
+        .incident-detail-table th:nth-child(2) {{
+            width: 16%;
+        }}
+        .incident-detail-table th:nth-child(3) {{
+            width: 6%;
+        }}
+        .incident-detail-table th:nth-child(4) {{
+            width: 16%;
+        }}
+        .incident-detail-table th:nth-child(5) {{
+            width: 8%;
+        }}
+        .incident-detail-table th:nth-child(6) {{
+            width: 38%;
+        }}
+        .incident-detail-table .summary-cell {{
+            line-height: 1.45;
+            white-space: normal;
+        }}
+        @media (max-width: 900px) {{
+            .incident-detail-table {{
+                font-size: 0.85rem;
+            }}
+            .incident-detail-table th,
+            .incident-detail-table td {{
+                padding: 0.55rem 0.5rem;
+            }}
+        }}
+        </style>
+        <div style="overflow-x:auto;">
+            <table class="incident-detail-table">
+                <thead><tr>{header_html}</tr></thead>
+                <tbody>{''.join(rows_html)}</tbody>
+            </table>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _render_incidents_body() -> None:
@@ -258,19 +340,7 @@ def _render_incidents_body() -> None:
         }
     )
     st.markdown("### Detail Insiden")
-    st.dataframe(
-        detail_frame.head(int(max_rows)),
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "Mulai (WIB)": st.column_config.TextColumn("Mulai (WIB)", width="medium"),
-            "Selesai (WIB)": st.column_config.TextColumn("Selesai (WIB)", width="medium"),
-            "Durasi": st.column_config.TextColumn("Durasi", width="small"),
-            "Nama Device": st.column_config.TextColumn("Nama Device", width="medium"),
-            "Status": st.column_config.TextColumn("Status", width="small"),
-            "Ringkasan": st.column_config.TextColumn("Ringkasan", width="large"),
-        },
-    )
+    _render_detail_table(detail_frame.head(int(max_rows)))
     st.markdown("")
     st.caption("Tip: gunakan urutan Durasi Terpanjang untuk meninjau insiden dengan dampak waktu terbesar.")
 

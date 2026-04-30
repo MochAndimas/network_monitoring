@@ -3,6 +3,8 @@
 This module contains automated regression and validation scenarios.
 """
 
+from types import SimpleNamespace
+
 from .common import (
     _seed_devices_and_metrics,
     API_HEADERS,
@@ -12,6 +14,122 @@ from .common import (
     timedelta,
     utcnow,
 )
+
+
+def test_telegram_messages_group_multiple_alerts_for_one_device():
+    """Validate Telegram messages are grouped by device and state."""
+    from backend.app.alerting.engine import _build_telegram_messages
+
+    device = SimpleNamespace(
+        id=1,
+        name="MyRepublic - ISP",
+        ip_address="192.168.1.1",
+        site="R. Server",
+        device_type="internet_target",
+    )
+
+    messages = _build_telegram_messages(
+        [
+            {
+                "action": "active",
+                "alert_type": "high_ping_latency_warning",
+                "severity": "warning",
+                "message": "MyRepublic - ISP ping latency reached 141.38ms",
+                "device": device,
+            },
+            {
+                "action": "active",
+                "alert_type": "high_jitter_warning",
+                "severity": "warning",
+                "message": "MyRepublic - ISP jitter reached 69.73ms",
+                "device": device,
+            },
+        ]
+    )
+
+    assert messages == [
+        "\n".join(
+            [
+                "[WARNING] ALERT ACTIVE",
+                "Device: MyRepublic - ISP",
+                "IP: 192.168.1.1",
+                "Site: R. Server",
+                "Type: internet_target",
+                "Status: ACTIVE",
+                "Alerts:",
+                "- high_jitter_warning: MyRepublic - ISP jitter reached 69.73ms",
+                "- high_ping_latency_warning: MyRepublic - ISP ping latency reached 141.38ms",
+            ]
+        )
+    ]
+
+
+def test_telegram_resolved_messages_include_alert_duration():
+    """Validate resolved Telegram messages include alert duration."""
+    from backend.app.alerting.engine import _build_telegram_messages
+
+    device = SimpleNamespace(
+        id=1,
+        name="MyRepublic - ISP",
+        ip_address="192.168.1.1",
+        site="R. Server",
+        device_type="internet_target",
+    )
+    resolved_at = utcnow()
+    created_at = resolved_at - timedelta(hours=1, minutes=2, seconds=3)
+
+    messages = _build_telegram_messages(
+        [
+            {
+                "action": "resolved",
+                "alert_type": "internet_loss",
+                "severity": "critical",
+                "message": "MyRepublic - ISP is unreachable",
+                "device": device,
+                "created_at": created_at,
+                "resolved_at": resolved_at,
+            },
+        ]
+    )
+
+    assert messages == [
+        "\n".join(
+            [
+                "[CRITICAL] ALERT RESOLVED",
+                "Device: MyRepublic - ISP",
+                "IP: 192.168.1.1",
+                "Site: R. Server",
+                "Type: internet_target",
+                "Status: RESOLVED",
+                "Alerts:",
+                "- internet_loss: MyRepublic - ISP is unreachable (duration: 1h 2m)",
+            ]
+        )
+    ]
+
+
+def test_telegram_events_are_deduped_by_alert_state(monkeypatch):
+    """Validate duplicate Telegram events are suppressed briefly."""
+    import backend.app.alerting.engine as engine_module
+
+    engine_module._recent_telegram_notification_keys.clear()
+
+    device = SimpleNamespace(id=1, name="Mikrotik Utama", ip_address="192.168.88.1", site="R. Server", device_type="internet_target")
+    event = {
+        "action": "resolved",
+        "alert_id": 99,
+        "alert_type": "high_ping_latency_critical",
+        "severity": "critical",
+        "message": "Mikrotik Utama ping latency reached 269.37ms",
+        "device": device,
+    }
+
+    try:
+        assert engine_module._filter_recent_telegram_events([event, dict(event)]) == [event]
+        assert engine_module._filter_recent_telegram_events([event]) == []
+    finally:
+        engine_module._recent_telegram_notification_keys.clear()
+
 
 def test_run_cycle_creates_alerts_and_incidents():
     """Validate that run cycle creates alerts and incidents.
@@ -341,13 +459,23 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
     async def fake_send_telegram_alert(message):
         sent_messages.append(message)
 
+    import backend.app.alerting.engine as engine_module
+
+    engine_module._recent_telegram_notification_keys.clear()
     monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
 
     with client_context() as (client, session_factory):
         voip_device_id = run(
             _seed_devices_and_metrics(
                 session_factory,
-                [{"name": "Dinstar Gateway", "ip_address": "192.168.88.10", "device_type": "voip"}],
+                [
+                    {
+                        "name": "Dinstar Gateway",
+                        "ip_address": "192.168.88.10",
+                        "device_type": "voip",
+                        "site": "Office 1",
+                    }
+                ],
                 [],
             )
         )[0].id
@@ -412,11 +540,14 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
             state["down"] = True
             down_response = client.post("/system/run-cycle", headers=API_HEADERS)
             down_alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+            state["down"] = False
+            resolved_response = client.post("/system/run-cycle", headers=API_HEADERS)
         finally:
             run_cycle_module.run_internet_checks = original_internet
             run_cycle_module.run_device_checks = original_device
             run_cycle_module.run_server_checks = original_server
             run_cycle_module.run_mikrotik_checks = original_mikrotik
+            engine_module._recent_telegram_notification_keys.clear()
 
         assert quality_response.status_code == 200
         assert quality_response.json()["alerts_created"] == 3
@@ -437,7 +568,31 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
             "high_packet_loss_critical",
             "high_jitter_critical",
         }
-        assert sent_messages == ["Dinstar Gateway is unreachable"]
+        assert resolved_response.status_code == 200
+        assert resolved_response.json()["alerts_resolved"] == 1
+        assert sent_messages[0] == "\n".join(
+            [
+                "[CRITICAL] ALERT ACTIVE",
+                "Device: Dinstar Gateway",
+                "IP: 192.168.88.10",
+                "Site: Office 1",
+                "Type: voip",
+                "Status: ACTIVE",
+                "Alerts:",
+                "- device_down: Dinstar Gateway is unreachable",
+            ]
+        )
+        resolved_message_lines = sent_messages[1].splitlines()
+        assert resolved_message_lines[:7] == [
+            "[CRITICAL] ALERT RESOLVED",
+            "Device: Dinstar Gateway",
+            "IP: 192.168.88.10",
+            "Site: Office 1",
+            "Type: voip",
+            "Status: RESOLVED",
+            "Alerts:",
+        ]
+        assert resolved_message_lines[7].startswith("- device_down: Dinstar Gateway is unreachable (duration: ")
 
 
 def test_run_cycle_creates_printer_alerts_and_incident():
@@ -578,13 +733,23 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
     async def fake_send_telegram_alert(message):
         sent_messages.append(message)
 
+    import backend.app.alerting.engine as engine_module
+
+    engine_module._recent_telegram_notification_keys.clear()
     monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
 
     with client_context() as (client, session_factory):
         printer_device_id = run(
             _seed_devices_and_metrics(
                 session_factory,
-                [{"name": "EPSON L3250 - 1", "ip_address": "192.168.88.38", "device_type": "printer"}],
+                [
+                    {
+                        "name": "EPSON L3250 - 1",
+                        "ip_address": "192.168.88.38",
+                        "device_type": "printer",
+                        "site": "Finance",
+                    }
+                ],
                 [],
             )
         )[0].id
@@ -638,11 +803,14 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
             state["down"] = True
             down_response = client.post("/system/run-cycle", headers=API_HEADERS)
             down_alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+            state["down"] = False
+            resolved_response = client.post("/system/run-cycle", headers=API_HEADERS)
         finally:
             run_cycle_module.run_internet_checks = original_internet
             run_cycle_module.run_device_checks = original_device
             run_cycle_module.run_server_checks = original_server
             run_cycle_module.run_mikrotik_checks = original_mikrotik
+            engine_module._recent_telegram_notification_keys.clear()
 
         assert quality_response.status_code == 200
         assert quality_response.json()["alerts_created"] == 3
@@ -652,7 +820,20 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
             "high_jitter_critical",
             "printer_error_state",
         }
-        assert quality_sent_messages == ["EPSON L3250 - 1 printer error state: jammed"]
+        assert quality_sent_messages == [
+            "\n".join(
+                [
+                    "[CRITICAL] ALERT ACTIVE",
+                    "Device: EPSON L3250 - 1",
+                    "IP: 192.168.88.38",
+                    "Site: Finance",
+                    "Type: printer",
+                    "Status: ACTIVE",
+                    "Alerts:",
+                    "- printer_error_state: EPSON L3250 - 1 printer error state: jammed",
+                ]
+            )
+        ]
 
         assert down_response.status_code == 200
         assert down_response.json()["alerts_created"] == 1
@@ -663,10 +844,45 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
             "high_jitter_critical",
             "printer_error_state",
         }
-        assert sent_messages == [
-            "EPSON L3250 - 1 printer error state: jammed",
-            "EPSON L3250 - 1 is unreachable",
+        assert sent_messages[:2] == [
+            "\n".join(
+                [
+                    "[CRITICAL] ALERT ACTIVE",
+                    "Device: EPSON L3250 - 1",
+                    "IP: 192.168.88.38",
+                    "Site: Finance",
+                    "Type: printer",
+                    "Status: ACTIVE",
+                    "Alerts:",
+                    "- printer_error_state: EPSON L3250 - 1 printer error state: jammed",
+                ]
+            ),
+            "\n".join(
+                [
+                    "[CRITICAL] ALERT ACTIVE",
+                    "Device: EPSON L3250 - 1",
+                    "IP: 192.168.88.38",
+                    "Site: Finance",
+                    "Type: printer",
+                    "Status: ACTIVE",
+                    "Alerts:",
+                    "- device_down: EPSON L3250 - 1 is unreachable",
+                ]
+            ),
         ]
+        resolved_message_lines = sent_messages[2].splitlines()
+        assert resolved_message_lines[:7] == [
+            "[CRITICAL] ALERT RESOLVED",
+            "Device: EPSON L3250 - 1",
+            "IP: 192.168.88.38",
+            "Site: Finance",
+            "Type: printer",
+            "Status: RESOLVED",
+            "Alerts:",
+        ]
+        assert resolved_message_lines[7].startswith("- device_down: EPSON L3250 - 1 is unreachable (duration: ")
+        assert resolved_response.status_code == 200
+        assert resolved_response.json()["alerts_resolved"] == 1
 
 
 def test_internal_api_key_protects_mutation_endpoints():

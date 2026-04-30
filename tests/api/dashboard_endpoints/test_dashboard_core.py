@@ -228,7 +228,9 @@ def test_alerts_and_incidents_paged_endpoints_include_meta_and_keep_legacy_contr
         filtered_incident_payload = paged_incidents_filtered.json()
         assert filtered_incident_payload["meta"] == {"total": 1, "limit": 10, "offset": 0}
         assert len(filtered_incident_payload["items"]) == 1
-        assert filtered_incident_payload["items"][0]["summary"] == "cpu saturation"
+        assert filtered_incident_payload["items"][0]["summary"] == (
+            "2 alert: high_cpu: cpu high; disk_space: disk almost full"
+        )
 
 def test_dashboard_summary_uses_mikrotik_api_health_without_ping():
     """Validate that dashboard summary uses mikrotik api health without ping.
