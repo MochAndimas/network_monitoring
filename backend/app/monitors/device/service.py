@@ -11,7 +11,7 @@ from .printer_snmp import collect_printer_snmp_metrics
 
 
 DEVICE_TYPES = ["nvr", "switch", "access_point", "voip", "printer"]
-QUALITY_CHECK_TYPES = {"access_point", "voip", "printer"}
+QUALITY_CHECK_TYPES = {"access_point", "switch", "voip", "printer"}
 
 
 async def run_device_checks(db: AsyncSession) -> list[dict]:

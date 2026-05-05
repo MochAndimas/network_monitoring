@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     db_pool_recycle_seconds: int = 1800
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    telegram_alert_grace_period_seconds: int = 60
     mikrotik_host: str = ""
     mikrotik_port: int = 8728
     mikrotik_username: str = ""

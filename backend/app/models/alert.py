@@ -37,5 +37,6 @@ class Alert(Base):
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    telegram_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     device: Mapped[Device | None] = relationship(back_populates="alerts")

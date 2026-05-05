@@ -8,7 +8,9 @@ from types import SimpleNamespace
 from .common import (
     _seed_devices_and_metrics,
     API_HEADERS,
+    Alert,
     client_context,
+    DeviceRepository,
     empty_checks,
     run,
     timedelta,
@@ -106,6 +108,64 @@ def test_telegram_resolved_messages_include_alert_duration():
             ]
         )
     ]
+
+
+def test_stale_active_telegram_event_is_sent_as_resolved(monkeypatch):
+    """Validate stale active Telegram events are refreshed before sending."""
+    sent_messages = []
+
+    async def fake_send_telegram_alert(message):
+        sent_messages.append(message)
+
+    import backend.app.alerting.engine as engine_module
+    from backend.app.repositories.alert_repository import AlertRepository
+
+    monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
+
+    with client_context() as (_client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                device = (
+                    await DeviceRepository(db).upsert_devices(
+                        [
+                            {
+                                "name": "VoIP - 3",
+                                "ip_address": "192.168.88.183",
+                                "device_type": "voip",
+                                "site": "R. Security",
+                            }
+                        ]
+                    )
+                )[0]
+                created_at = utcnow() - timedelta(seconds=70)
+                alert = Alert(
+                    device_id=device.id,
+                    alert_type="high_packet_loss_critical",
+                    severity="critical",
+                    message="VoIP - 3 packet_loss reached 66.67%",
+                    status="active",
+                    created_at=created_at,
+                )
+                db.add(alert)
+                await db.commit()
+                await db.refresh(alert)
+                await AlertRepository(db).resolve_alert(alert, utcnow(), commit=True)
+                event = {
+                    "action": "active",
+                    "alert_id": alert.id,
+                    "alert_type": alert.alert_type,
+                    "severity": alert.severity,
+                    "message": alert.message,
+                    "device": device,
+                }
+                await engine_module._send_telegram_events(db, AlertRepository(db), [event], commit=True)
+
+        run(scenario())
+
+    assert len(sent_messages) == 1
+    assert "[CRITICAL] ALERT RESOLVED" in sent_messages[0]
+    assert "Status: RESOLVED" in sent_messages[0]
+    assert "- high_packet_loss_critical: VoIP - 3 packet_loss reached 66.67%" in sent_messages[0]
 
 
 def test_telegram_events_are_deduped_by_alert_state(monkeypatch):
@@ -447,8 +507,84 @@ def test_run_cycle_creates_internet_quality_alerts():
         }
 
 
+def test_run_cycle_uses_switch_specific_quality_thresholds():
+    """Validate switch quality alerts use stricter switch threshold values.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    with client_context() as (client, session_factory):
+        switch_device_id = run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "Switch Core", "ip_address": "192.168.88.20", "device_type": "switch"}],
+                [],
+            )
+        )[0].id
+
+        import backend.app.services.run_cycle_service as run_cycle_module
+
+        original_internet = run_cycle_module.run_internet_checks
+        original_device = run_cycle_module.run_device_checks
+        original_server = run_cycle_module.run_server_checks
+        original_mikrotik = run_cycle_module.run_mikrotik_checks
+
+        async def fake_device_checks(_db):
+            now = utcnow()
+            return [
+                {
+                    "device_id": switch_device_id,
+                    "metric_name": "ping",
+                    "metric_value": "25.00",
+                    "status": "up",
+                    "unit": "ms",
+                    "checked_at": now,
+                },
+                {
+                    "device_id": switch_device_id,
+                    "metric_name": "packet_loss",
+                    "metric_value": "5.00",
+                    "status": "warning",
+                    "unit": "%",
+                    "checked_at": now,
+                },
+                {
+                    "device_id": switch_device_id,
+                    "metric_name": "jitter",
+                    "metric_value": "15.00",
+                    "status": "warning",
+                    "unit": "ms",
+                    "checked_at": now,
+                },
+            ]
+
+        try:
+            run_cycle_module.run_internet_checks = empty_checks
+            run_cycle_module.run_device_checks = fake_device_checks
+            run_cycle_module.run_server_checks = empty_checks
+            run_cycle_module.run_mikrotik_checks = empty_checks
+
+            cycle_response = client.post("/system/run-cycle", headers=API_HEADERS)
+            alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+        finally:
+            run_cycle_module.run_internet_checks = original_internet
+            run_cycle_module.run_device_checks = original_device
+            run_cycle_module.run_server_checks = original_server
+            run_cycle_module.run_mikrotik_checks = original_mikrotik
+
+        assert cycle_response.status_code == 200
+        assert cycle_response.json()["alerts_created"] == 3
+        assert alerts_response.status_code == 200
+        assert {alert["alert_type"] for alert in alerts_response.json()} == {
+            "high_ping_latency_warning",
+            "high_packet_loss_warning",
+            "high_jitter_warning",
+        }
+
+
 def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monkeypatch):
-    """Validate voip quality alerts stay local and only down alerts send Telegram.
+    """Validate voip ping/jitter stay local while packet loss and down notify Telegram.
 
     Returns:
         Nilai balik routine atau efek samping yang dihasilkan.
@@ -462,6 +598,7 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
     import backend.app.alerting.engine as engine_module
 
     engine_module._recent_telegram_notification_keys.clear()
+    monkeypatch.setattr(engine_module.settings, "telegram_alert_grace_period_seconds", 0)
     monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
 
     with client_context() as (client, session_factory):
@@ -557,7 +694,20 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
             "high_packet_loss_critical",
             "high_jitter_critical",
         }
-        assert quality_sent_messages == []
+        assert quality_sent_messages == [
+            "\n".join(
+                [
+                    "[CRITICAL] ALERT ACTIVE",
+                    "Device: Dinstar Gateway",
+                    "IP: 192.168.88.10",
+                    "Site: Office 1",
+                    "Type: voip",
+                    "Status: ACTIVE",
+                    "Alerts:",
+                    "- high_packet_loss_critical: Dinstar Gateway packet_loss reached 80.00%",
+                ]
+            )
+        ]
 
         assert down_response.status_code == 200
         assert down_response.json()["alerts_created"] == 1
@@ -570,7 +720,8 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
         }
         assert resolved_response.status_code == 200
         assert resolved_response.json()["alerts_resolved"] == 1
-        assert sent_messages[0] == "\n".join(
+        assert sent_messages[0] == quality_sent_messages[0]
+        assert sent_messages[1] == "\n".join(
             [
                 "[CRITICAL] ALERT ACTIVE",
                 "Device: Dinstar Gateway",
@@ -582,7 +733,7 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
                 "- device_down: Dinstar Gateway is unreachable",
             ]
         )
-        resolved_message_lines = sent_messages[1].splitlines()
+        resolved_message_lines = sent_messages[2].splitlines()
         assert resolved_message_lines[:7] == [
             "[CRITICAL] ALERT RESOLVED",
             "Device: Dinstar Gateway",
@@ -736,6 +887,7 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
     import backend.app.alerting.engine as engine_module
 
     engine_module._recent_telegram_notification_keys.clear()
+    monkeypatch.setattr(engine_module.settings, "telegram_alert_grace_period_seconds", 0)
     monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
 
     with client_context() as (client, session_factory):

@@ -11,11 +11,13 @@ from datetime import timedelta
 from shared.device_utils import is_mikrotik_device
 from shared.number_utils import safe_float
 
+from ..core.config import settings
+from ..core.time import utcnow
 from ..repositories.alert_repository import AlertRepository
 from ..repositories.device_repository import DeviceRepository
 from ..repositories.incident_repository import IncidentRepository
 from ..repositories.metric_repository import MetricRepository
-from ..core.time import utcnow
+from ..models.alert import Alert
 from ..models.incident import Incident
 from ..services.threshold_service import get_threshold_map
 from .notifiers.telegram_notifier import send_telegram_alert
@@ -26,8 +28,6 @@ TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE = {
     "voip": {
         "high_ping_latency_warning",
         "high_ping_latency_critical",
-        "high_packet_loss_warning",
-        "high_packet_loss_critical",
         "high_jitter_warning",
         "high_jitter_critical",
     },
@@ -98,33 +98,35 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
             ping_value = _metric_numeric_value(ping_metric)
 
             if ping_value is not None:
-                if ping_value >= thresholds["ping_latency_critical"]:
+                ping_warning_threshold = _threshold_for_device(thresholds, device.device_type, "ping_latency_warning")
+                ping_critical_threshold = _threshold_for_device(thresholds, device.device_type, "ping_latency_critical")
+                if ping_value >= ping_critical_threshold:
                     expected_alerts[(device.id, "high_ping_latency_critical")] = _build_alert_payload(
                         device_id=device.id,
                         alert_type="high_ping_latency_critical",
                         message=f"{device.name} ping latency reached {ping_value:.2f}{ping_metric.unit or ''}",
                     )
-                elif ping_value >= thresholds["ping_latency_warning"]:
+                elif ping_value >= ping_warning_threshold:
                     expected_alerts[(device.id, "high_ping_latency_warning")] = _build_alert_payload(
                         device_id=device.id,
                         alert_type="high_ping_latency_warning",
                         message=f"{device.name} ping latency reached {ping_value:.2f}{ping_metric.unit or ''}",
                     )
 
-        for metric_name, warning_alert, critical_alert, warning_threshold, critical_threshold in [
+        for metric_name, warning_alert, critical_alert, warning_key, critical_key in [
             (
                 "packet_loss",
                 "high_packet_loss_warning",
                 "high_packet_loss_critical",
-                thresholds["packet_loss_warning"],
-                thresholds["packet_loss_critical"],
+                "packet_loss_warning",
+                "packet_loss_critical",
             ),
             (
                 "jitter",
                 "high_jitter_warning",
                 "high_jitter_critical",
-                thresholds["jitter_warning"],
-                thresholds["jitter_critical"],
+                "jitter_warning",
+                "jitter_critical",
             ),
         ]:
             metric = latest_metrics.get((device.id, metric_name))
@@ -133,6 +135,8 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
             value = safe_float(metric.metric_value)
             if value is None:
                 continue
+            warning_threshold = _threshold_for_device(thresholds, device.device_type, warning_key)
+            critical_threshold = _threshold_for_device(thresholds, device.device_type, critical_key)
             if value >= critical_threshold:
                 expected_alerts[(device.id, critical_alert)] = _build_alert_payload(
                     device_id=device.id,
@@ -286,20 +290,6 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
             "incident_action": incident_action,
         }
         notifications.append(notification)
-        created_alert_device_type = (
-            device_type_by_id.get(created_alert.device_id) if created_alert.device_id is not None else None
-        )
-        if _should_send_telegram_alert(created_alert.alert_type, created_alert_device_type):
-            telegram_events.append(
-                {
-                    "action": "active",
-                    "alert_id": created_alert.id,
-                    "alert_type": created_alert.alert_type,
-                    "severity": created_alert.severity,
-                    "message": created_alert.message,
-                    "device": device_by_id.get(created_alert.device_id),
-                }
-            )
 
     resolved_at = utcnow()
     for key, alert in list(active_alerts.items()):
@@ -325,7 +315,7 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
                 "incident_action": incident_action,
             }
         )
-        if _should_send_telegram_alert(alert.alert_type, resolved_alert_device_type):
+        if _should_send_telegram_resolved_alert(alert, resolved_at, resolved_alert_device_type):
             telegram_events.append(
                 {
                     "action": "resolved",
@@ -344,12 +334,19 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
             await db.commit()
         else:
             await db.flush()
-    telegram_messages = _build_telegram_messages(_filter_recent_telegram_events(telegram_events))
-    if telegram_messages:
-        await asyncio.gather(
-            *(send_telegram_alert(message) for message in telegram_messages),
-            return_exceptions=True,
+    telegram_events.extend(
+        _pending_active_telegram_events(
+            active_alerts.values(),
+            device_by_id=device_by_id,
+            device_type_by_id=device_type_by_id,
         )
+    )
+    await _send_telegram_events(
+        db,
+        alert_repository,
+        _filter_recent_telegram_events(telegram_events),
+        commit=commit,
+    )
 
     return notifications
 
@@ -373,9 +370,58 @@ def _metric_numeric_value(metric) -> float | None:
     return safe_float(getattr(metric, "metric_value", None))
 
 
+def _threshold_for_device(thresholds: dict[str, float], device_type: str | None, key: str) -> float:
+    """Return a device-specific threshold when configured, otherwise the global value."""
+    device_key = f"{str(device_type or '').lower()}_{key}"
+    return thresholds.get(device_key, thresholds[key])
+
+
 def _should_send_telegram_alert(alert_type: str, device_type: str | None) -> bool:
     """Return whether an alert state change should be sent to Telegram."""
     return alert_type not in TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE.get(str(device_type or ""), set())
+
+
+def _should_send_telegram_resolved_alert(alert, resolved_at, device_type: str | None) -> bool:
+    """Return whether a resolved alert should be sent to Telegram."""
+    if alert.telegram_notified_at is not None:
+        return True
+    if not _should_send_telegram_alert(alert.alert_type, device_type):
+        return False
+    return _alert_reached_telegram_grace_period(alert.created_at, resolved_at)
+
+
+def _alert_reached_telegram_grace_period(started_at, current_time) -> bool:
+    """Return whether an alert has stayed active long enough for Telegram."""
+    if started_at is None or current_time is None:
+        return False
+    grace_period = timedelta(seconds=max(int(settings.telegram_alert_grace_period_seconds or 0), 0))
+    return started_at <= current_time - grace_period
+
+
+def _pending_active_telegram_events(alerts, *, device_by_id: dict, device_type_by_id: dict) -> list[dict]:
+    """Return active alerts that have aged past the Telegram grace period."""
+    current_time = utcnow()
+    events: list[dict] = []
+    for alert in alerts:
+        device_type = device_type_by_id.get(alert.device_id) if alert.device_id is not None else None
+        if alert.telegram_notified_at is not None:
+            continue
+        if not _should_send_telegram_alert(alert.alert_type, device_type):
+            continue
+        if not _alert_reached_telegram_grace_period(alert.created_at, current_time):
+            continue
+        events.append(
+            {
+                "action": "active",
+                "alert": alert,
+                "alert_id": alert.id,
+                "alert_type": alert.alert_type,
+                "severity": alert.severity,
+                "message": alert.message,
+                "device": device_by_id.get(alert.device_id),
+            }
+        )
+    return events
 
 
 def _filter_recent_telegram_events(events: list[dict]) -> list[dict]:
@@ -414,12 +460,89 @@ def _telegram_notification_key(event: dict) -> tuple:
 
 def _build_telegram_messages(events: list[dict]) -> list[str]:
     """Build grouped Telegram messages for alert state changes."""
+    return [_build_telegram_message(group) for group in _group_telegram_events(events).values()]
+
+
+def _group_telegram_events(events: list[dict]) -> dict[tuple[int | None, str], list[dict]]:
+    """Group Telegram events by device and alert state."""
     grouped_events: dict[tuple[int | None, str], list[dict]] = {}
     for event in events:
         device = event.get("device")
         group_key = (getattr(device, "id", None), str(event.get("action") or "active").lower())
         grouped_events.setdefault(group_key, []).append(event)
-    return [_build_telegram_message(group) for group in grouped_events.values()]
+    return grouped_events
+
+
+async def _send_telegram_events(db, alert_repository: AlertRepository, events: list[dict], *, commit: bool) -> None:
+    """Send Telegram events and mark active alerts that were successfully delivered."""
+    events = await _refresh_telegram_events(db, events)
+    grouped_events = _group_telegram_events(events)
+    if not grouped_events:
+        return
+
+    grouped_items = list(grouped_events.values())
+    results = await asyncio.gather(
+        *(send_telegram_alert(_build_telegram_message(group)) for group in grouped_items),
+        return_exceptions=True,
+    )
+    notified_at = utcnow()
+    has_marked_alerts = False
+    for group, result in zip(grouped_items, results, strict=True):
+        if isinstance(result, Exception):
+            continue
+        for event in group:
+            if str(event.get("action") or "active").lower() != "active":
+                continue
+            alert = event.get("alert")
+            if alert is None:
+                continue
+            await alert_repository.mark_telegram_notified(alert, notified_at, commit=False)
+            has_marked_alerts = True
+
+    if has_marked_alerts:
+        if commit:
+            await db.commit()
+        else:
+            await db.flush()
+
+
+async def _refresh_telegram_events(db, events: list[dict]) -> list[dict]:
+    """Re-read active events before sending so stale ACTIVE messages do not outlive resolved alerts."""
+    refreshed_events: list[dict] = []
+    for event in events:
+        if str(event.get("action") or "active").lower() != "active":
+            refreshed_events.append(event)
+            continue
+
+        alert_id = event.get("alert_id")
+        if alert_id is None:
+            refreshed_events.append(event)
+            continue
+
+        fresh_alert = await db.get(Alert, alert_id)
+        if fresh_alert is None or fresh_alert.telegram_notified_at is not None:
+            continue
+        fresh_event = {**event, "alert": fresh_alert}
+        if str(fresh_alert.status or "").lower() == "active":
+            refreshed_events.append(fresh_event)
+            continue
+        if str(fresh_alert.status or "").lower() != "resolved":
+            continue
+
+        resolved_at = fresh_alert.resolved_at
+        if resolved_at is None:
+            continue
+        fresh_event.update(
+            {
+                "action": "resolved",
+                "severity": fresh_alert.severity,
+                "message": fresh_alert.message,
+                "created_at": fresh_alert.created_at,
+                "resolved_at": resolved_at,
+            }
+        )
+        refreshed_events.append(fresh_event)
+    return refreshed_events
 
 
 def _build_telegram_message(events: list[dict]) -> str:

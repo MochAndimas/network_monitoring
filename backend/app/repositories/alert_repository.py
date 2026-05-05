@@ -211,3 +211,12 @@ class AlertRepository:
             await self.db.commit()
             await self.db.refresh(alert)
         return alert
+
+    async def mark_telegram_notified(self, alert: Alert, notified_at, *, commit: bool = True) -> Alert:
+        """Mark that an alert active notification was sent to Telegram."""
+        alert.telegram_notified_at = notified_at
+        await self.db.flush()
+        if commit:
+            await self.db.commit()
+            await self.db.refresh(alert)
+        return alert

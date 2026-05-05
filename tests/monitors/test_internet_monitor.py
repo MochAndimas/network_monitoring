@@ -270,6 +270,37 @@ def test_voip_checks_collect_ping_packet_loss_and_jitter(monkeypatch, session_fa
     assert metrics_by_name["jitter"]["metric_value"] == "6.00"
 
 
+def test_switch_checks_collect_ping_packet_loss_and_jitter(monkeypatch, session_factory):
+    """Validate that switch checks collect ping packet loss and jitter.
+
+    Args:
+        monkeypatch: Parameter input untuk routine ini.
+        session_factory: Parameter input untuk routine ini.
+
+    Returns:
+        Nilai balik routine atau efek samping yang dihasilkan.
+
+    """
+    ping_samples = iter([0.004, None, 0.010])
+    monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(ping_samples))
+
+    async def scenario():
+        async with session_factory() as db:
+            await DeviceRepository(db).upsert_devices(
+                [{"name": "Switch Core", "ip_address": "192.168.88.20", "device_type": "switch"}]
+            )
+            return await device_service.run_device_checks(db)
+
+    metrics = run(scenario())
+
+    metrics_by_name = {metric["metric_name"]: metric for metric in metrics}
+    assert metrics_by_name["ping"]["metric_value"] == "10.00"
+    assert metrics_by_name["packet_loss"]["metric_value"] == "33.33"
+    assert metrics_by_name["packet_loss"]["status"] == "warning"
+    assert metrics_by_name["jitter"]["metric_value"] == "6.00"
+
+
 def test_mikrotik_checks_collect_packet_loss_and_jitter(monkeypatch, session_factory):
     """Validate that mikrotik checks collect packet loss and jitter.
 
