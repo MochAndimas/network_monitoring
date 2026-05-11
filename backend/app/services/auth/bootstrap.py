@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/services/auth/bootstrap.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Service-layer workflows for bootstrap."""
 
 from __future__ import annotations
 
@@ -15,16 +12,8 @@ from ...core.time import utcnow
 from ...models.user import User
 
 
-async def ensure_bootstrap_admin(db: AsyncSession) -> bool:
-    """Ensure bootstrap admin account exists for first-run environments.
-
-    Args:
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+async def ensure_bootstrap_admin(db: AsyncSession, *, commit: bool = True) -> bool:
+    """Ensure bootstrap admin in the service layer."""
     if not settings.bootstrap_admin_password:
         return False
 
@@ -43,7 +32,10 @@ async def ensure_bootstrap_admin(db: AsyncSession) -> bool:
     )
     db.add(user)
     try:
-        await db.commit()
+        if commit:
+            await db.commit()
+        else:
+            await db.flush()
     except IntegrityError:
         await db.rollback()
         return False

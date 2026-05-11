@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/repositories/device_repository.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Database query helpers for device repository data."""
 
 from typing import cast
 
@@ -19,30 +16,14 @@ from ..models.metric_daily_rollup import MetricDailyRollup
 
 
 class DeviceRepository:
-    """Perform DeviceRepository.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Database access object for Device records."""
     def __init__(self, db: AsyncSession):
-        """Perform init.
-
-        Args:
-            db: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Initialize the object with its runtime dependencies."""
         self.db = db
 
     @staticmethod
     def _latest_ping_metrics_subquery():
-        """Perform latest ping metrics subquery.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Return latest latest ping metrics subquery used by device inventory and status."""
         mikrotik_device_filter = or_(
             func.lower(Device.device_type) == "mikrotik",
             func.lower(Device.name).like("%mikrotik%"),
@@ -96,15 +77,7 @@ class DeviceRepository:
 
     @staticmethod
     def _search_filter(search: str | None):
-        """Perform search filter.
-
-        Args:
-            search: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Return search filter for device inventory and status."""
         if not search:
             return None
         search_term = f"%{search.strip()}%"
@@ -123,19 +96,7 @@ class DeviceRepository:
         latest_status: str | list[str] | tuple[str, ...] | None = None,
         search: str | None = None,
     ):
-        """Perform device status query.
-
-        Args:
-            active_only: Parameter input untuk routine ini.
-            device_id: Parameter input untuk routine ini.
-            device_type: Parameter input untuk routine ini.
-            latest_status: Parameter input untuk routine ini.
-            search: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Return device status query for device inventory and status."""
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
         columns = [
@@ -176,16 +137,17 @@ class DeviceRepository:
         return query, latest_ping
 
     async def list_devices(self, active_only: bool = False) -> list[Device]:
-        """Repository method to list devices.
-
-        Args:
-            active_only: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query devices from the database."""
         query: Select[tuple[Device]] = select(Device).order_by(Device.name.asc())
+        if active_only:
+            query = query.where(Device.is_active.is_(True))
+        return list((await self.db.scalars(query)).all())
+
+    async def list_devices_by_ids(self, device_ids: set[int], *, active_only: bool = False) -> list[Device]:
+        """Return devices for a bounded id set."""
+        if not device_ids:
+            return []
+        query: Select[tuple[Device]] = select(Device).where(Device.id.in_(device_ids)).order_by(Device.name.asc())
         if active_only:
             query = query.where(Device.is_active.is_(True))
         return list((await self.db.scalars(query)).all())
@@ -198,18 +160,7 @@ class DeviceRepository:
         limit: int = 300,
         offset: int = 0,
     ) -> list[dict]:
-        """Repository method to list device options.
-
-        Args:
-            active_only: Parameter input untuk routine ini.
-            search: Parameter input untuk routine ini.
-            limit: Parameter input untuk routine ini.
-            offset: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query device options from the database."""
         query = select(
             Device.id,
             Device.name,
@@ -241,15 +192,7 @@ class DeviceRepository:
         ]
 
     async def count_devices(self, active_only: bool = False) -> int:
-        """Repository method to count devices.
-
-        Args:
-            active_only: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query devices from the database."""
         query = select(func.count()).select_from(Device)
         if active_only:
             query = query.where(Device.is_active.is_(True))
@@ -265,21 +208,7 @@ class DeviceRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[dict]:
-        """Repository method to list device status rows.
-
-        Args:
-            active_only: Parameter input untuk routine ini.
-            device_id: Parameter input untuk routine ini.
-            device_type: Parameter input untuk routine ini.
-            latest_status: Parameter input untuk routine ini.
-            search: Parameter input untuk routine ini.
-            limit: Parameter input untuk routine ini.
-            offset: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query device status rows from the database."""
         query, _latest_ping = self._device_status_query(
             active_only=active_only,
             device_id=device_id,
@@ -319,20 +248,7 @@ class DeviceRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[list[dict], int]:
-        """Repository method to list device status rows paged.
-
-        Args:
-            active_only: Parameter input untuk routine ini.
-            device_type: Parameter input untuk routine ini.
-            latest_status: Parameter input untuk routine ini.
-            search: Parameter input untuk routine ini.
-            limit: Parameter input untuk routine ini.
-            offset: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query device status rows paged from the database."""
         query, _latest_ping = self._device_status_query(
             active_only=active_only,
             device_type=device_type,
@@ -369,12 +285,7 @@ class DeviceRepository:
         ], total
 
     async def summarize_active_device_statuses(self) -> dict[str, dict[str, int]]:
-        """Repository method to summarize active device statuses.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query active device statuses from the database."""
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
         latest_status = func.coalesce(latest_ping.status, "unknown").label("latest_status")
@@ -404,12 +315,7 @@ class DeviceRepository:
         return summary
 
     async def _summarize_active_mikrotik_named_statuses(self) -> dict[str, int]:
-        """Summarize active mikrotik named statuses.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query active mikrotik named statuses from the database."""
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
         latest_status = func.coalesce(latest_ping.status, "unknown").label("latest_status")
@@ -437,15 +343,7 @@ class DeviceRepository:
         return {str(status or "unknown"): int(device_count) for status, device_count in rows}
 
     async def summarize_device_status_counts(self, *, active_only: bool = False) -> dict[str, int]:
-        """Repository method to summarize device status counts.
-
-        Args:
-            active_only: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query device status counts from the database."""
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
         latest_status = func.coalesce(latest_ping.status, "unknown").label("latest_status")
@@ -468,15 +366,7 @@ class DeviceRepository:
         return {str(status or "unknown"): int(device_count) for status, device_count in rows}
 
     async def latest_device_check_at(self, *, active_only: bool = False) -> object | None:
-        """Repository method to return latest device check at.
-
-        Args:
-            active_only: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Return latest latest device check at used by device inventory and status."""
         latest_ping_metrics = self._latest_ping_metrics_subquery()
         latest_ping = aliased(Metric)
         query = (
@@ -497,18 +387,7 @@ class DeviceRepository:
         latest_status: str | list[str] | tuple[str, ...] | None = None,
         search: str | None = None,
     ) -> int:
-        """Repository method to count device status rows.
-
-        Args:
-            active_only: Parameter input untuk routine ini.
-            device_type: Parameter input untuk routine ini.
-            latest_status: Parameter input untuk routine ini.
-            search: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query device status rows from the database."""
         query, _latest_ping = self._device_status_query(
             active_only=active_only,
             device_type=device_type,
@@ -519,16 +398,7 @@ class DeviceRepository:
         return int(await self.db.scalar(query) or 0)
 
     async def list_by_type(self, device_type: str, active_only: bool = True) -> list[Device]:
-        """Repository method to list by type.
-
-        Args:
-            device_type: Parameter input untuk routine ini.
-            active_only: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query by type from the database."""
         query: Select[tuple[Device]] = select(Device).where(Device.device_type == device_type)
         if active_only:
             query = query.where(Device.is_active.is_(True))
@@ -536,16 +406,7 @@ class DeviceRepository:
         return list((await self.db.scalars(query)).all())
 
     async def list_by_types(self, device_types: list[str], active_only: bool = True) -> list[Device]:
-        """Repository method to list by types.
-
-        Args:
-            device_types: Parameter input untuk routine ini.
-            active_only: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query by types from the database."""
         query: Select[tuple[Device]] = select(Device).where(Device.device_type.in_(device_types))
         if active_only:
             query = query.where(Device.is_active.is_(True))
@@ -553,47 +414,26 @@ class DeviceRepository:
         return list((await self.db.scalars(query)).all())
 
     async def get_by_id(self, device_id: int) -> Device | None:
-        """Repository method to get by id.
-
-        Args:
-            device_id: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Return get by id used by device inventory and status."""
         return await self.db.get(Device, device_id)
 
     async def get_by_ip_address(self, ip_address: str) -> Device | None:
-        """Repository method to get by IP address.
-
-        Args:
-            ip_address: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Return get by ip address used by device inventory and status."""
         query: Select[tuple[Device]] = select(Device).where(Device.ip_address == ip_address)
         return (await self.db.scalars(query)).first()
 
-    async def upsert_devices(self, payloads: list[dict]) -> list[Device]:
-        """Repository method to upsert devices.
-
-        Args:
-            payloads: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+    async def upsert_devices(self, payloads: list[dict], *, commit: bool = True) -> list[Device]:
+        """Insert or update devices, leaving transaction ownership to the caller when requested."""
         if not payloads:
             return []
 
+        ip_addresses = [item["ip_address"] for item in payloads]
         existing = {
             device.ip_address: device
             for device in (
-                await self.db.scalars(select(Device).where(Device.ip_address.in_([item["ip_address"] for item in payloads])))
+                await self.db.scalars(
+                    select(Device).where(Device.ip_address.in_(ip_addresses))
+                )
             ).all()
         }
 
@@ -609,19 +449,12 @@ class DeviceRepository:
             devices.append(device)
 
         await self.db.flush()
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
         return devices
 
     async def create_device(self, payload: dict, *, commit: bool = True) -> Device:
-        """Repository method to create device.
-
-        Args:
-            payload: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Persist device changes in the database."""
         device = Device(**payload)
         self.db.add(device)
         await self.db.flush()
@@ -630,16 +463,7 @@ class DeviceRepository:
         return device
 
     async def update_device(self, device: Device, payload: dict, *, commit: bool = True) -> Device:
-        """Repository method to update device.
-
-        Args:
-            device: Parameter input untuk routine ini.
-            payload: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Persist device changes in the database."""
         for field, value in payload.items():
             setattr(device, field, value)
         await self.db.flush()
@@ -648,12 +472,7 @@ class DeviceRepository:
         return device
 
     async def delete_device(self, device: Device, *, commit: bool = True) -> None:
-        """Repository method to delete device.
-
-        Args:
-            device: Parameter input untuk routine ini.
-
-        """
+        """Persist device changes in the database."""
         device_id = device.id
         await self.db.execute(update(Alert).where(Alert.device_id == device_id).values(device_id=None))
         await self.db.execute(update(Incident).where(Incident.device_id == device_id).values(device_id=None))

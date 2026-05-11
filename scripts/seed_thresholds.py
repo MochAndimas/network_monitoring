@@ -1,7 +1,4 @@
-"""Define module logic for `scripts/seed_thresholds.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Command-line utility for seed thresholds."""
 
 SEED_THRESHOLDS = {
     "cpu_warning": 90,
@@ -11,6 +8,16 @@ SEED_THRESHOLDS = {
     "packet_loss_critical": 50,
     "jitter_warning": 30,
     "jitter_critical": 75,
+    "nas_ping_latency_warning": 50,
+    "nas_ping_latency_critical": 150,
+    "nas_packet_loss_warning": 2,
+    "nas_packet_loss_critical": 20,
+    "nas_jitter_warning": 20,
+    "nas_jitter_critical": 50,
+    "nas_system_temperature_warning": 65,
+    "nas_system_temperature_critical": 75,
+    "nas_disk_temperature_warning": 45,
+    "nas_disk_temperature_critical": 55,
     "dns_resolution_warning": 500,
     "http_response_warning": 1000,
 }

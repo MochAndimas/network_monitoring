@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/services/auth/admin.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Service-layer workflows for admin."""
 
 from __future__ import annotations
 
@@ -16,15 +13,7 @@ from .sessions import revoke_all_sessions_for_user, revoke_other_sessions_for_us
 
 
 async def list_users_for_admin(db: AsyncSession) -> list[User]:
-    """Return paged user rows visible to administrative callers.
-
-    Args:
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """List users for admin in the service layer."""
     rows = await db.scalars(select(User).order_by(User.username.asc()))
     return list(rows.all())
 
@@ -36,20 +25,9 @@ async def create_user_for_admin(
     full_name: str,
     password: str,
     role: str,
+    commit: bool = True,
 ) -> User:
-    """Create a user account and enforce role/password policy constraints.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        username: Parameter input untuk routine ini.
-        full_name: Parameter input untuk routine ini.
-        password: Parameter input untuk routine ini.
-        role: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Create user for admin in the service layer."""
     normalized_username = username.strip().lower()
     existing = await db.scalar(select(User).where(User.username == normalized_username))
     if existing is not None:
@@ -64,8 +42,10 @@ async def create_user_for_admin(
         password_changed_at=utcnow(),
     )
     db.add(user)
-    await db.commit()
-    await db.refresh(user)
+    await db.flush()
+    if commit:
+        await db.commit()
+        await db.refresh(user)
     return user
 
 
@@ -77,21 +57,9 @@ async def update_user_for_admin(
     role: str | None = None,
     is_active: bool | None = None,
     disabled_reason: str | None = None,
+    commit: bool = True,
 ) -> User:
-    """Update account profile, role, and activation fields for a user.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        user_id: Parameter input untuk routine ini.
-        full_name: Parameter input untuk routine ini.
-        role: Parameter input untuk routine ini.
-        is_active: Parameter input untuk routine ini.
-        disabled_reason: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Update user for admin in the service layer."""
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -107,35 +75,35 @@ async def update_user_for_admin(
         else:
             user.disabled_at = utcnow()
             user.disabled_reason = (disabled_reason or "Disabled by admin").strip()[:255]
-            await revoke_all_sessions_for_user(db, user_id=user.id)
+            await revoke_all_sessions_for_user(db, user_id=user.id, commit=False)
     elif disabled_reason is not None and user.disabled_at is not None:
         user.disabled_reason = disabled_reason.strip()[:255]
-    await db.commit()
-    await db.refresh(user)
+    await db.flush()
+    if commit:
+        await db.commit()
+        await db.refresh(user)
     return user
 
 
-async def reset_user_password_for_admin(db: AsyncSession, *, user_id: int, new_password: str) -> User:
-    """Reset user password and rotate credential state as needed.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        user_id: Parameter input untuk routine ini.
-        new_password: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+async def reset_user_password_for_admin(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    new_password: str,
+    commit: bool = True,
+) -> User:
+    """Reset a user's password and revoke sessions in one transaction."""
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     validate_password_strength(new_password, username=user.username, full_name=user.full_name)
     user.password_hash = hash_password(new_password)
     user.password_changed_at = utcnow()
-    await db.commit()
-    await revoke_all_sessions_for_user(db, user_id=user.id)
-    await db.refresh(user)
+    await revoke_all_sessions_for_user(db, user_id=user.id, commit=False)
+    await db.flush()
+    if commit:
+        await db.commit()
+        await db.refresh(user)
     return user
 
 
@@ -146,20 +114,9 @@ async def change_password_for_user(
     current_password: str,
     new_password: str,
     current_jwt_id: str | None,
+    commit: bool = True,
 ) -> User:
-    """Change password for a user after validating old credentials.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        user_id: Parameter input untuk routine ini.
-        current_password: Parameter input untuk routine ini.
-        new_password: Parameter input untuk routine ini.
-        current_jwt_id: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Change a user's own password and revoke other sessions atomically."""
     user = await db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -168,8 +125,15 @@ async def change_password_for_user(
     validate_password_strength(new_password, username=user.username, full_name=user.full_name)
     user.password_hash = hash_password(new_password)
     user.password_changed_at = utcnow()
-    await db.commit()
-    await revoke_other_sessions_for_user(db, user_id=user.id, current_jwt_id=current_jwt_id)
-    await db.refresh(user)
+    await revoke_other_sessions_for_user(
+        db,
+        user_id=user.id,
+        current_jwt_id=current_jwt_id,
+        commit=False,
+    )
+    await db.flush()
+    if commit:
+        await db.commit()
+        await db.refresh(user)
     return user
 

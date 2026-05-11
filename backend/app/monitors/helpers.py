@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/monitors/helpers.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Monitoring collector helpers for helpers."""
 
 from __future__ import annotations
 
@@ -17,16 +14,7 @@ PING_SEMAPHORE = asyncio.Semaphore(max(settings.ping_concurrency_limit, 1))
 
 
 def build_ping_metric(device_id: int, latency_seconds: float | None) -> dict:
-    """Build ping metric as part of monitoring collection workflows.
-
-    Args:
-        device_id: Parameter input untuk routine ini.
-        latency_seconds: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build ping metric for monitoring collection."""
     checked_at = utcnow()
     if latency_seconds is None:
         return {
@@ -49,16 +37,7 @@ def build_ping_metric(device_id: int, latency_seconds: float | None) -> dict:
 
 
 def build_ping_quality_metrics(device_id: int, samples: list[float | None]) -> list[dict]:
-    """Build ping quality metrics as part of monitoring collection workflows.
-
-    Args:
-        device_id: Parameter input untuk routine ini.
-        samples: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build ping quality metrics for monitoring collection."""
     checked_at = utcnow()
     sample_count = len(samples)
     lost_count = sum(sample is None for sample in samples)
@@ -88,43 +67,19 @@ def build_ping_quality_metrics(device_id: int, samples: list[float | None]) -> l
 
 
 async def collect_ping_samples(ip_address: str) -> list[float | None]:
-    """Collect ping samples as part of monitoring collection workflows.
-
-    Args:
-        ip_address: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Collect ping samples for monitoring collection."""
     sample_count = max(settings.ping_sample_count, 1)
     return list(await asyncio.gather(*[safe_ping(ip_address) for _ in range(sample_count)]))
 
 
 def latest_successful_ping(samples: list[float | None]) -> float | None:
-    """Return latest successful ping as part of monitoring collection workflows.
-
-    Args:
-        samples: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return latest latest successful ping used by monitoring collection."""
     successful_samples = [sample for sample in samples if sample is not None]
     return successful_samples[-1] if successful_samples else None
 
 
 async def safe_ping(ip_address: str) -> float | None:
-    """Return safe ping as part of monitoring collection workflows.
-
-    Args:
-        ip_address: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Safely return safe ping for monitoring collection."""
     try:
         async with PING_SEMAPHORE:
             return await asyncio.to_thread(ping, ip_address, timeout=int(settings.ping_timeout_seconds))
@@ -133,16 +88,7 @@ async def safe_ping(ip_address: str) -> float | None:
 
 
 async def bounded_gather(coroutines, *, limit: int | None = None) -> list:
-    """Return bounded gather as part of monitoring collection workflows.
-
-    Args:
-        coroutines: Parameter input untuk routine ini.
-        limit: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Run bounded gather for monitoring collection."""
     coroutines = list(coroutines)
     if not coroutines:
         return []
@@ -157,15 +103,7 @@ async def bounded_gather(coroutines, *, limit: int | None = None) -> list:
 
 
 def _calculate_jitter_ms(samples: list[float]) -> float | None:
-    """Perform calculate jitter ms.
-
-    Args:
-        samples: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return calculate jitter ms for monitoring collection."""
     if len(samples) < 2:
         return 0.0 if samples else None
 

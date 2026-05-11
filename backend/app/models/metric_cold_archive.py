@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/models/metric_cold_archive.py`.
-
-This module contains project-specific implementation details.
-"""
+"""SQLAlchemy model definitions for metric cold archive records."""
 
 from __future__ import annotations
 
@@ -19,10 +16,7 @@ if TYPE_CHECKING:
 
 
 class MetricColdArchive(Base):
-    """Perform MetricColdArchive.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """SQLAlchemy ORM model for MetricColdArchive records."""
     __tablename__ = "metric_cold_archives"
     __table_args__ = (
         UniqueConstraint(

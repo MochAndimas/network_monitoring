@@ -1,7 +1,4 @@
-"""Define module logic for `dashboard/pages/4_Devices.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Streamlit dashboard helpers for 4 Devices."""
 
 from urllib.parse import urlencode
 from typing import Any
@@ -36,38 +33,17 @@ type_label_by_value = {value: label for label, value in type_labels.items()}
 
 
 def _clear_cached_gets() -> None:
-    """Perform clear cached gets.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Clear cached gets for the dashboard UI."""
     st.cache_data.clear()
 
 
 def _device_type_label(device_type: str) -> str:
-    """Perform device type label.
-
-    Args:
-        device_type: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return device type label for device inventory and status."""
     return str(type_label_by_value.get(device_type, device_type.replace("_", " ").title()))
 
 
 def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
-    """Perform prepare manage frame.
-
-    Args:
-        rows: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Prepare manage frame for the dashboard UI."""
     dataframe = pd.DataFrame(rows)
     if dataframe.empty:
         return dataframe
@@ -87,12 +63,7 @@ def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
 
 @st.dialog("Ubah Device")
 def _render_edit_device_dialog(device: dict) -> None:
-    """Render edit device dialog.
-
-    Args:
-        device: Parameter input untuk routine ini.
-
-    """
+    """Render edit device dialog for the dashboard UI."""
     edit_key_prefix = f"edit_device_{device['id']}"
     type_options = list(type_labels.keys())
     existing_type_label = _device_type_label(str(device.get("device_type") or ""))
@@ -135,12 +106,7 @@ def _render_edit_device_dialog(device: dict) -> None:
 
 @st.dialog("Hapus Device")
 def _render_delete_device_dialog(device: dict) -> None:
-    """Render delete device dialog.
-
-    Args:
-        device: Parameter input untuk routine ini.
-
-    """
+    """Render delete device dialog for the dashboard UI."""
     st.warning(f"Hapus device `{device['name']}` ({device['ip_address']})?")
     st.caption("Metric device ini akan ikut dihapus. Alert dan incident lama tetap disimpan tanpa relasi device.")
     confirm = st.text_input("Ketik DELETE untuk konfirmasi", key=f"delete_device_{device['id']}_confirm")

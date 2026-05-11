@@ -11,12 +11,6 @@ from scripts.observability_payload_smoke import (
 
 
 def test_parse_metric_lines_extracts_labels_and_values():
-    """Validate that parse metric lines extracts labels and values.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     metrics_text = """
     # HELP sample
     network_monitoring_api_payload_requests_total{endpoint="/devices/paged",scope="all"} 2
@@ -32,12 +26,6 @@ def test_parse_metric_lines_extracts_labels_and_values():
 
 
 def test_find_missing_request_coverage_reports_unseen_endpoint():
-    """Validate that find missing request coverage reports unseen endpoint.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     metrics_text = """
     network_monitoring_api_payload_requests_total{endpoint="/devices/paged",scope="all"} 1
     """
@@ -46,12 +34,6 @@ def test_find_missing_request_coverage_reports_unseen_endpoint():
 
 
 def test_find_missing_rows_coverage_requires_items_section():
-    """Validate that find missing rows coverage requires items section.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     metrics_text = """
     network_monitoring_api_payload_rows_total{endpoint="/devices/paged",scope="all",section="items"} 100
     network_monitoring_api_payload_rows_total{endpoint="/incidents/paged",scope="active",section="summary"} 10

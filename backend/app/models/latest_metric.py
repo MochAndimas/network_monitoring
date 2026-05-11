@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/models/latest_metric.py`.
-
-This module contains project-specific implementation details.
-"""
+"""SQLAlchemy model definitions for latest metric records."""
 
 from datetime import datetime
 
@@ -12,10 +9,7 @@ from ..db.base import Base
 
 
 class LatestMetric(Base):
-    """Perform LatestMetric.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """SQLAlchemy ORM model for LatestMetric records."""
     __tablename__ = "latest_metrics"
     __table_args__ = (
         UniqueConstraint("device_id", "metric_name", name="uq_latest_metrics_device_metric"),

@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/services/auth/observability.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Service-layer workflows for observability."""
 
 from __future__ import annotations
 
@@ -16,15 +13,7 @@ from ...models.user import AuthLoginAttempt, AuthSession
 
 
 async def build_auth_observability_summary(db: AsyncSession) -> dict[str, int]:
-    """Build auth-domain observability summary statistics.
-
-    Args:
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build auth observability summary in the service layer."""
     window_start = utcnow() - timedelta(minutes=settings.auth_login_rate_limit_window_minutes)
     now = utcnow()
     active_sessions = await db.scalar(

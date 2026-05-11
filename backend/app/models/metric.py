@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/models/metric.py`.
-
-This module contains project-specific implementation details.
-"""
+"""SQLAlchemy model definitions for metric records."""
 
 from __future__ import annotations
 
@@ -19,10 +16,7 @@ if TYPE_CHECKING:
 
 
 class Metric(Base):
-    """Perform Metric.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """SQLAlchemy ORM model for Metric records."""
     __tablename__ = "metrics"
     __table_args__ = (
         Index("ix_metrics_history_lookup", "device_id", "metric_name", "checked_at"),

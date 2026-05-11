@@ -1,18 +1,10 @@
-"""Define module logic for `dashboard/components/sidebar.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Streamlit dashboard helpers for sidebar."""
 
 import streamlit.components.v1 as components
 
 
 def collapse_sidebar_on_page_load() -> None:
-    """Collapse sidebar on initial page load.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return collapse sidebar on page load used by the dashboard UI."""
     components.html(
         """
         <script>

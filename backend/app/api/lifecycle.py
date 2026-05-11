@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/api/lifecycle.py`.
-
-This module contains project-specific implementation details.
-"""
+"""api support code for lifecycle."""
 
 from __future__ import annotations
 
@@ -69,16 +66,7 @@ LEGACY_NON_PAGED_DEPRECATION_PLAN: dict[str, LegacyEndpointDeprecation] = {
 
 
 def _deprecation_phase(*, plan: LegacyEndpointDeprecation, today: date) -> str:
-    """Perform deprecation phase.
-
-    Args:
-        plan: Parameter input untuk routine ini.
-        today: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return deprecation phase for the application."""
     if today >= plan.removal_on:
         return "removal"
     if today >= plan.warning_window_starts_on:

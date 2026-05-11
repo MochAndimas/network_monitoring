@@ -24,12 +24,6 @@ from tests.test_utils import run
 
 
 def _require_mysql() -> None:
-    """Perform require mysql.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     if engine.dialect.name != "mysql":
         pytest.skip("MySQL integration tests require mysql dialect")
     try:
@@ -39,16 +33,11 @@ def _require_mysql() -> None:
 
 
 def test_mysql_monitoring_pipeline_guard_is_exclusive_for_nonblocking_acquire():
-    """Validate that mysql monitoring pipeline guard is exclusive for nonblocking acquire.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     _require_mysql()
 
     original_lock_name = settings.monitoring_lock_name
     settings.monitoring_lock_name = f"network_monitoring.test.lock.{uuid.uuid4().hex}"
+    run(engine.dispose())
 
     async def scenario() -> None:
         async with monitoring_pipeline_guard(wait=False) as first_acquired:
@@ -63,17 +52,34 @@ def test_mysql_monitoring_pipeline_guard_is_exclusive_for_nonblocking_acquire():
         run(engine.dispose())
 
 
-def test_mysql_cleanup_monitoring_data_rolls_back_when_transaction_fails():
-    """Validate that mysql cleanup monitoring data rolls back when transaction fails.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+def test_mysql_monitoring_pipeline_guard_allows_independent_scopes():
     _require_mysql()
 
     original_lock_name = settings.monitoring_lock_name
     settings.monitoring_lock_name = f"network_monitoring.test.lock.{uuid.uuid4().hex}"
+    run(engine.dispose())
+
+    async def scenario() -> None:
+        async with monitoring_pipeline_guard(wait=False, scope="metrics:internet") as first_acquired:
+            assert first_acquired is True
+            async with monitoring_pipeline_guard(wait=False, scope="metrics:internet") as same_scope_acquired:
+                assert same_scope_acquired is False
+            async with monitoring_pipeline_guard(wait=False, scope="metrics:server") as other_scope_acquired:
+                assert other_scope_acquired is True
+
+    try:
+        run(scenario())
+    finally:
+        settings.monitoring_lock_name = original_lock_name
+        run(engine.dispose())
+
+
+def test_mysql_cleanup_monitoring_data_rolls_back_when_transaction_fails():
+    _require_mysql()
+
+    original_lock_name = settings.monitoring_lock_name
+    settings.monitoring_lock_name = f"network_monitoring.test.lock.{uuid.uuid4().hex}"
+    run(engine.dispose())
 
     async def scenario() -> None:
         unique_suffix = utcnow().strftime("%Y%m%d%H%M%S%f")

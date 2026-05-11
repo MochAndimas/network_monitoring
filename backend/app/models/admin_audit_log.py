@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/models/admin_audit_log.py`.
-
-This module contains project-specific implementation details.
-"""
+"""SQLAlchemy model definitions for admin audit log records."""
 
 from datetime import datetime
 
@@ -13,10 +10,7 @@ from ..core.time import utcnow
 
 
 class AdminAuditLog(Base):
-    """Perform AdminAuditLog.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """SQLAlchemy ORM model for AdminAuditLog records."""
     __tablename__ = "admin_audit_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

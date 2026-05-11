@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/models/alert.py`.
-
-This module contains project-specific implementation details.
-"""
+"""SQLAlchemy model definitions for alert records."""
 
 from __future__ import annotations
 
@@ -19,10 +16,7 @@ if TYPE_CHECKING:
 
 
 class Alert(Base):
-    """Perform Alert.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """SQLAlchemy ORM model for Alert records."""
     __tablename__ = "alerts"
     __table_args__ = (
         Index("ix_alerts_status_created_at", "status", "created_at"),

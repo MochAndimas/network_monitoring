@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/repositories/incident_repository.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Database query helpers for incident repository data."""
 
 from sqlalchemy import Select, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,41 +10,40 @@ from ..models.incident import Incident
 
 
 class IncidentRepository:
-    """Perform IncidentRepository.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Database access object for Incident records."""
     def __init__(self, db: AsyncSession):
-        """Perform init.
-
-        Args:
-            db: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Initialize the object with its runtime dependencies."""
         self.db = db
 
     async def list_active_incidents(self) -> list[Incident]:
-        """Repository method to list active incidents.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query active incidents from the database."""
         query: Select[tuple[Incident]] = (
             select(Incident).where(Incident.status == "active").order_by(desc(Incident.started_at), desc(Incident.id))
         )
         return list((await self.db.scalars(query)).all())
 
+    async def list_active_incidents_by_device_ids(self, device_ids: set[int | None]) -> list[Incident]:
+        """Return active incidents for devices currently under alert evaluation."""
+        if not device_ids:
+            return []
+        concrete_device_ids = {device_id for device_id in device_ids if device_id is not None}
+        conditions = []
+        if concrete_device_ids:
+            conditions.append(Incident.device_id.in_(concrete_device_ids))
+        if None in device_ids:
+            conditions.append(Incident.device_id.is_(None))
+        if not conditions:
+            return []
+        query: Select[tuple[Incident]] = (
+            select(Incident)
+            .where(Incident.status == "active")
+            .where(or_(*conditions))
+            .order_by(desc(Incident.started_at), desc(Incident.id))
+        )
+        return list((await self.db.scalars(query)).all())
+
     async def count_active_incidents(self) -> int:
-        """Repository method to count active incidents.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query active incidents from the database."""
         query = select(func.count()).select_from(Incident).where(Incident.status == "active")
         return int(await self.db.scalar(query) or 0)
 
@@ -59,18 +55,7 @@ class IncidentRepository:
         offset: int = 0,
         search: str | None = None,
     ) -> list[dict]:
-        """Repository method to list incident rows.
-
-        Args:
-            status: Parameter input untuk routine ini.
-            limit: Parameter input untuk routine ini.
-            offset: Parameter input untuk routine ini.
-            search: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query incident rows from the database."""
         query = select(Incident, Device.name).outerjoin(Device, Device.id == Incident.device_id)
         if status:
             query = query.where(Incident.status == status)
@@ -110,34 +95,14 @@ class IncidentRepository:
         offset: int = 0,
         search: str | None = None,
     ) -> tuple[list[dict], int]:
-        """Repository method to list incident rows paged.
-
-        Args:
-            status: Parameter input untuk routine ini.
-            limit: Parameter input untuk routine ini.
-            offset: Parameter input untuk routine ini.
-            search: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query incident rows paged from the database."""
         rows = await self.list_incident_rows(status=status, limit=limit, offset=offset, search=search)
         if offset == 0 and len(rows) < limit:
             return rows, len(rows)
         return rows, await self.count_incident_rows(status=status, search=search)
 
     async def count_incident_rows(self, *, status: str | None = None, search: str | None = None) -> int:
-        """Repository method to count incident rows.
-
-        Args:
-            status: Parameter input untuk routine ini.
-            search: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Query incident rows from the database."""
         query = select(func.count()).select_from(Incident)
         if status:
             query = query.where(Incident.status == status)
@@ -192,16 +157,7 @@ class IncidentRepository:
         return summaries
 
     async def create_incident(self, payload: dict, *, commit: bool = True) -> Incident:
-        """Repository method to create incident.
-
-        Args:
-            payload: Parameter input untuk routine ini.
-            commit: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Persist incident changes in the database."""
         incident = Incident(**payload)
         self.db.add(incident)
         await self.db.flush()
@@ -211,17 +167,7 @@ class IncidentRepository:
         return incident
 
     async def resolve_incident(self, incident: Incident, ended_at, *, commit: bool = True) -> Incident:
-        """Repository method to return resolve incident.
-
-        Args:
-            incident: Parameter input untuk routine ini.
-            ended_at: Parameter input untuk routine ini.
-            commit: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Persist incident changes in the database."""
         incident.status = "resolved"
         incident.ended_at = ended_at
         await self.db.flush()

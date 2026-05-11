@@ -1,7 +1,4 @@
-"""Define module logic for `scripts/nonfunctional_report.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Command-line utility for nonfunctional report."""
 
 from __future__ import annotations
 
@@ -15,10 +12,7 @@ from typing import Any
 
 @dataclass
 class GateStatus:
-    """Perform GateStatus.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Helper object used by operator tooling."""
 
     name: str
     passed: bool
@@ -26,15 +20,7 @@ class GateStatus:
 
 
 def _load_json(path: Path) -> dict[str, Any]:
-    """Load json.
-
-    Args:
-        path: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Load json for the command-line workflow."""
     if not path.exists():
         return {}
     try:
@@ -45,75 +31,31 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _top_latency_rows(results: list[dict[str, Any]], metric_key: str) -> list[dict[str, Any]]:
-    """Perform top latency rows.
-
-    Args:
-        results: Parameter input untuk routine ini.
-        metric_key: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return top latency rows for the command-line workflow."""
     return sorted(results, key=lambda item: float(item.get(metric_key) or 0.0), reverse=True)[:3]
 
 
 def _ratio_percentage(passed_count: int, total_count: int) -> float:
-    """Perform ratio percentage.
-
-    Args:
-        passed_count: Parameter input untuk routine ini.
-        total_count: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return ratio percentage for the command-line workflow."""
     if total_count <= 0:
         return 0.0
     return (float(passed_count) / float(total_count)) * 100.0
 
 
 def _week_range(reference_day: date) -> tuple[date, date]:
-    """Perform week range.
-
-    Args:
-        reference_day: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return week range for the command-line workflow."""
     week_start = reference_day - timedelta(days=reference_day.weekday())
     week_end = week_start + timedelta(days=6)
     return week_start, week_end
 
 
 def _render_gate_row(gate: GateStatus) -> str:
-    """Render gate row.
-
-    Args:
-        gate: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Render gate row for the command-line workflow."""
     return f"| {gate.name} | {'PASS' if gate.passed else 'FAIL'} | {gate.details} |"
 
 
 def _render_top_latency_lines(title: str, rows: list[dict[str, Any]], metric_key: str) -> list[str]:
-    """Render top latency lines.
-
-    Args:
-        title: Parameter input untuk routine ini.
-        rows: Parameter input untuk routine ini.
-        metric_key: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Render top latency lines for the command-line workflow."""
     lines = [f"### {title}"]
     if not rows:
         lines.append("- data tidak tersedia")
@@ -134,18 +76,7 @@ def _build_triage_markdown(
     observability_payload: dict[str, Any],
     generated_at: datetime,
 ) -> str:
-    """Build triage markdown.
-
-    Args:
-        benchmark_payload: Parameter input untuk routine ini.
-        concurrency_payload: Parameter input untuk routine ini.
-        observability_payload: Parameter input untuk routine ini.
-        generated_at: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build triage markdown for the command-line workflow."""
     benchmark_failures = list(benchmark_payload.get("failures") or [])
     concurrency_failures = list(concurrency_payload.get("failures") or [])
     missing_requests = list(observability_payload.get("missing_requests") or [])
@@ -211,18 +142,7 @@ def _build_sla_summary(
     observability_payload: dict[str, Any],
     generated_day: date,
 ) -> dict[str, Any]:
-    """Build sla summary.
-
-    Args:
-        benchmark_payload: Parameter input untuk routine ini.
-        concurrency_payload: Parameter input untuk routine ini.
-        observability_payload: Parameter input untuk routine ini.
-        generated_day: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build sla summary for the command-line workflow."""
     benchmark_results = list(benchmark_payload.get("results") or [])
     concurrency_results = list(concurrency_payload.get("results") or [])
     benchmark_failures = list(benchmark_payload.get("failures") or [])
@@ -297,15 +217,7 @@ def _build_sla_summary(
 
 
 def _build_weekly_sla_markdown(sla_summary: dict[str, Any]) -> str:
-    """Build weekly sla markdown.
-
-    Args:
-        sla_summary: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build weekly sla markdown for the command-line workflow."""
     signals = dict(sla_summary.get("signals") or {})
     counts = dict(sla_summary.get("raw_counts") or {})
     lines = [
@@ -338,36 +250,19 @@ def _build_weekly_sla_markdown(sla_summary: dict[str, Any]) -> str:
 
 
 def _write_text(path: Path, payload: str) -> None:
-    """Perform write text.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        payload: Parameter input untuk routine ini.
-
-    """
+    """Write text for the command-line workflow."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(payload, encoding="utf-8")
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    """Perform write json.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        payload: Parameter input untuk routine ini.
-
-    """
+    """Write json for the command-line workflow."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
 
 
 def main() -> None:
-    """Run the module entrypoint.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Run the command-line workflow from parsed arguments."""
     parser = argparse.ArgumentParser(description="Generate non-functional triage and weekly SLA reports.")
     parser.add_argument("--artifacts-dir", default=".ci_artifacts", help="Directory containing JSON smoke artifacts.")
     parser.add_argument(

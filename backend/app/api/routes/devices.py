@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/api/routes/devices.py`.
-
-This module contains project-specific implementation details.
-"""
+"""FastAPI routes for devices endpoints."""
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,12 +24,7 @@ router = APIRouter()
 
 @router.get("/meta/types", response_model=list[DeviceTypeOption])
 async def list_device_types() -> list[DeviceTypeOption]:
-    """List available device-type options for filtering and forms.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Handle the device types endpoint."""
     return [
         DeviceTypeOption(value=device_type, label=device_type.replace("_", " ").title())
         for device_type in DEVICE_TYPE_CHOICES
@@ -44,16 +36,7 @@ async def get_device_status_summary(
     active_only: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
-    """Return aggregate status totals grouped by device health state.
-
-    Args:
-        active_only: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get device status summary used by device inventory and status."""
     return await DeviceRepository(db).summarize_device_status_counts(active_only=active_only)
 
 
@@ -65,19 +48,7 @@ async def list_device_options(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[DeviceOption]:
-    """List lightweight device options for selectors/autocomplete widgets.
-
-    Args:
-        active_only: Parameter input untuk routine ini.
-        search: Parameter input untuk routine ini.
-        limit: Parameter input untuk routine ini.
-        offset: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Handle the device options endpoint."""
     return [
         DeviceOption(**item)
         for item in await DeviceRepository(db).list_device_options(
@@ -100,22 +71,7 @@ async def list_devices(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[DeviceListItem]:
-    """Return devices using the legacy non-paginated contract.
-
-    Args:
-        response: Parameter input untuk routine ini.
-        active_only: Parameter input untuk routine ini.
-        device_type: Parameter input untuk routine ini.
-        latest_status: Parameter input untuk routine ini.
-        search: Parameter input untuk routine ini.
-        limit: Parameter input untuk routine ini.
-        offset: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Handle the devices endpoint."""
     apply_legacy_deprecation_headers(response, legacy_endpoint="/devices")
     rows = await list_device_rows_filtered(
         db,
@@ -139,21 +95,7 @@ async def list_devices_paged(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> DeviceListPage:
-    """Return devices with filters and pagination metadata.
-
-    Args:
-        active_only: Parameter input untuk routine ini.
-        device_type: Parameter input untuk routine ini.
-        latest_status: Parameter input untuk routine ini.
-        search: Parameter input untuk routine ini.
-        limit: Parameter input untuk routine ini.
-        offset: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Handle the devices paged endpoint."""
     rows, total = await DeviceRepository(db).list_device_status_rows_paged(
         active_only=active_only,
         device_type=device_type,
@@ -180,16 +122,7 @@ async def list_devices_paged(
 
 @router.get("/{device_id}", response_model=DeviceListItem)
 async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> DeviceListItem:
-    """Return one device by identifier.
-
-    Args:
-        device_id: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get device used by device inventory and status."""
     return DeviceListItem(**await get_device_row(db, device_id))
 
 
@@ -200,18 +133,7 @@ async def create_device_endpoint(
     actor=Depends(require_write_access),
     db: AsyncSession = Depends(get_db),
 ) -> DeviceListItem:
-    """Create a new managed device record.
-
-    Args:
-        payload: Parameter input untuk routine ini.
-        request: Parameter input untuk routine ini.
-        actor: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Handle the device endpoint endpoint."""
     try:
         created_device = await create_device(db, payload.model_dump(), commit=False)
         await record_admin_audit_log(
@@ -240,19 +162,7 @@ async def update_device_endpoint(
     actor=Depends(require_write_access),
     db: AsyncSession = Depends(get_db),
 ) -> DeviceListItem:
-    """Update an existing managed device record.
-
-    Args:
-        device_id: Parameter input untuk routine ini.
-        payload: Parameter input untuk routine ini.
-        request: Parameter input untuk routine ini.
-        actor: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Handle the device endpoint endpoint."""
     try:
         updated_device = await update_device(db, device_id, payload.model_dump(exclude_unset=True), commit=False)
         await record_admin_audit_log(
@@ -280,15 +190,7 @@ async def delete_device_endpoint(
     actor=Depends(require_write_access),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Delete a managed device record by identifier.
-
-    Args:
-        device_id: Parameter input untuk routine ini.
-        request: Parameter input untuk routine ini.
-        actor: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    """
+    """Handle the device endpoint endpoint."""
     try:
         existing = await get_device_row(db, device_id)
         await delete_device(db, device_id, commit=False)

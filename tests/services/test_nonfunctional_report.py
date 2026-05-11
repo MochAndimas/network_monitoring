@@ -16,24 +16,12 @@ from scripts.nonfunctional_report import (
 
 
 def test_week_range_returns_monday_to_sunday_window():
-    """Validate that week range returns monday to sunday window.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     week_start, week_end = _week_range(date(2026, 4, 24))
     assert week_start.isoformat() == "2026-04-20"
     assert week_end.isoformat() == "2026-04-26"
 
 
 def test_build_triage_markdown_includes_gate_table_and_checklist():
-    """Validate that build triage markdown includes gate table and checklist.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     benchmark_payload = {
         "results": [{"path": "/devices/paged", "p95_ms": 120.0, "max_ms": 240.0}],
         "failures": [],
@@ -61,12 +49,6 @@ def test_build_triage_markdown_includes_gate_table_and_checklist():
 
 
 def test_build_sla_summary_calculates_baseline_percentages():
-    """Validate that build sla summary calculates baseline percentages.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     benchmark_payload = {
         "thresholds": {"max_p95_ms": 1500.0, "max_max_ms": 2500.0},
         "results": [
@@ -104,12 +86,6 @@ def test_build_sla_summary_calculates_baseline_percentages():
 
 
 def test_build_weekly_sla_markdown_renders_expected_sections():
-    """Validate that build weekly sla markdown renders expected sections.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     payload = {
         "generated_day": "2026-04-24",
         "week_start": "2026-04-20",

@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/services/auth/sessions.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Service-layer workflows for sessions."""
 
 from __future__ import annotations
 
@@ -16,17 +13,7 @@ from ...models.user import AuthLoginAttempt, AuthSession, User
 
 
 async def list_active_sessions_for_user(db: AsyncSession, *, user_id: int, current_jwt_id: str | None) -> list[AuthSession]:
-    """List active sessions for one user ordered by recency.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        user_id: Parameter input untuk routine ini.
-        current_jwt_id: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """List active sessions for user in the service layer."""
     rows = await db.scalars(
         select(AuthSession)
         .where(
@@ -40,18 +27,14 @@ async def list_active_sessions_for_user(db: AsyncSession, *, user_id: int, curre
     return sessions
 
 
-async def revoke_other_sessions_for_user(db: AsyncSession, *, user_id: int, current_jwt_id: str | None) -> int:
-    """Revoke all sessions except the current one for a user.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        user_id: Parameter input untuk routine ini.
-        current_jwt_id: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+async def revoke_other_sessions_for_user(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    current_jwt_id: str | None,
+    commit: bool = True,
+) -> int:
+    """Revoke active user sessions while preserving the caller's current session."""
     current_time = utcnow()
     result = await db.execute(
         select(AuthSession).where(
@@ -66,21 +49,15 @@ async def revoke_other_sessions_for_user(db: AsyncSession, *, user_id: int, curr
             continue
         session.revoked_at = current_time
         revoked += 1
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return revoked
 
 
 async def cleanup_auth_data(db: AsyncSession, *, commit: bool = True) -> dict[str, int]:
-    """Delete expired session and login-attempt records by retention policy.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        commit: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Clean up auth data in the service layer."""
     now = utcnow()
     session_cutoff = now - timedelta(days=settings.auth_session_retention_days)
     attempt_cutoff = now - timedelta(days=settings.auth_login_attempt_retention_days)
@@ -110,17 +87,7 @@ async def list_sessions_for_admin(
     username: str | None = None,
     include_revoked: bool = False,
 ) -> list[tuple[AuthSession, User]]:
-    """List user sessions for admin management workflows.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        username: Parameter input untuk routine ini.
-        include_revoked: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """List sessions for admin in the service layer."""
     query = (
         select(AuthSession, User)
         .join(User, User.id == AuthSession.user_id)
@@ -134,17 +101,8 @@ async def list_sessions_for_admin(
     return [(session, user) for session, user in rows.all()]
 
 
-async def revoke_all_sessions_for_user(db: AsyncSession, *, user_id: int) -> int:
-    """Revoke every active session for a user.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        user_id: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+async def revoke_all_sessions_for_user(db: AsyncSession, *, user_id: int, commit: bool = True) -> int:
+    """Revoke every active session for a user."""
     current_time = utcnow()
     result = await db.execute(
         select(AuthSession).where(
@@ -156,5 +114,8 @@ async def revoke_all_sessions_for_user(db: AsyncSession, *, user_id: int) -> int
     for session in result.scalars().all():
         session.revoked_at = current_time
         revoked += 1
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return revoked

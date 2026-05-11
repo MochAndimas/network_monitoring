@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/models/device.py`.
-
-This module contains project-specific implementation details.
-"""
+"""SQLAlchemy model definitions for device records."""
 
 from __future__ import annotations
 
@@ -19,10 +16,7 @@ if TYPE_CHECKING:
 
 
 class Device(Base):
-    """Perform Device.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """SQLAlchemy ORM model for Device records."""
     __tablename__ = "devices"
     __table_args__ = (
         Index("ix_devices_active_type_name", "is_active", "device_type", "name"),

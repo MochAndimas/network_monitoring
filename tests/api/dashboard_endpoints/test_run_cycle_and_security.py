@@ -12,7 +12,9 @@ from .common import (
     client_context,
     DeviceRepository,
     empty_checks,
+    Incident,
     run,
+    select,
     timedelta,
     utcnow,
 )
@@ -110,8 +112,8 @@ def test_telegram_resolved_messages_include_alert_duration():
     ]
 
 
-def test_stale_active_telegram_event_is_sent_as_resolved(monkeypatch):
-    """Validate stale active Telegram events are refreshed before sending."""
+def test_stale_active_telegram_event_is_dropped_after_resolve(monkeypatch):
+    """Validate stale active Telegram events do not become first-time resolved noise."""
     sent_messages = []
 
     async def fake_send_telegram_alert(message):
@@ -162,10 +164,32 @@ def test_stale_active_telegram_event_is_sent_as_resolved(monkeypatch):
 
         run(scenario())
 
-    assert len(sent_messages) == 1
-    assert "[CRITICAL] ALERT RESOLVED" in sent_messages[0]
-    assert "Status: RESOLVED" in sent_messages[0]
-    assert "- high_packet_loss_critical: VoIP - 3 packet_loss reached 66.67%" in sent_messages[0]
+    assert sent_messages == []
+
+
+def test_telegram_events_are_ordered_active_before_resolved():
+    """Validate mixed Telegram batches present active state before resolved state."""
+    import backend.app.alerting.engine as engine_module
+
+    device = SimpleNamespace(id=1, name="AP4", ip_address="192.168.88.52", site="R. Server", device_type="access_point")
+    resolved_event = {
+        "action": "resolved",
+        "alert_id": 1,
+        "alert_type": "high_ping_latency_warning",
+        "severity": "warning",
+        "message": "AP4 ping latency reached 101.10ms",
+        "device": device,
+    }
+    active_event = {
+        "action": "active",
+        "alert_id": 2,
+        "alert_type": "device_down",
+        "severity": "critical",
+        "message": "AP4 is unreachable",
+        "device": device,
+    }
+
+    assert engine_module._order_telegram_events([resolved_event, active_event]) == [active_event, resolved_event]
 
 
 def test_telegram_events_are_deduped_by_alert_state(monkeypatch):
@@ -192,12 +216,6 @@ def test_telegram_events_are_deduped_by_alert_state(monkeypatch):
 
 
 def test_run_cycle_creates_alerts_and_incidents():
-    """Validate that run cycle creates alerts and incidents.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         internet_device_id = run(
             _seed_devices_and_metrics(
@@ -258,13 +276,68 @@ def test_run_cycle_creates_alerts_and_incidents():
         assert len(incidents_response.json()) == 1
         assert incidents_response.json()[0]["status"] == "active"
 
+
+def test_alert_evaluation_resolves_orphan_duplicate_incidents():
+    with client_context() as (_client, session_factory):
+        device = run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "Mikrotik Utama", "ip_address": "192.168.88.1", "device_type": "mikrotik"}],
+                lambda devices: [
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "jitter",
+                        "metric_value": "0.50",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow(),
+                    }
+                ],
+            )
+        )[0]
+
+        async def scenario():
+            from backend.app.alerting.engine import evaluate_alerts
+
+            async with session_factory() as db:
+                started_at = utcnow() - timedelta(minutes=5)
+                db.add_all(
+                    [
+                        Incident(
+                            device_id=device.id,
+                            status="active",
+                            summary="Mikrotik Utama jitter reached 88.29ms",
+                            started_at=started_at,
+                        ),
+                        Incident(
+                            device_id=device.id,
+                            status="active",
+                            summary="Mikrotik Utama jitter reached 66.55ms",
+                            started_at=started_at,
+                        ),
+                    ]
+                )
+                await db.commit()
+
+                notifications = await evaluate_alerts(db)
+                incidents = list((await db.scalars(select(Incident))).all())
+                return notifications, incidents
+
+        notifications, incidents = run(scenario())
+
+        assert [incident.status for incident in incidents] == ["resolved", "resolved"]
+        assert all(incident.ended_at is not None for incident in incidents)
+        assert notifications == [
+            {
+                "action": "resolved",
+                "alert_type": None,
+                "device_id": device.id,
+                "message": "Incident cleared because no active alerts remain",
+                "incident_action": "resolved",
+            }
+        ]
+
 def test_run_cycle_creates_ping_latency_alert():
-    """Validate that run cycle creates ping latency alert.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         internet_device_id = run(
             _seed_devices_and_metrics(
@@ -318,13 +391,52 @@ def test_run_cycle_creates_ping_latency_alert():
         assert alerts_payload[0]["alert_type"] == "high_ping_latency_critical"
         assert alerts_payload[0]["severity"] == "critical"
 
+
+def test_nas_snmp_status_metrics_create_alert_and_incident():
+    with client_context() as (client, session_factory):
+        run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "SSKB_NAS", "ip_address": "192.168.88.111", "device_type": "nas"}],
+                lambda devices: [
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "ping",
+                        "metric_value": "8.00",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow(),
+                    },
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "nas_disk:drive_1:status",
+                        "metric_value": "crashed",
+                        "status": "error",
+                        "unit": None,
+                        "checked_at": utcnow(),
+                    },
+                ],
+            )
+        )
+
+        import backend.app.alerting.engine as engine_module
+
+        async def scenario():
+            async with session_factory() as db:
+                return await engine_module.evaluate_alerts(db)
+
+        notifications = run(scenario())
+        alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+        incidents_response = client.get("/incidents?status=active", headers=API_HEADERS)
+
+        assert notifications[0]["alert_type"] == "nas_disk_status_problem"
+        assert alerts_response.status_code == 200
+        assert alerts_response.json()[0]["alert_type"] == "nas_disk_status_problem"
+        assert incidents_response.status_code == 200
+        assert len(incidents_response.json()) == 1
+
+
 def test_run_cycle_creates_mikrotik_metric_alerts():
-    """Validate that run cycle creates mikrotik metric alerts.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         mikrotik_device_id = run(
             _seed_devices_and_metrics(
@@ -355,7 +467,7 @@ def test_run_cycle_creates_mikrotik_metric_alerts():
                 {
                     "device_id": mikrotik_device_id,
                     "metric_name": "connected_clients",
-                    "metric_value": "150",
+                    "metric_value": "180",
                     "status": "ok",
                     "unit": "count",
                     "checked_at": checked_at,
@@ -363,7 +475,7 @@ def test_run_cycle_creates_mikrotik_metric_alerts():
                 {
                     "device_id": mikrotik_device_id,
                     "metric_name": "interface:ether1-wan:rx_mbps",
-                    "metric_value": "95.00",
+                    "metric_value": "260.00",
                     "status": "up",
                     "unit": "Mbps",
                     "checked_at": checked_at,
@@ -411,12 +523,6 @@ def test_run_cycle_creates_mikrotik_metric_alerts():
         assert len(incidents_response.json()) == 1
 
 def test_run_cycle_creates_internet_quality_alerts():
-    """Validate that run cycle creates internet quality alerts.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         internet_device_id = run(
             _seed_devices_and_metrics(
@@ -508,12 +614,6 @@ def test_run_cycle_creates_internet_quality_alerts():
 
 
 def test_run_cycle_uses_switch_specific_quality_thresholds():
-    """Validate switch quality alerts use stricter switch threshold values.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         switch_device_id = run(
             _seed_devices_and_metrics(
@@ -536,7 +636,7 @@ def test_run_cycle_uses_switch_specific_quality_thresholds():
                 {
                     "device_id": switch_device_id,
                     "metric_name": "ping",
-                    "metric_value": "25.00",
+                    "metric_value": "55.00",
                     "status": "up",
                     "unit": "ms",
                     "checked_at": now,
@@ -544,7 +644,7 @@ def test_run_cycle_uses_switch_specific_quality_thresholds():
                 {
                     "device_id": switch_device_id,
                     "metric_name": "packet_loss",
-                    "metric_value": "5.00",
+                    "metric_value": "6.00",
                     "status": "warning",
                     "unit": "%",
                     "checked_at": now,
@@ -552,7 +652,7 @@ def test_run_cycle_uses_switch_specific_quality_thresholds():
                 {
                     "device_id": switch_device_id,
                     "metric_name": "jitter",
-                    "metric_value": "15.00",
+                    "metric_value": "25.00",
                     "status": "warning",
                     "unit": "ms",
                     "checked_at": now,
@@ -584,12 +684,6 @@ def test_run_cycle_uses_switch_specific_quality_thresholds():
 
 
 def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monkeypatch):
-    """Validate voip ping/jitter stay local while packet loss and down notify Telegram.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     sent_messages = []
 
     async def fake_send_telegram_alert(message):
@@ -640,7 +734,7 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
                 ping_metric = {
                     "device_id": voip_device_id,
                     "metric_name": "ping",
-                    "metric_value": "250.00",
+                    "metric_value": "550.00",
                     "status": "up",
                     "unit": "ms",
                     "checked_at": now,
@@ -747,12 +841,6 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
 
 
 def test_run_cycle_creates_printer_alerts_and_incident():
-    """Validate that run cycle creates printer alerts and incident.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         printer_device_id = run(
             _seed_devices_and_metrics(
@@ -873,12 +961,6 @@ def test_run_cycle_creates_printer_alerts_and_incident():
 
 
 def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch):
-    """Validate printer quality alerts stay local while Telegram is filtered.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     sent_messages = []
 
     async def fake_send_telegram_alert(message):
@@ -920,7 +1002,7 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
                 {
                     "device_id": printer_device_id,
                     "metric_name": "ping",
-                    "metric_value": "timeout" if state["down"] else "250.00",
+                    "metric_value": "timeout" if state["down"] else "900.00",
                     "status": "down" if state["down"] else "up",
                     "unit": None if state["down"] else "ms",
                     "checked_at": now,
@@ -928,7 +1010,7 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
                 {
                     "device_id": printer_device_id,
                     "metric_name": "jitter",
-                    "metric_value": "90.00",
+                    "metric_value": "160.00",
                     "status": "warning",
                     "unit": "ms",
                     "checked_at": now,
@@ -1038,12 +1120,6 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
 
 
 def test_internal_api_key_protects_mutation_endpoints():
-    """Validate that internal api key protects mutation endpoints.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, _session_factory):
         unauthorized_device = client.post(
             "/devices",
@@ -1061,12 +1137,6 @@ def test_internal_api_key_protects_mutation_endpoints():
         assert authorized_device.status_code == 201
 
 def test_internal_api_key_scopes_split_write_and_ops_access():
-    """Validate that internal api key scopes split write and ops access.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     import backend.app.core.config as config_module
 
     original_internal_api_key = config_module.settings.internal_api_key
@@ -1108,12 +1178,6 @@ def test_internal_api_key_scopes_split_write_and_ops_access():
         config_module._parse_internal_api_key_map.cache_clear()
 
 def test_internal_api_key_protects_read_endpoints():
-    """Validate that internal api key protects read endpoints.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, _session_factory):
         unauthorized_devices = client.get("/devices")
         authorized_devices = client.get("/devices", headers=API_HEADERS)
@@ -1122,12 +1186,6 @@ def test_internal_api_key_protects_read_endpoints():
         assert authorized_devices.status_code == 200
 
 def test_missing_credentials_are_rejected_without_api_key_or_bearer_token():
-    """Validate that missing credentials are rejected without api key or bearer token.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     import backend.app.api.deps as deps_module
 
     with client_context() as (client, _session_factory):

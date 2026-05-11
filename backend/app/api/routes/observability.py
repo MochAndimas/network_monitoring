@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/api/routes/observability.py`.
-
-This module contains project-specific implementation details.
-"""
+"""FastAPI routes for observability endpoints."""
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
@@ -26,15 +23,7 @@ router = APIRouter()
 
 @router.get("/summary")
 async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
-    """Return observability summary for API and scheduler operations.
-
-    Args:
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Handle the observability summary endpoint."""
     database_ok = await check_database_connection()
     devices_total = await DeviceRepository(db).count_devices(active_only=False)
     metrics_latest_snapshot = await MetricRepository(db).count_latest_metrics()
@@ -70,15 +59,7 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
 
 @router.get("/metrics", response_class=PlainTextResponse)
 async def observability_metrics(db: AsyncSession = Depends(get_db)) -> PlainTextResponse:
-    """Return Prometheus-format observability metrics payload.
-
-    Args:
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Handle the observability metrics endpoint."""
     database_ok = await check_database_connection()
     scheduler_statuses = await list_scheduler_job_statuses(db)
     scheduler_alerts = build_scheduler_operational_alerts(scheduler_statuses)

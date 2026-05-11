@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/db/session.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Database engine, async session factory, and connectivity checks."""
 
 from __future__ import annotations
 
@@ -14,15 +11,7 @@ from ..core.config import settings
 
 
 def _async_database_url(database_url: str) -> str:
-    """Perform async database url.
-
-    Args:
-        database_url: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return async database url for database initialization and sessions."""
     if database_url.startswith("sqlite:///") and not database_url.startswith("sqlite+aiosqlite:///"):
         return database_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
     if database_url.startswith("mysql+pymysql://"):
@@ -33,15 +22,7 @@ def _async_database_url(database_url: str) -> str:
 
 
 def _engine_options(database_url: str) -> dict[str, object]:
-    """Perform engine options.
-
-    Args:
-        database_url: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return engine options for database initialization and sessions."""
     options: dict[str, object] = {
         "future": True,
         "pool_pre_ping": True,
@@ -66,23 +47,13 @@ SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, autoflush=Fa
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    """Yield a request-scoped async database session.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get db used by application logic."""
     async with SessionLocal() as db:
         yield db
 
 
 async def check_database_connection() -> bool:
-    """Return True when a simple database query succeeds.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Check database connection for database initialization and sessions."""
     try:
         async with engine.connect() as connection:
             await connection.execute(text("SELECT 1"))

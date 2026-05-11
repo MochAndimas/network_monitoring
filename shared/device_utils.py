@@ -1,7 +1,4 @@
-"""Define module logic for `shared/device_utils.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Shared helpers for device utils."""
 
 from __future__ import annotations
 

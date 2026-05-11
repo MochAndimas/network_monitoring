@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/api/schemas/auth.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Pydantic schemas for authentication and session management."""
 
 from datetime import datetime
 
@@ -9,20 +6,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class LoginRequest(BaseModel):
-    """Perform LoginRequest.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for LoginRequest payloads."""
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=255)
     remember: bool = False
 
 
 class UserSessionInfo(BaseModel):
-    """Perform UserSessionInfo.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for UserSessionInfo payloads."""
     id: int
     username: str
     full_name: str
@@ -31,20 +22,14 @@ class UserSessionInfo(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    """Perform LoginResponse.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for LoginResponse payloads."""
     access_token: str
     token_type: str = "Bearer"
     user: UserSessionInfo
 
 
 class CurrentUserResponse(BaseModel):
-    """Perform CurrentUserResponse.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for CurrentUserResponse payloads."""
     id: int
     username: str
     full_name: str
@@ -55,10 +40,7 @@ class CurrentUserResponse(BaseModel):
 
 
 class AuthSessionItem(BaseModel):
-    """Perform AuthSessionItem.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for AuthSessionItem payloads."""
     session_id: int
     client_ip: str
     user_agent: str
@@ -69,19 +51,13 @@ class AuthSessionItem(BaseModel):
 
 
 class LogoutAllResponse(BaseModel):
-    """Perform LogoutAllResponse.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for LogoutAllResponse payloads."""
     success: bool = True
     revoked_sessions: int
 
 
 class AuthAdminSessionItem(BaseModel):
-    """Perform AuthAdminSessionItem.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for AuthAdminSessionItem payloads."""
     session_id: int
     user_id: int
     username: str
@@ -97,10 +73,7 @@ class AuthAdminSessionItem(BaseModel):
 
 
 class UserAdminItem(BaseModel):
-    """Perform UserAdminItem.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for UserAdminItem payloads."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -116,10 +89,7 @@ class UserAdminItem(BaseModel):
 
 
 class UserAdminCreateRequest(BaseModel):
-    """Perform UserAdminCreateRequest.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for UserAdminCreateRequest payloads."""
     username: str = Field(min_length=3, max_length=100)
     full_name: str = Field(min_length=1, max_length=150)
     password: str = Field(min_length=1, max_length=255)
@@ -127,10 +97,7 @@ class UserAdminCreateRequest(BaseModel):
 
 
 class UserAdminUpdateRequest(BaseModel):
-    """Perform UserAdminUpdateRequest.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for UserAdminUpdateRequest payloads."""
     full_name: str | None = Field(default=None, min_length=1, max_length=150)
     role: str | None = Field(default=None, pattern="^(admin|viewer)$")
     is_active: bool | None = None
@@ -138,27 +105,18 @@ class UserAdminUpdateRequest(BaseModel):
 
 
 class UserPasswordResetRequest(BaseModel):
-    """Perform UserPasswordResetRequest.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for UserPasswordResetRequest payloads."""
     new_password: str = Field(min_length=1, max_length=255)
 
 
 class ChangePasswordRequest(BaseModel):
-    """Perform ChangePasswordRequest.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for ChangePasswordRequest payloads."""
     current_password: str = Field(min_length=1, max_length=255)
     new_password: str = Field(min_length=1, max_length=255)
 
 
 class AdminAuditLogItem(BaseModel):
-    """Perform AdminAuditLogItem.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Pydantic schema for AdminAuditLogItem payloads."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int

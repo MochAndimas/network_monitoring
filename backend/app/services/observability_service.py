@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/services/observability_service.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Service-layer workflows for observability service."""
 
 from __future__ import annotations
 
@@ -106,21 +103,10 @@ else:
 
 
 class JsonLogFormatter(logging.Formatter):
-    """Perform JsonLogFormatter.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Helper object used by service-layer workflows."""
 
     def format(self, record: logging.LogRecord) -> str:
-        """Render a log record as JSON with request/job context enrichment.
-
-        Args:
-            record: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Serialize a log record as structured JSON."""
         payload = {
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
@@ -157,12 +143,7 @@ def redact_sensitive_log_message(message: str) -> str:
 
 
 def configure_structured_logging() -> None:
-    """Configure structured JSON logging for API and worker processes.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Install JSON or redacting log formatters on existing handlers."""
     root_logger = logging.getLogger()
     formatter: logging.Formatter
     if settings.log_as_json:
@@ -175,15 +156,7 @@ def configure_structured_logging() -> None:
 
 @contextmanager
 def request_logging_context(request_id: str):
-    """Build standard log context fields for one HTTP request.
-
-    Args:
-        request_id: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Bind a request id to logs emitted within the context."""
     token = request_id_context.set(request_id)
     try:
         yield
@@ -193,15 +166,7 @@ def request_logging_context(request_id: str):
 
 @contextmanager
 def job_logging_context(job_name: str):
-    """Build standard log context fields for one scheduler job.
-
-    Args:
-        job_name: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Bind a scheduler job name to logs emitted within the context."""
     token = job_name_context.set(job_name)
     try:
         yield
@@ -210,16 +175,7 @@ def job_logging_context(job_name: str):
 
 
 def normalized_http_metric_path(*, path: str, route_path: str | None = None) -> str:
-    """Normalize raw HTTP paths into metric-friendly route templates.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        route_path: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return a low-cardinality path label for HTTP metrics."""
     normalized_route = str(route_path or "").strip()
     if normalized_route:
         return normalized_route
@@ -228,16 +184,7 @@ def normalized_http_metric_path(*, path: str, route_path: str | None = None) -> 
 
 
 def record_http_request(*, path: str, method: str, status_code: int, duration_ms: float, route_path: str | None = None) -> None:
-    """Record HTTP request metrics including duration, status, and route labels.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        method: Parameter input untuk routine ini.
-        status_code: Parameter input untuk routine ini.
-        duration_ms: Parameter input untuk routine ini.
-        route_path: Parameter input untuk routine ini.
-
-    """
+    """Record HTTP request counts, latency buckets, and Prometheus samples."""
     metric_path = normalized_http_metric_path(path=path, route_path=route_path)
     key = (method.upper(), metric_path, str(status_code))
     _http_request_count[key] += 1
@@ -252,25 +199,14 @@ def record_http_request(*, path: str, method: str, status_code: int, duration_ms
 
 
 def record_exception(*, source: str) -> None:
-    """Record exception counters for observability metrics.
-
-    Args:
-        source: Parameter input untuk routine ini.
-
-    """
+    """Increment exception counters for a source area."""
     _exception_count[source] += 1
     if _prom_exception_count is not None:
         _prom_exception_count.labels(source).inc()
 
 
 def record_api_payload_request(*, endpoint: str, scope: str) -> None:
-    """Record API payload request counters for observability tracking.
-
-    Args:
-        endpoint: Parameter input untuk routine ini.
-        scope: Parameter input untuk routine ini.
-
-    """
+    """Record that an API payload endpoint was requested."""
     _api_payload_request_count[(str(endpoint or "/unknown"), str(scope or "unknown"))] += 1
     if _prom_api_payload_request_count is not None:
         _prom_api_payload_request_count.labels(str(endpoint or "/unknown"), str(scope or "unknown")).inc()
@@ -285,17 +221,7 @@ def record_api_payload_section(
     total_rows: int | None = None,
     sampled: bool = False,
 ) -> None:
-    """Record API payload section/item counters for observability tracking.
-
-    Args:
-        endpoint: Parameter input untuk routine ini.
-        scope: Parameter input untuk routine ini.
-        section: Parameter input untuk routine ini.
-        rows: Parameter input untuk routine ini.
-        total_rows: Parameter input untuk routine ini.
-        sampled: Parameter input untuk routine ini.
-
-    """
+    """Record row counts and sampling state for one payload section."""
     metric_endpoint = str(endpoint or "/unknown")
     metric_scope = str(scope or "unknown")
     metric_section = str(section or "unknown")
@@ -316,14 +242,7 @@ def record_api_payload_section(
 
 
 async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str, commit: bool = True) -> None:
-    """Mark scheduler job as started and update running-state metadata.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        job_name: Parameter input untuk routine ini.
-        commit: Parameter input untuk routine ini.
-
-    """
+    """Store the start timestamp for a scheduler job run."""
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     status.last_started_at = utcnow()
     status.is_running = True
@@ -337,15 +256,7 @@ async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str, commit:
 async def mark_scheduler_job_succeeded(
     db: AsyncSession, *, job_name: str, duration_ms: float, commit: bool = True
 ) -> None:
-    """Mark scheduler job as succeeded and persist duration/timestamp updates.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        job_name: Parameter input untuk routine ini.
-        duration_ms: Parameter input untuk routine ini.
-        commit: Parameter input untuk routine ini.
-
-    """
+    """Store scheduler job success timing and reset failure counters."""
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     now = utcnow()
     status.last_finished_at = now
@@ -366,16 +277,7 @@ async def mark_scheduler_job_succeeded(
 async def mark_scheduler_job_failed(
     db: AsyncSession, *, job_name: str, duration_ms: float, error: str, commit: bool = True
 ) -> None:
-    """Mark scheduler job as failed and increment failure-state metadata.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        job_name: Parameter input untuk routine ini.
-        duration_ms: Parameter input untuk routine ini.
-        error: Parameter input untuk routine ini.
-        commit: Parameter input untuk routine ini.
-
-    """
+    """Store scheduler job failure details and increment failure counters."""
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
     now = utcnow()
     status.last_finished_at = now
@@ -396,29 +298,13 @@ async def mark_scheduler_job_failed(
 
 
 async def list_scheduler_job_statuses(db: AsyncSession) -> list[SchedulerJobStatus]:
-    """List scheduler job status rows for observability dashboards.
-
-    Args:
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return scheduler job status rows ordered by job name."""
     rows = await db.scalars(select(SchedulerJobStatus).order_by(SchedulerJobStatus.job_name.asc()))
     return list(rows.all())
 
 
 def scheduler_job_is_stale(job: SchedulerJobStatus) -> bool:
-    """Determine whether scheduler job heartbeat is stale beyond allowed interval.
-
-    Args:
-        job: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return scheduler job is stale used by service-layer code."""
     expected_interval = _expected_scheduler_interval_seconds(job.job_name)
     if expected_interval is None:
         return False
@@ -428,15 +314,7 @@ def scheduler_job_is_stale(job: SchedulerJobStatus) -> bool:
 
 
 def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -> list[dict]:
-    """Build operational alert payloads from scheduler job status state.
-
-    Args:
-        job_statuses: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build operational alerts for stale or repeatedly failing scheduler jobs."""
     alerts: list[dict] = []
     for job in job_statuses:
         if job.consecutive_failures > 0:
@@ -463,17 +341,7 @@ def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -
 
 
 def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, scheduler_statuses: list[SchedulerJobStatus]) -> str:
-    """Render in-memory observability counters in Prometheus text format.
-
-    Args:
-        database_up: Parameter input untuk routine ini.
-        scheduler_alert_count: Parameter input untuk routine ini.
-        scheduler_statuses: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Render internal counters in Prometheus text exposition format."""
     lines = []
     if _prometheus_multiprocess_enabled and CollectorRegistry is not None and generate_latest is not None and multiprocess is not None:
         registry = CollectorRegistry()
@@ -537,16 +405,7 @@ def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, 
 
 
 async def _get_or_create_scheduler_job_status(db: AsyncSession, *, job_name: str) -> SchedulerJobStatus:
-    """Retrieve or create scheduler job status.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        job_name: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get or create scheduler job status used by observability and health reporting."""
     status = await db.scalar(select(SchedulerJobStatus).where(SchedulerJobStatus.job_name == job_name))
     if status is None:
         status = SchedulerJobStatus(job_name=job_name)
@@ -556,15 +415,7 @@ async def _get_or_create_scheduler_job_status(db: AsyncSession, *, job_name: str
 
 
 def _expected_scheduler_interval_seconds(job_name: str) -> int | None:
-    """Perform expected scheduler interval seconds.
-
-    Args:
-        job_name: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return expected scheduler interval seconds used by service-layer code."""
     mapping = {
         "internet_checks": settings.scheduler_interval_internet_seconds,
         "device_checks": settings.scheduler_interval_device_seconds,

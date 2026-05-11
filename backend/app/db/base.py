@@ -1,14 +1,8 @@
-"""Define module logic for `backend/app/db/base.py`.
-
-This module contains project-specific implementation details.
-"""
+"""db support code for base."""
 
 from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
-    """Perform Base.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """Helper object used by database setup."""
     pass

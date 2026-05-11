@@ -1,7 +1,4 @@
-"""Define module logic for `dashboard/components/ui.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Streamlit dashboard helpers for ui."""
 
 from __future__ import annotations
 
@@ -12,24 +9,13 @@ import streamlit as st
 
 
 def render_page_header(title: str, description: str) -> None:
-    """Render page header.
-
-    Args:
-        title: Parameter input untuk routine ini.
-        description: Parameter input untuk routine ini.
-
-    """
+    """Render page header for the dashboard UI."""
     st.title(title)
     st.caption(description)
 
 
 def render_meta_row(items: Sequence[tuple[str, object]]) -> None:
-    """Render meta row.
-
-    Args:
-        items: Parameter input untuk routine ini.
-
-    """
+    """Render meta row for the dashboard UI."""
     if not items:
         return
     with st.container(border=True):
@@ -44,13 +30,7 @@ def render_kpi_cards(
     *,
     columns_per_row: int = 4,
 ) -> None:
-    """Render kpi cards.
-
-    Args:
-        items: Parameter input untuk routine ini.
-        columns_per_row: Parameter input untuk routine ini.
-
-    """
+    """Render kpi cards for the dashboard UI."""
     if not items:
         return
     columns_per_row = max(columns_per_row, 1)
@@ -64,15 +44,7 @@ def render_kpi_cards(
 
 
 def normalize_status_label(value: object) -> str:
-    """Normalize status label.
-
-    Args:
-        value: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Normalize status label for the dashboard UI."""
     normalized = str(value or "").strip().lower()
     if not normalized:
         return "Unknown"
@@ -90,15 +62,7 @@ def normalize_status_label(value: object) -> str:
 
 
 def status_priority(value: object) -> int:
-    """Return status priority.
-
-    Args:
-        value: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return status priority used by the dashboard UI."""
     normalized = str(value or "").strip().lower()
     priorities = {
         "critical": 0,

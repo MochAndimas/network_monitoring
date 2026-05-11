@@ -1,7 +1,4 @@
-"""Define module logic for `dashboard/Overview.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Streamlit overview page for high-level monitoring status."""
 
 import altair as alt
 import pandas as pd
@@ -16,15 +13,7 @@ from components.ui import normalize_status_label, render_kpi_cards, render_meta_
 
 
 def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
-    """Perform prepare devices frame.
-
-    Args:
-        devices: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Prepare devices frame for the application."""
     dataframe = pd.DataFrame(devices)
     if dataframe.empty:
         return dataframe
@@ -40,15 +29,7 @@ def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
 
 
 def _prepare_alerts_frame(alerts: list[dict]) -> pd.DataFrame:
-    """Perform prepare alerts frame.
-
-    Args:
-        alerts: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Prepare alerts frame for the application."""
     dataframe = pd.DataFrame(alerts)
     if dataframe.empty:
         return dataframe
@@ -59,15 +40,7 @@ def _prepare_alerts_frame(alerts: list[dict]) -> pd.DataFrame:
 
 
 def _prepare_incidents_frame(incidents: list[dict]) -> pd.DataFrame:
-    """Perform prepare incidents frame.
-
-    Args:
-        incidents: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Prepare incidents frame for the application."""
     dataframe = pd.DataFrame(incidents)
     if dataframe.empty:
         return dataframe
@@ -78,15 +51,7 @@ def _prepare_incidents_frame(incidents: list[dict]) -> pd.DataFrame:
 
 
 def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
-    """Perform prepare snapshot frame.
-
-    Args:
-        snapshot_payload: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Prepare snapshot frame for the application."""
     dataframe = pd.DataFrame(snapshot_payload.get("items", []))
     if dataframe.empty:
         return dataframe
@@ -99,12 +64,7 @@ def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
 
 
 def _render_overview_body() -> None:
-    """Render overview body.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Render overview body for the application."""
     payload = get_json(
         "/dashboard/overview-data",
         {

@@ -14,15 +14,6 @@ from backend.app.core.config import Settings
 
 
 def test_file_backed_secret_paths_are_rejected_outside_production(tmp_path: Path):
-    """Validate that file backed secret paths are rejected outside production.
-
-    Args:
-        tmp_path: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     secret_file = tmp_path / "auth_jwt_secret.txt"
     secret_file.write_text("jwt-secret-from-file\n", encoding="utf-8")
 
@@ -37,15 +28,6 @@ def test_file_backed_secret_paths_are_rejected_outside_production(tmp_path: Path
 
 
 def test_file_backed_secrets_are_loaded_in_production(tmp_path: Path):
-    """Validate that file backed secrets are loaded in production.
-
-    Args:
-        tmp_path: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     jwt_secret_file = tmp_path / "auth_jwt_secret.txt"
     password_secret_file = tmp_path / "auth_password_secret.txt"
     jwt_secret_file.write_text("jwt-secret-from-file\n", encoding="utf-8")

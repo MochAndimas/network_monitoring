@@ -1,14 +1,21 @@
-"""Define module logic for `backend/app/api/routes/metrics.py`.
+"""FastAPI routes for metrics endpoints."""
 
-This module contains project-specific implementation details.
-"""
-
+import base64
+import json
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status as http_status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...api.schemas import MetricDailySummaryItem, MetricDailySummaryPage, MetricHistoryItem, MetricHistoryPage, PageMeta
+from ...api.schemas import (
+    CursorPageMeta,
+    MetricDailySummaryItem,
+    MetricDailySummaryPage,
+    MetricHistoryCursorPage,
+    MetricHistoryItem,
+    MetricHistoryPage,
+    PageMeta,
+)
 from ...api.lifecycle import apply_legacy_deprecation_headers
 from ...core.time import now
 from ...db.session import get_db
@@ -23,16 +30,7 @@ async def get_metric_names(
     device_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[str]:
-    """Return known metric names available for querying.
-
-    Args:
-        device_id: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get metric names used by metric collection and history."""
     return await MetricRepository(db).list_metric_names(device_id=device_id)
 
 
@@ -47,22 +45,7 @@ async def get_metrics_history(
     checked_to: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[MetricHistoryItem]:
-    """Return metric history rows using the legacy response shape.
-
-    Args:
-        response: Parameter input untuk routine ini.
-        limit: Parameter input untuk routine ini.
-        device_id: Parameter input untuk routine ini.
-        metric_name: Parameter input untuk routine ini.
-        status: Parameter input untuk routine ini.
-        checked_from: Parameter input untuk routine ini.
-        checked_to: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get metrics history used by metric collection and history."""
     apply_legacy_deprecation_headers(response, legacy_endpoint="/metrics/history")
     metrics = await MetricRepository(db).list_recent_metric_rows(
         limit=limit,
@@ -76,10 +59,11 @@ async def get_metrics_history(
     return _metric_history_response_items(metrics)
 
 
-@router.get("/history/paged", response_model=MetricHistoryPage)
+@router.get("/history/paged", response_model=MetricHistoryCursorPage)
 async def get_metrics_history_paged(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    cursor: str | None = Query(default=None),
     device_id: int | None = Query(default=None),
     metric_name: str | None = Query(default=None),
     metric_names: list[str] | None = Query(default=None),
@@ -88,37 +72,43 @@ async def get_metrics_history_paged(
     checked_from: datetime | None = Query(default=None),
     checked_to: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
-) -> MetricHistoryPage:
-    """Return metric history rows with pagination and filters.
-
-    Args:
-        limit: Parameter input untuk routine ini.
-        offset: Parameter input untuk routine ini.
-        device_id: Parameter input untuk routine ini.
-        metric_name: Parameter input untuk routine ini.
-        metric_names: Parameter input untuk routine ini.
-        per_metric_limit: Parameter input untuk routine ini.
-        status: Parameter input untuk routine ini.
-        checked_from: Parameter input untuk routine ini.
-        checked_to: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+) -> MetricHistoryCursorPage:
+    """Return get metrics history paged used by metric collection and history."""
     repository = MetricRepository(db)
-    metrics, total = await repository.list_recent_metric_rows_paged(
-        limit=limit,
-        offset=offset,
-        device_id=device_id,
-        metric_name=metric_name,
-        metric_names=metric_names,
-        per_metric_limit=per_metric_limit,
-        status=status,
-        checked_from=checked_from,
-        checked_to=checked_to,
-    )
+    if cursor:
+        if per_metric_limit is not None:
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail="Cursor pagination is not supported with per_metric_limit",
+            )
+        cursor_checked_at, cursor_id = _decode_metric_history_cursor(cursor)
+        metrics, has_more = await repository.list_recent_metric_rows_after_cursor(
+            limit=limit,
+            cursor_checked_at=cursor_checked_at,
+            cursor_id=cursor_id,
+            device_id=device_id,
+            metric_name=metric_name,
+            metric_names=metric_names,
+            status=status,
+            checked_from=checked_from,
+            checked_to=checked_to,
+        )
+        total = None
+        next_cursor = _metric_history_next_cursor(metrics) if has_more else None
+    else:
+        metrics, total = await repository.list_recent_metric_rows_paged(
+            limit=limit,
+            offset=offset,
+            device_id=device_id,
+            metric_name=metric_name,
+            metric_names=metric_names,
+            per_metric_limit=per_metric_limit,
+            status=status,
+            checked_from=checked_from,
+            checked_to=checked_to,
+        )
+        has_more = total > offset + len(metrics)
+        next_cursor = _metric_history_next_cursor(metrics) if has_more and offset == 0 and per_metric_limit is None else None
     payload_scope = "device" if device_id is not None else "global"
     record_api_payload_request(endpoint="/metrics/history/paged", scope=payload_scope)
     record_api_payload_section(
@@ -127,9 +117,9 @@ async def get_metrics_history_paged(
         section="items",
         rows=len(metrics),
         total_rows=total,
-        sampled=total > len(metrics),
+        sampled=has_more if total is None else total > len(metrics),
     )
-    return MetricHistoryPage(
+    return MetricHistoryCursorPage(
         items=[
             MetricHistoryItem(
                 id=metric["id"],
@@ -144,7 +134,13 @@ async def get_metrics_history_paged(
             )
             for metric in metrics
         ],
-        meta=PageMeta(total=total, limit=limit, offset=offset),
+        meta=CursorPageMeta(
+            total=total,
+            limit=limit,
+            offset=0 if cursor else offset,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        ),
     )
 
 
@@ -163,26 +159,7 @@ async def get_metrics_history_context(
     include_selected_device_snapshot: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Return grouped context around metric history trends and status.
-
-    Args:
-        limit: Parameter input untuk routine ini.
-        device_id: Parameter input untuk routine ini.
-        metric_name: Parameter input untuk routine ini.
-        status: Parameter input untuk routine ini.
-        checked_from: Parameter input untuk routine ini.
-        checked_to: Parameter input untuk routine ini.
-        selected_device_limit: Parameter input untuk routine ini.
-        selected_device_offset: Parameter input untuk routine ini.
-        snapshot_limit: Parameter input untuk routine ini.
-        snapshot_offset: Parameter input untuk routine ini.
-        include_selected_device_snapshot: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get metrics history context used by metric collection and history."""
     repository = MetricRepository(db)
     history_rows, history_total = await repository.list_recent_metric_rows_paged(
         limit=limit,
@@ -311,25 +288,7 @@ async def get_metrics_history_live(
     include_selected_device_snapshot: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Return latest metric-history window optimized for live dashboards.
-
-    Args:
-        limit: Parameter input untuk routine ini.
-        device_id: Parameter input untuk routine ini.
-        metric_name: Parameter input untuk routine ini.
-        status: Parameter input untuk routine ini.
-        checked_from: Parameter input untuk routine ini.
-        checked_to: Parameter input untuk routine ini.
-        selected_device_limit: Parameter input untuk routine ini.
-        snapshot_limit: Parameter input untuk routine ini.
-        snapshot_offset: Parameter input untuk routine ini.
-        include_selected_device_snapshot: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get metrics history live used by metric collection and history."""
     repository = MetricRepository(db)
     # Live mode is intentionally fixed to the most recent 24 hours.
     live_checked_to = now()
@@ -457,20 +416,7 @@ async def get_metrics_daily_summary(
     rollup_to: date | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricDailySummaryPage:
-    """Return aggregated daily metric summaries with pagination.
-
-    Args:
-        limit: Parameter input untuk routine ini.
-        offset: Parameter input untuk routine ini.
-        device_id: Parameter input untuk routine ini.
-        rollup_from: Parameter input untuk routine ini.
-        rollup_to: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get metrics daily summary used by metric collection and history."""
     rows, total = await MetricRepository(db).list_daily_summary_rows_paged(
         limit=limit,
         offset=offset,
@@ -501,18 +447,7 @@ async def get_latest_metrics_snapshot_paged(
     device_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricHistoryPage:
-    """Return latest-metric snapshot rows with pagination/filtering.
-
-    Args:
-        limit: Parameter input untuk routine ini.
-        offset: Parameter input untuk routine ini.
-        device_id: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get latest metrics snapshot paged used by metric collection and history."""
     repository = MetricRepository(db)
     metrics, total = await repository.list_latest_metric_rows_paged(limit=limit, offset=offset, device_id=device_id)
     payload_scope = "device" if device_id is not None else "global"
@@ -535,15 +470,7 @@ async def get_latest_metrics_snapshot_paged(
 async def get_latest_snapshot_status_summary(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
-    """Return status distribution derived from latest metric snapshots.
-
-    Args:
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get latest snapshot status summary used by metric collection and history."""
     return await MetricRepository(db).summarize_latest_snapshot_status_counts()
 
 
@@ -553,43 +480,17 @@ async def get_latest_snapshot_uptime_map(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    """Return uptime streak mappings from latest snapshot data.
-
-    Args:
-        limit: Parameter input untuk routine ini.
-        offset: Parameter input untuk routine ini.
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return get latest snapshot uptime map used by metric collection and history."""
     return await MetricRepository(db).latest_snapshot_uptime_map(limit=limit, offset=offset)
 
 
 def _metric_history_response_items(metrics: list[dict]) -> list[MetricHistoryItem]:
-    """Perform metric history response items.
-
-    Args:
-        metrics: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Handle the metric history response items endpoint."""
     return [MetricHistoryItem(**metric) for metric in _metric_history_dicts(metrics)]
 
 
 def _metric_history_dicts(metrics: list[dict]) -> list[dict]:
-    """Perform metric history dicts.
-
-    Args:
-        metrics: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Handle the metric history dicts endpoint."""
     return [
         {
             "id": metric["id"],
@@ -604,3 +505,27 @@ def _metric_history_dicts(metrics: list[dict]) -> list[dict]:
         }
         for metric in metrics
     ]
+
+
+def _metric_history_next_cursor(metrics: list[dict]) -> str | None:
+    """Build a cursor from the last row in a metric-history page."""
+    if not metrics:
+        return None
+    last_metric = metrics[-1]
+    checked_at = last_metric["checked_at"]
+    checked_at_value = checked_at.isoformat() if hasattr(checked_at, "isoformat") else str(checked_at)
+    payload = {"checked_at": checked_at_value, "id": int(last_metric["id"])}
+    raw_cursor = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return base64.urlsafe_b64encode(raw_cursor).decode("ascii").rstrip("=")
+
+
+def _decode_metric_history_cursor(cursor: str) -> tuple[datetime, int]:
+    """Decode a metric-history keyset cursor from the public API token."""
+    try:
+        padded_cursor = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded_cursor.encode("ascii")).decode("utf-8"))
+        checked_at = datetime.fromisoformat(str(payload["checked_at"]))
+        metric_id = int(payload["id"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid metrics history cursor") from exc
+    return checked_at, metric_id

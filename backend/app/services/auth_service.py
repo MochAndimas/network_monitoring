@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/services/auth_service.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Service-layer workflows for auth service."""
 
 from __future__ import annotations
 

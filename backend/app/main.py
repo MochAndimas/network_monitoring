@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/main.py`.
-
-This module contains project-specific implementation details.
-"""
+"""FastAPI application setup, middleware registration, and route wiring."""
 
 from contextlib import asynccontextmanager
 import logging
@@ -37,15 +34,7 @@ logger = logging.getLogger("network_monitoring.http")
 
 
 def _route_template(request) -> str | None:
-    """Perform route template.
-
-    Args:
-        request: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return route template for the application."""
     route = request.scope.get("route")
     if route is None:
         return None
@@ -53,21 +42,9 @@ def _route_template(request) -> str | None:
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Perform RequestLoggingMiddleware.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """ASGI middleware that handles requestlogging concerns."""
     async def dispatch(self, request, call_next):
-        """Process one ASGI request/response cycle for this middleware.
-
-        Args:
-            request: Parameter input untuk routine ini.
-            call_next: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Return dispatch for the application."""
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
         start = time.perf_counter()
@@ -112,21 +89,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Perform SecurityHeadersMiddleware.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """ASGI middleware that handles securityheaders concerns."""
     async def dispatch(self, request, call_next):
-        """Process one ASGI request/response cycle for this middleware.
-
-        Args:
-            request: Parameter input untuk routine ini.
-            call_next: Parameter input untuk routine ini.
-
-        Returns:
-            Nilai balik routine atau efek samping yang dihasilkan.
-
-        """
+        """Return dispatch for the application."""
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -151,15 +116,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Manage FastAPI startup and shutdown application lifecycle hooks.
-
-    Args:
-        _: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return lifespan for the application."""
     configure_logging()
     validate_auth_configuration()
     if not settings.is_production:
@@ -203,10 +160,5 @@ app.include_router(observability_router, prefix="/observability", tags=["observa
 
 @app.get("/")
 async def root() -> dict:
-    """Return lightweight root endpoint metadata for service identification.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return root for the application."""
     return {"message": f"{settings.app_name} API is running"}

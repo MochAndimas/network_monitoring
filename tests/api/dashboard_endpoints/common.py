@@ -15,6 +15,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.db.session import get_db
 from backend.app.main import app
+from backend.app.api.lifecycle import LEGACY_NON_PAGED_DEPRECATION_PLAN, _deprecation_phase
 from backend.app.models.scheduler_job_status import SchedulerJobStatus
 from backend.app.models.alert import Alert
 from backend.app.models.incident import Incident
@@ -31,15 +32,26 @@ from tests.test_utils import create_all, drop_all, empty_checks, run
 TEST_API_KEY = "test-internal-key"
 API_HEADERS = {"x-api-key": TEST_API_KEY}
 
+
+def assert_legacy_deprecation_headers(response, *, legacy_endpoint: str) -> None:
+    plan = LEGACY_NON_PAGED_DEPRECATION_PLAN[legacy_endpoint]
+    assert response.headers.get("deprecation") == "true"
+    assert response.headers.get("sunset") == plan.sunset_http_date
+    assert response.headers.get("x-api-replacement-endpoint") == plan.replacement_endpoint
+    assert response.headers.get("x-api-deprecation-phase") == _deprecation_phase(
+        plan=plan,
+        today=date.today(),
+    )
+    assert response.headers.get("x-api-deprecation-announced-on") == plan.announced_on.isoformat()
+    assert response.headers.get("x-api-deprecation-warning-window-starts-on") == (
+        plan.warning_window_starts_on.isoformat()
+    )
+    assert response.headers.get("x-api-deprecation-removal-on") == plan.removal_on.isoformat()
+
+
 @contextmanager
 
 def client_context():
-    """Perform client context.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -118,17 +130,6 @@ async def _seed_devices_and_metrics(
     devices_payload: list[dict],
     metrics_payload: list[dict] | Callable[[list], list[dict[str, Any]]],
 ):
-    """Perform seed devices and metrics.
-
-    Args:
-        session_factory: Parameter input untuk routine ini.
-        devices_payload: Parameter input untuk routine ini.
-        metrics_payload: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     async with session_factory() as db:
         devices = await DeviceRepository(db).upsert_devices(devices_payload)
         if metrics_payload:
@@ -136,19 +137,6 @@ async def _seed_devices_and_metrics(
         return devices
 
 async def _create_user(session_factory, *, username: str, password: str, role: str = "viewer", full_name: str = "Test User"):
-    """Perform create user.
-
-    Args:
-        session_factory: Parameter input untuk routine ini.
-        username: Parameter input untuk routine ini.
-        password: Parameter input untuk routine ini.
-        role: Parameter input untuk routine ini.
-        full_name: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     async with session_factory() as db:
         user = User(
             username=username,
@@ -192,6 +180,7 @@ __all__ = [
     "run",
     "TEST_API_KEY",
     "API_HEADERS",
+    "assert_legacy_deprecation_headers",
     "client_context",
     "_seed_devices_and_metrics",
     "_create_user",

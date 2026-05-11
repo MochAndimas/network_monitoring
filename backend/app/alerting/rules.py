@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/alerting/rules.py`.
-
-This module contains project-specific implementation details.
-"""
+"""alerting support code for rules."""
 
 ALERT_RULES = {
     "device_down": {"severity": "critical"},
@@ -31,4 +28,12 @@ ALERT_RULES = {
     "printer_paper_issue": {"severity": "warning"},
     "printer_ink_low": {"severity": "warning"},
     "printer_ink_empty": {"severity": "critical"},
+    "nas_system_status_problem": {"severity": "critical"},
+    "nas_power_status_problem": {"severity": "critical"},
+    "nas_fan_status_problem": {"severity": "critical"},
+    "nas_volume_status_problem": {"severity": "critical"},
+    "nas_raid_status_problem": {"severity": "critical"},
+    "nas_disk_status_problem": {"severity": "critical"},
+    "nas_system_temperature_high": {"severity": "warning"},
+    "nas_disk_temperature_high": {"severity": "warning"},
 }

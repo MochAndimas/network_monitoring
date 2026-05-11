@@ -1,7 +1,4 @@
-"""Define module logic for `dashboard/pages/7_Thresholds.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Streamlit dashboard helpers for 7 Thresholds."""
 
 import altair as alt
 import pandas as pd
@@ -24,15 +21,7 @@ thresholds = get_json("/thresholds", [])
 
 
 def _threshold_category(key: str) -> str:
-    """Perform threshold category.
-
-    Args:
-        key: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return threshold category for threshold configuration."""
     normalized = str(key or "").strip()
     if not normalized:
         return "uncategorized"

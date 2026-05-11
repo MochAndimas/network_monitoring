@@ -1,12 +1,10 @@
-"""Define module logic for `backend/app/core/constants.py`.
-
-This module contains project-specific implementation details.
-"""
+"""core support code for constants."""
 
 DEVICE_TYPE_CHOICES = [
     "internet_target",
     "mikrotik",
     "server",
+    "nas",
     "nvr",
     "switch",
     "access_point",

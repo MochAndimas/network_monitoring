@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/models/incident.py`.
-
-This module contains project-specific implementation details.
-"""
+"""SQLAlchemy model definitions for incident records."""
 
 from __future__ import annotations
 
@@ -19,10 +16,7 @@ if TYPE_CHECKING:
 
 
 class Incident(Base):
-    """Perform Incident.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """SQLAlchemy ORM model for Incident records."""
     __tablename__ = "incidents"
     __table_args__ = (
         Index("ix_incidents_status_started_at", "status", "started_at"),

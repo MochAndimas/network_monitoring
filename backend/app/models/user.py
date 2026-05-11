@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/models/user.py`.
-
-This module contains project-specific implementation details.
-"""
+"""SQLAlchemy model definitions for user records."""
 
 from datetime import datetime
 
@@ -13,10 +10,7 @@ from ..core.time import utcnow
 
 
 class User(Base):
-    """Perform User.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """SQLAlchemy ORM model for User records."""
     __tablename__ = "users"
     __table_args__ = (
         Index("ix_users_username_active", "username", "is_active"),
@@ -38,10 +32,7 @@ class User(Base):
 
 
 class AuthSession(Base):
-    """Perform AuthSession.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """SQLAlchemy ORM model for AuthSession records."""
     __tablename__ = "auth_sessions"
     __table_args__ = (
         Index("ix_auth_sessions_user_active", "user_id", "expires_at", "revoked_at"),
@@ -62,10 +53,7 @@ class AuthSession(Base):
 
 
 class AuthLoginAttempt(Base):
-    """Perform AuthLoginAttempt.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """SQLAlchemy ORM model for AuthLoginAttempt records."""
     __tablename__ = "auth_login_attempts"
     __table_args__ = (
         Index("ix_auth_login_attempts_lookup", "username", "client_ip", "attempted_at"),

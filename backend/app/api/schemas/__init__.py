@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/api/schemas/__init__.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Package marker and public imports for backend.app.api.schemas."""
 
 from .auth import (
     AdminAuditLogItem,
@@ -22,6 +19,7 @@ from .dashboard import (
     AlertPage,
     AlertItem,
     AuthObservabilitySummary,
+    CursorPageMeta,
     DashboardSummary,
     DeviceCreate,
     DeviceListItem,
@@ -33,6 +31,7 @@ from .dashboard import (
     IncidentItem,
     MetricDailySummaryItem,
     MetricDailySummaryPage,
+    MetricHistoryCursorPage,
     MetricHistoryItem,
     MetricHistoryPage,
     PageMeta,
@@ -50,6 +49,7 @@ __all__ = [
     "AuthSessionItem",
     "ChangePasswordRequest",
     "CurrentUserResponse",
+    "CursorPageMeta",
     "DashboardSummary",
     "DeviceCreate",
     "DeviceListItem",
@@ -63,6 +63,7 @@ __all__ = [
     "LoginResponse",
     "LogoutAllResponse",
     "MetricHistoryItem",
+    "MetricHistoryCursorPage",
     "MetricHistoryPage",
     "MetricDailySummaryItem",
     "MetricDailySummaryPage",

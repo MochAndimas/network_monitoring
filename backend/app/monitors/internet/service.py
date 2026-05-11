@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/monitors/internet/service.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Monitoring collector helpers for service."""
 
 from __future__ import annotations
 
@@ -19,15 +16,7 @@ from ..helpers import bounded_gather, build_ping_metric, build_ping_quality_metr
 
 
 async def run_internet_checks(db: AsyncSession) -> list[dict]:
-    """Run internet checks as part of monitoring collection workflows.
-
-    Args:
-        db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Run internet checks for monitoring collection."""
     devices = await DeviceRepository(db).list_by_type("internet_target", active_only=True)
     metrics: list[dict] = []
     if devices:
@@ -53,15 +42,7 @@ async def run_internet_checks(db: AsyncSession) -> list[dict]:
 
 
 def _select_internet_anchor_device(devices):
-    """Perform select internet anchor device.
-
-    Args:
-        devices: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return select internet anchor device for monitoring collection."""
     def priority(device) -> tuple[int, str]:
         name = str(getattr(device, "name", "") or "").lower()
         if "myrepublic" in name:
@@ -76,16 +57,7 @@ def _select_internet_anchor_device(devices):
 
 
 async def _build_device_ping_metrics(device_id: int, ip_address: str) -> list[dict]:
-    """Build device ping metrics.
-
-    Args:
-        device_id: Parameter input untuk routine ini.
-        ip_address: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build device ping metrics for monitoring collection."""
     samples = await collect_ping_samples(ip_address)
     return [
         build_ping_metric(device_id, latest_successful_ping(samples)),
@@ -94,15 +66,7 @@ async def _build_device_ping_metrics(device_id: int, ip_address: str) -> list[di
 
 
 async def _build_dns_metric(device_id: int) -> dict:
-    """Build dns metric.
-
-    Args:
-        device_id: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build dns metric for monitoring collection."""
     checked_at = utcnow()
     started_at = perf_counter()
     try:
@@ -129,16 +93,7 @@ async def _build_dns_metric(device_id: int) -> dict:
 
 
 async def _build_http_metric(device_id: int, client: httpx.AsyncClient) -> dict:
-    """Build http metric.
-
-    Args:
-        device_id: Parameter input untuk routine ini.
-        client: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build http metric for monitoring collection."""
     checked_at = utcnow()
     started_at = perf_counter()
     try:
@@ -166,17 +121,7 @@ async def _build_http_metric(device_id: int, client: httpx.AsyncClient) -> dict:
 
 
 async def _build_public_ip_metric(db: AsyncSession, device_id: int, client: httpx.AsyncClient) -> dict:
-    """Build public IP metric.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        device_id: Parameter input untuk routine ini.
-        client: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build public ip metric for monitoring collection."""
     checked_at = utcnow()
     try:
         response = await client.get(settings.public_ip_check_url)

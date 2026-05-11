@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/db/init_db.py`.
-
-This module contains project-specific implementation details.
-"""
+"""db support code for init db."""
 
 from .base import Base
 from .session import engine
@@ -9,12 +6,7 @@ from ..models import alert, device, incident, metric, metric_daily_rollup, thres
 
 
 async def init_db() -> None:
-    """Initialize database schema metadata in the current engine.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return init db for database initialization and sessions."""
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 

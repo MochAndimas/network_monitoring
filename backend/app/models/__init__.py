@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/models/__init__.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Package marker and public imports for backend.app.models."""
 
 from .admin_audit_log import AdminAuditLog
 from .alert import Alert

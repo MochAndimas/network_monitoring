@@ -1,14 +1,13 @@
-"""Define module logic for `backend/app/services/pipeline_control.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Service-layer workflows for pipeline control."""
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 import logging
+import re
 
 from sqlalchemy import text
 
@@ -16,39 +15,50 @@ from ..core.config import settings
 from ..db.session import engine
 
 
-_monitoring_pipeline_lock = asyncio.Lock()
+_monitoring_pipeline_locks: dict[str, asyncio.Lock] = {}
 logger = logging.getLogger("network_monitoring.pipeline")
 
 
 def _mysql_lock_timeout_seconds(*, wait: bool) -> int:
-    """Perform mysql lock timeout seconds.
-
-    Args:
-        wait: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return the MySQL advisory lock timeout for blocking or non-blocking calls."""
     return max(settings.monitoring_lock_timeout_seconds, 1) if wait else 0
 
 
-async def _acquire_mysql_lock(*, wait: bool) -> tuple[object | None, bool]:
-    """Perform acquire mysql lock.
+def _normalized_lock_scope(scope: str | None) -> str:
+    """Normalize a caller-provided lock scope into a stable advisory-lock suffix."""
+    normalized = re.sub(r"[^a-zA-Z0-9_.:-]+", "_", str(scope or "pipeline").strip())
+    return normalized or "pipeline"
 
-    Args:
-        wait: Parameter input untuk routine ini.
 
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
+def _scoped_lock_name(scope: str | None) -> str:
+    """Return the configured lock name with a scope suffix for independent work streams."""
+    normalized_scope = _normalized_lock_scope(scope)
+    base_name = settings.monitoring_lock_name.rstrip(".")
+    lock_name = base_name if normalized_scope == "pipeline" else f"{base_name}.{normalized_scope}"
+    if len(lock_name) <= 64:
+        return lock_name
+    digest = hashlib.sha1(lock_name.encode("utf-8")).hexdigest()[:16]
+    return f"{lock_name[:47]}.{digest}"
 
-    """
+
+def _process_lock_for_scope(scope: str | None) -> asyncio.Lock:
+    """Return the process-local asyncio lock for one monitoring scope."""
+    normalized_scope = _normalized_lock_scope(scope)
+    lock = _monitoring_pipeline_locks.get(normalized_scope)
+    if lock is None:
+        lock = asyncio.Lock()
+        _monitoring_pipeline_locks[normalized_scope] = lock
+    return lock
+
+
+async def _acquire_mysql_lock(*, wait: bool, scope: str | None) -> tuple[object | None, bool]:
+    """Acquire the named MySQL advisory lock for monitoring work."""
     connection = await engine.connect()
     try:
         result = await connection.execute(
             text("SELECT GET_LOCK(:lock_name, :timeout_seconds)"),
             {
-                "lock_name": settings.monitoring_lock_name,
+                "lock_name": _scoped_lock_name(scope),
                 "timeout_seconds": _mysql_lock_timeout_seconds(wait=wait),
             },
         )
@@ -62,49 +72,37 @@ async def _acquire_mysql_lock(*, wait: bool) -> tuple[object | None, bool]:
         raise
 
 
-async def _release_mysql_lock(connection) -> None:
-    """Perform release mysql lock.
-
-    Args:
-        connection: Parameter input untuk routine ini.
-
-    """
+async def _release_mysql_lock(connection, *, scope: str | None) -> None:
+    """Release the named MySQL advisory lock and close its connection."""
     try:
         await connection.execute(
             text("SELECT RELEASE_LOCK(:lock_name)"),
-            {"lock_name": settings.monitoring_lock_name},
+            {"lock_name": _scoped_lock_name(scope)},
         )
     finally:
         await connection.close()
 
 
 @asynccontextmanager
-async def monitoring_pipeline_guard(*, wait: bool) -> AsyncIterator[bool]:
-    """Guard monitoring pipeline execution with cooperative distributed locking.
-
-    Args:
-        wait: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+async def monitoring_pipeline_guard(*, wait: bool, scope: str | None = None) -> AsyncIterator[bool]:
+    """Acquire the process or MySQL lock for one monitoring work scope."""
     if engine.dialect.name == "mysql":
-        connection, acquired = await _acquire_mysql_lock(wait=wait)
+        connection, acquired = await _acquire_mysql_lock(wait=wait, scope=scope)
         try:
             yield acquired
         finally:
             if acquired and connection is not None:
-                await _release_mysql_lock(connection)
+                await _release_mysql_lock(connection, scope=scope)
         return
 
+    process_lock = _process_lock_for_scope(scope)
     acquired = False
     if wait:
-        await _monitoring_pipeline_lock.acquire()
+        await process_lock.acquire()
         acquired = True
     else:
         try:
-            await asyncio.wait_for(_monitoring_pipeline_lock.acquire(), timeout=0.001)
+            await asyncio.wait_for(process_lock.acquire(), timeout=0.001)
             acquired = True
         except TimeoutError:
             acquired = False
@@ -113,4 +111,4 @@ async def monitoring_pipeline_guard(*, wait: bool) -> AsyncIterator[bool]:
         yield acquired
     finally:
         if acquired:
-            _monitoring_pipeline_lock.release()
+            process_lock.release()

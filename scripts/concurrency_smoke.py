@@ -1,7 +1,4 @@
-"""Define module logic for `scripts/concurrency_smoke.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Command-line utility for concurrency smoke."""
 
 from __future__ import annotations
 
@@ -26,17 +23,7 @@ DEFAULT_PATHS = [
 
 
 async def _hit_endpoint(client: httpx.AsyncClient, path: str, semaphore: asyncio.Semaphore) -> tuple[int, float]:
-    """Perform hit endpoint.
-
-    Args:
-        client: Parameter input untuk routine ini.
-        path: Parameter input untuk routine ini.
-        semaphore: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return hit endpoint for the command-line workflow."""
     async with semaphore:
         started_at = time.perf_counter()
         response = await client.get(path)
@@ -51,33 +38,13 @@ async def _measure_path(
     requests: int,
     semaphore: asyncio.Semaphore,
 ) -> dict:
-    """Perform measure path.
-
-    Args:
-        client: Parameter input untuk routine ini.
-        path: Parameter input untuk routine ini.
-        requests: Parameter input untuk routine ini.
-        semaphore: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return measure path for the command-line workflow."""
     results = await asyncio.gather(*[_hit_endpoint(client, path, semaphore) for _ in range(max(requests, 1))])
     return _summarize_results(path=path, results=results)
 
 
 def _summarize_results(*, path: str, results: list[tuple[int, float]]) -> dict:
-    """Summarize results.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        results: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Summarize results for the command-line workflow."""
     statuses = [status for status, _duration_ms in results]
     durations_ms = [duration_ms for _status, duration_ms in results]
     p95_ms = sorted(durations_ms)[max(int(len(durations_ms) * 0.95) - 1, 0)]
@@ -97,17 +64,7 @@ def _collect_gate_failures(
     max_p95_ms: float,
     max_max_ms: float,
 ) -> list[str]:
-    """Collect gate failures.
-
-    Args:
-        result: Parameter input untuk routine ini.
-        max_p95_ms: Parameter input untuk routine ini.
-        max_max_ms: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Collect gate failures for the command-line workflow."""
     failures: list[str] = []
     path = str(result.get("path") or "/unknown")
     status_failures = list(result.get("failures") or [])
@@ -121,17 +78,7 @@ def _collect_gate_failures(
 
 
 def _resolve_thresholds(*, profile: str, max_p95_ms: float, max_max_ms: float) -> tuple[float, float]:
-    """Resolve thresholds.
-
-    Args:
-        profile: Parameter input untuk routine ini.
-        max_p95_ms: Parameter input untuk routine ini.
-        max_max_ms: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Resolve thresholds for the command-line workflow."""
     if profile == "ci":
         return 1500.0, 2500.0
     if profile == "strict":
@@ -140,12 +87,7 @@ def _resolve_thresholds(*, profile: str, max_p95_ms: float, max_max_ms: float) -
 
 
 def _print_latency_summary(results: list[dict]) -> None:
-    """Perform print latency summary.
-
-    Args:
-        results: Parameter input untuk routine ini.
-
-    """
+    """Print latency summary for the command-line workflow."""
     if not results:
         return
     by_p95 = sorted(results, key=lambda item: float(item.get("p95_ms") or 0.0), reverse=True)[:3]
@@ -157,13 +99,7 @@ def _print_latency_summary(results: list[dict]) -> None:
 
 
 def _write_json(path: str | None, payload: dict) -> None:
-    """Perform write json.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        payload: Parameter input untuk routine ini.
-
-    """
+    """Write json for the command-line workflow."""
     if not path:
         return
     target = Path(path)
@@ -172,12 +108,7 @@ def _write_json(path: str | None, payload: dict) -> None:
 
 
 async def main() -> None:
-    """Run the module entrypoint.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Run the command-line workflow from parsed arguments."""
     parser = argparse.ArgumentParser(description="Run concurrency smoke tests against one or more endpoints.")
     parser.add_argument("--base-url", default="http://localhost:8000", help="Base backend URL.")
     parser.add_argument("--path", action="append", dest="paths", help="Endpoint path to exercise. Can be repeated.")

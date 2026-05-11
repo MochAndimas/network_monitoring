@@ -7,6 +7,7 @@ from .common import (
     _seed_devices_and_metrics,
     Alert,
     API_HEADERS,
+    assert_legacy_deprecation_headers,
     client_context,
     date,
     DeviceRepository,
@@ -19,12 +20,6 @@ from .common import (
 )
 
 def test_devices_endpoint_returns_latest_status():
-    """Validate that devices endpoint returns latest status.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         run(
             _seed_devices_and_metrics(
@@ -65,12 +60,6 @@ def test_devices_endpoint_returns_latest_status():
         assert status_summary_response.json() == {"down": 1, "up": 1}
 
 def test_create_update_and_delete_device_endpoint():
-    """Validate that create update and delete device endpoint.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         create_response = client.post(
             "/devices",
@@ -145,12 +134,6 @@ def test_create_update_and_delete_device_endpoint():
         assert run(fetch_alert_device_id()) is None
 
 def test_device_type_metadata_and_validation():
-    """Validate that device type metadata and validation.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, _session_factory):
         types_response = client.get("/devices/meta/types", headers=API_HEADERS)
         invalid_ip_response = client.post(
@@ -173,12 +156,6 @@ def test_device_type_metadata_and_validation():
         assert invalid_type_response.status_code == 422
 
 def test_metrics_history_filters():
-    """Validate that metrics history filters.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -235,12 +212,6 @@ def test_metrics_history_filters():
         assert names_response.json() == ["cpu_percent", "memory_percent"]
 
 def test_devices_endpoint_supports_filters_and_pagination():
-    """Validate that devices endpoint supports filters and pagination.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         run(
             _seed_devices_and_metrics(
@@ -281,10 +252,7 @@ def test_devices_endpoint_supports_filters_and_pagination():
         filtered_payload = filtered_response.json()
         assert len(filtered_payload) == 1
         assert filtered_payload[0]["name"] == "AP Lobby"
-        assert filtered_response.headers.get("deprecation") == "true"
-        assert filtered_response.headers.get("x-api-replacement-endpoint") == "/devices/paged"
-        assert filtered_response.headers.get("x-api-deprecation-phase") == "announce"
-        assert filtered_response.headers.get("x-api-deprecation-removal-on") == "2026-10-31"
+        assert_legacy_deprecation_headers(filtered_response, legacy_endpoint="/devices")
 
         assert paged_response.status_code == 200
         assert len(paged_response.json()) == 1
@@ -297,12 +265,6 @@ def test_devices_endpoint_supports_filters_and_pagination():
         assert len(paged_payload["items"]) == 1
 
 def test_metrics_history_supports_time_window_filters():
-    """Validate that metrics history supports time window filters.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -345,10 +307,7 @@ def test_metrics_history_supports_time_window_filters():
         payload = response.json()
         assert len(payload) == 1
         assert payload[0]["metric_value"] == "35.00"
-        assert response.headers.get("deprecation") == "true"
-        assert response.headers.get("x-api-replacement-endpoint") == "/metrics/history/paged"
-        assert response.headers.get("x-api-deprecation-phase") == "announce"
-        assert response.headers.get("x-api-deprecation-removal-on") == "2026-10-31"
+        assert_legacy_deprecation_headers(response, legacy_endpoint="/metrics/history")
 
         paged_response = client.get(
             f"/metrics/history/paged?metric_name=cpu_percent&checked_from={checked_from}&checked_to={checked_to}&limit=10&offset=0",
@@ -360,12 +319,6 @@ def test_metrics_history_supports_time_window_filters():
         assert len(paged_payload["items"]) == 1
 
 def test_metrics_history_paged_supports_bulk_metric_names_with_per_metric_limit():
-    """Validate that metrics history paged supports bulk metric names with per metric limit.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -424,13 +377,68 @@ def test_metrics_history_paged_supports_bulk_metric_names_with_per_metric_limit(
         metric_names = sorted(item["metric_name"] for item in payload["items"])
         assert metric_names == ["cpu_percent", "memory_percent"]
 
+
+def test_metrics_history_paged_supports_cursor_pagination():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [{"name": "Server Monitoring", "ip_address": "192.168.1.10", "device_type": "server"}]
+                )
+                current_time = utcnow()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "90.00",
+                            "status": "warning",
+                            "unit": "%",
+                            "checked_at": current_time,
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "80.00",
+                            "status": "warning",
+                            "unit": "%",
+                            "checked_at": current_time - timedelta(minutes=1),
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "70.00",
+                            "status": "warning",
+                            "unit": "%",
+                            "checked_at": current_time - timedelta(minutes=2),
+                        },
+                    ]
+                )
+
+        run(scenario())
+
+        first_response = client.get("/metrics/history/paged?metric_name=cpu_percent&limit=2", headers=API_HEADERS)
+        assert first_response.status_code == 200
+        first_payload = first_response.json()
+        assert [item["metric_value"] for item in first_payload["items"]] == ["90.00", "80.00"]
+        assert first_payload["meta"]["total"] == 3
+        assert first_payload["meta"]["has_more"] is True
+        assert first_payload["meta"]["next_cursor"]
+
+        cursor = first_payload["meta"]["next_cursor"]
+        second_response = client.get(
+            f"/metrics/history/paged?metric_name=cpu_percent&limit=2&cursor={cursor}",
+            headers=API_HEADERS,
+        )
+        assert second_response.status_code == 200
+        second_payload = second_response.json()
+        assert [item["metric_value"] for item in second_payload["items"]] == ["70.00"]
+        assert second_payload["meta"]["total"] is None
+        assert second_payload["meta"]["has_more"] is False
+        assert second_payload["meta"]["next_cursor"] is None
+
+
 def test_metrics_daily_summary_reads_rollup_table_with_filters():
-    """Validate that metrics daily summary reads rollup table with filters.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -490,12 +498,6 @@ def test_metrics_daily_summary_reads_rollup_table_with_filters():
         assert payload["items"][0]["average_packet_loss_percent"] == 1.25
 
 def test_metrics_daily_summary_supports_pagination():
-    """Validate that metrics daily summary supports pagination.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -534,12 +536,6 @@ def test_metrics_daily_summary_supports_pagination():
         assert payload["items"][0]["rollup_date"] == "2026-04-21"
 
 def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
-    """Validate that latest snapshot endpoint is unfiltered and paged.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -609,12 +605,6 @@ def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
         assert any(value == "300" for value in uptime_map.values())
 
 def test_metrics_history_context_endpoint():
-    """Validate that metrics history context endpoint.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -662,12 +652,6 @@ def test_metrics_history_context_endpoint():
         assert "snapshot_uptime_map" in payload
 
 def test_metrics_history_live_endpoint_returns_lightweight_sample():
-    """Validate that metrics history live endpoint returns lightweight sample.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -723,12 +707,6 @@ def test_metrics_history_live_endpoint_returns_lightweight_sample():
         assert len(payload["latest_snapshot"]["items"]) == 2
 
 def test_metrics_history_live_global_snapshot_summary_remains_representative_when_paged():
-    """Validate that metrics history live global snapshot summary remains representative when paged.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -774,12 +752,6 @@ def test_metrics_history_live_global_snapshot_summary_remains_representative_whe
         assert payload["latest_snapshot_status_summary"] == {"down": 1, "up": 1}
 
 def test_latest_snapshot_status_summary_preserves_fallback_first_status_behavior():
-    """Validate that latest snapshot status summary preserves fallback first status behavior.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, session_factory):
         async def scenario():
             async with session_factory() as db:
@@ -820,12 +792,6 @@ def test_latest_snapshot_status_summary_preserves_fallback_first_status_behavior
         assert context_summary == status_summary
 
 def test_threshold_endpoints_and_update():
-    """Validate that threshold endpoints and update.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     with client_context() as (client, _session_factory):
         list_response = client.get("/thresholds", headers=API_HEADERS)
 
@@ -844,6 +810,16 @@ def test_threshold_endpoints_and_update():
         assert any(item["key"] == "switch_packet_loss_critical" for item in payload)
         assert any(item["key"] == "switch_jitter_warning" for item in payload)
         assert any(item["key"] == "switch_jitter_critical" for item in payload)
+        assert any(item["key"] == "nas_ping_latency_warning" for item in payload)
+        assert any(item["key"] == "nas_ping_latency_critical" for item in payload)
+        assert any(item["key"] == "nas_packet_loss_warning" for item in payload)
+        assert any(item["key"] == "nas_packet_loss_critical" for item in payload)
+        assert any(item["key"] == "nas_jitter_warning" for item in payload)
+        assert any(item["key"] == "nas_jitter_critical" for item in payload)
+        assert any(item["key"] == "nas_system_temperature_warning" for item in payload)
+        assert any(item["key"] == "nas_system_temperature_critical" for item in payload)
+        assert any(item["key"] == "nas_disk_temperature_warning" for item in payload)
+        assert any(item["key"] == "nas_disk_temperature_critical" for item in payload)
         assert any(item["key"] == "dns_resolution_warning" for item in payload)
         assert any(item["key"] == "http_response_warning" for item in payload)
         assert any(item["key"] == "mikrotik_connected_clients_warning" for item in payload)

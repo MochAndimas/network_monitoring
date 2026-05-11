@@ -1,7 +1,4 @@
-"""Define module logic for `scripts/test_snmp.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Command-line utility for test snmp."""
 
 import argparse
 import asyncio
@@ -30,19 +27,7 @@ DEFAULT_OIDS = [
 
 
 async def snmp_get(ip: str, community: str, oid: str, timeout: int, retries: int) -> tuple[bool, str]:
-    """Return snmp get.
-
-    Args:
-        ip: Parameter input untuk routine ini.
-        community: Parameter input untuk routine ini.
-        oid: Parameter input untuk routine ini.
-        timeout: Parameter input untuk routine ini.
-        retries: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return snmp get for the command-line workflow."""
     engine = SnmpEngine()
     try:
         error_indication, error_status, _, var_binds = await get_cmd(
@@ -68,14 +53,7 @@ async def snmp_get(ip: str, community: str, oid: str, timeout: int, retries: int
 
 
 async def run_targets(targets: list[tuple[str, str, str]], timeout: int, retries: int) -> None:
-    """Run targets.
-
-    Args:
-        targets: Parameter input untuk routine ini.
-        timeout: Parameter input untuk routine ini.
-        retries: Parameter input untuk routine ini.
-
-    """
+    """Run targets for the command-line workflow."""
     for label, ip, community in targets:
         print(f"[{label}] {ip}")
         for oid_label, oid in DEFAULT_OIDS:
@@ -85,12 +63,7 @@ async def run_targets(targets: list[tuple[str, str, str]], timeout: int, retries
 
 
 def parse_args() -> argparse.Namespace:
-    """Return parse args.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Parse args for the command-line workflow."""
     parser = argparse.ArgumentParser(description="Test SNMP v2c reachability to one or more targets.")
     parser.add_argument("--ip", help="Target IP address.")
     parser.add_argument("--community", help="SNMP v2c community string.")
@@ -101,15 +74,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_targets(args: argparse.Namespace) -> list[tuple[str, str, str]]:
-    """Build targets.
-
-    Args:
-        args: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build targets for the command-line workflow."""
     if args.ip and args.community:
         return [(args.label, args.ip, args.community)]
     if args.ip or args.community:
@@ -118,12 +83,7 @@ def build_targets(args: argparse.Namespace) -> list[tuple[str, str, str]]:
 
 
 async def main() -> None:
-    """Run the module entrypoint.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Run the command-line workflow from parsed arguments."""
     args = parse_args()
     await run_targets(build_targets(args), args.timeout, args.retries)
 

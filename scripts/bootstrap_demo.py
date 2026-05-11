@@ -1,7 +1,4 @@
-"""Define module logic for `scripts/bootstrap_demo.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Command-line utility for bootstrap demo."""
 
 import asyncio
 
@@ -14,12 +11,7 @@ from scripts.seed_devices import SEED_DEVICES
 
 
 async def main() -> None:
-    """Run the module entrypoint.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Run the command-line workflow from parsed arguments."""
     await init_db()
     async with SessionLocal() as db:
         devices = await DeviceRepository(db).upsert_devices(SEED_DEVICES)

@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/alerting/notifiers/telegram_notifier.py`.
-
-This module contains project-specific implementation details.
-"""
+"""notifiers support code for telegram notifier."""
 
 from __future__ import annotations
 
@@ -19,12 +16,7 @@ logger = logging.getLogger("network_monitoring.telegram")
 
 
 async def send_telegram_alert(message: str) -> None:
-    """Return send telegram alert.
-
-    Args:
-        message: Parameter input untuk routine ini.
-
-    """
+    """Send telegram alert for alerting."""
     if not settings.telegram_bot_token or not settings.telegram_chat_id or Bot is None:
         logger.info("Telegram notifier is not configured; alert skipped: %s", message)
         return

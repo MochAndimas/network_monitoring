@@ -1,4 +1,1 @@
-"""Define module logic for `backend/__init__.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Backend package for the network monitoring service."""

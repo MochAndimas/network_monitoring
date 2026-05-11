@@ -25,12 +25,6 @@ def test_redact_sensitive_log_message_masks_telegram_credentials(monkeypatch):
 
 
 def test_observability_payload_metrics_cover_paged_endpoints():
-    """Validate that observability payload metrics cover paged endpoints.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     original_payload_request_count = observability_module._api_payload_request_count.copy()
     original_payload_rows = observability_module._api_payload_rows.copy()
     original_payload_total_rows = observability_module._api_payload_total_rows.copy()

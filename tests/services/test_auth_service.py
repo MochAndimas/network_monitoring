@@ -17,12 +17,6 @@ from backend.app.services.auth_service import cleanup_auth_data
 from tests.test_utils import run
 
 def test_cleanup_auth_data_removes_old_sessions_and_attempts():
-    """Validate that cleanup auth data removes old sessions and attempts.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     original_password_secret = settings.auth_password_secret
     original_jwt_secret = settings.auth_jwt_secret
     settings.auth_password_secret = "test-password-secret"

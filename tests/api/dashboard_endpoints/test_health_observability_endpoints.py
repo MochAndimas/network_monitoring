@@ -15,12 +15,6 @@ from .common import (
 )
 
 def test_health_endpoint_and_request_id_header():
-    """Validate that health endpoint and request id header.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     import backend.app.api.routes.health as health_module
 
     original_check = health_module.check_database_connection
@@ -49,12 +43,6 @@ def test_health_endpoint_and_request_id_header():
         health_module.check_database_connection = original_check
 
 def test_health_ready_stays_up_when_scheduler_is_degraded():
-    """Validate that health ready stays up when scheduler is degraded.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     import backend.app.api.routes.health as health_module
 
     original_check = health_module.check_database_connection
@@ -94,12 +82,6 @@ def test_health_ready_stays_up_when_scheduler_is_degraded():
         health_module.list_scheduler_job_statuses = original_list_statuses
 
 def test_observability_metrics_use_route_templates_for_http_paths():
-    """Validate that observability metrics use route templates for http paths.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     import backend.app.services.observability_service as observability_module
 
     original_request_count = observability_module._http_request_count.copy()
@@ -135,12 +117,6 @@ def test_observability_metrics_use_route_templates_for_http_paths():
         observability_module._http_request_errors.update(original_request_errors)
 
 def test_observability_metrics_include_history_payload_counters():
-    """Validate that observability metrics include history payload counters.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     import backend.app.services.observability_service as observability_module
 
     original_payload_request_count = observability_module._api_payload_request_count.copy()
@@ -205,12 +181,6 @@ def test_observability_metrics_include_history_payload_counters():
         observability_module._api_payload_sampled.update(original_payload_sampled)
 
 def test_observability_summary_endpoint():
-    """Validate that observability summary endpoint.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     import backend.app.api.routes.observability as observability_module
 
     original_check = observability_module.check_database_connection

@@ -1,7 +1,4 @@
-"""Define module logic for `dashboard/pages/3_Live_Monitoring.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Streamlit page for live metric history, snapshots, and trend analysis."""
 
 from datetime import datetime, timedelta
 from typing import Any, cast
@@ -21,6 +18,7 @@ from dashboard.pages.live_monitoring.helpers import (
     STATUS_OPTIONS,
     _default_device_option_label,
     _default_mikrotik_trend_metrics,
+    _default_nas_trend_metrics,
     _entity_volume_frame,
     _fetch_device_history_rows,
     _fetch_latest_device_snapshot,
@@ -31,6 +29,7 @@ from dashboard.pages.live_monitoring.helpers import (
     _friendly_metric_name,
     _health_score_percent,
     _is_dynamic_mikrotik_metric,
+    _is_nas_card_only_metric,
     _latest_snapshot_frame,
     _metric_filter_label,
     _metric_kpi_summary,
@@ -41,6 +40,7 @@ from dashboard.pages.live_monitoring.helpers import (
     _recent_anomaly_frame,
     _render_metric_trend_section,
     _render_mikrotik_history_section,
+    _render_nas_history_section,
     _render_printer_history_section,
     _render_stat_card,
     _should_hide_metric_for_device,
@@ -92,12 +92,7 @@ auto_refresh, interval_seconds = refresh_controls("history", default_enabled=Tru
 
 
 def _render_history_filters() -> dict:
-    """Render history filters.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Render history filters for the dashboard UI."""
     default_device_label = _default_device_option_label(devices)
     device_option_labels = list(device_options.keys())
     if "history_selected_device" not in st.session_state or st.session_state["history_selected_device"] not in device_option_labels:
@@ -191,12 +186,7 @@ history_filters = _render_history_filters()
 
 
 def _render_history_body() -> None:
-    """Render history body.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Render history body for the dashboard UI."""
     meta_container = st.container()
     summary_container = st.container()
     snapshot_container = st.container()
@@ -592,7 +582,12 @@ def _render_history_body() -> None:
         printer_history_frame = _prepare_history_frame_cached(printer_history, sort_desc=False)
         _render_printer_history_section(printer_history_frame)
 
-    st.markdown("### Tren Metrik")
+    if selected_device_id is not None and selected_device_type == "nas":
+        nas_history_frame = _prepare_history_frame_cached(selected_device_history, sort_desc=False)
+        _render_nas_history_section(nas_history_frame)
+
+    trend_heading = "### Tren Metrik Bergerak" if selected_device_type == "nas" else "### Tren Metrik"
+    st.markdown(trend_heading)
     if selected_device_id is None:
         st.info("Pilih satu device untuk menampilkan grafik tren.")
         return
@@ -605,7 +600,9 @@ def _render_history_body() -> None:
     device_history_frame_desc = device_history_frame.sort_values("checked_at", ascending=False).copy()
 
     available_metric_names = sorted(device_history_frame["metric_name"].dropna().unique().tolist())
-    if selected_is_mikrotik and selected_metric == "All Metrics":
+    if selected_device_type == "nas" and selected_metric == "All Metrics":
+        metric_names_to_render = _default_nas_trend_metrics(available_metric_names)
+    elif selected_is_mikrotik and selected_metric == "All Metrics":
         metric_names_to_render = _default_mikrotik_trend_metrics(available_metric_names)
     else:
         metric_names_to_render = [selected_metric] if selected_metric != "All Metrics" else available_metric_names
@@ -618,6 +615,23 @@ def _render_history_body() -> None:
         metric_names_to_render = [
             metric_name for metric_name in metric_names_to_render if not _is_dynamic_mikrotik_metric(metric_name)
         ]
+    if selected_device_type == "nas":
+        if selected_metric == "All Metrics":
+            metric_names_to_render = [
+                metric_name for metric_name in metric_names_to_render if not _is_nas_card_only_metric(metric_name)
+            ]
+        elif _is_nas_card_only_metric(str(selected_metric)):
+            selected_metric_frame = device_history_frame[
+                device_history_frame["metric_name"].astype(str) == str(selected_metric)
+            ].copy()
+            latest_row = selected_metric_frame.sort_values("checked_at").iloc[-1] if not selected_metric_frame.empty else None
+            st.info("Metrik ini stabil dan ditampilkan sebagai kartu, bukan grafik tren.")
+            if latest_row is not None:
+                card_col1, card_col2, card_col3 = st.columns(3)
+                _render_stat_card(card_col1, _friendly_metric_name(str(selected_metric)), str(latest_row.get("display_value") or "-"))
+                _render_stat_card(card_col2, "Status", _status_label_for_display(latest_row.get("status")))
+                _render_stat_card(card_col3, "Dicek (WIB)", str(latest_row.get("checked_at_wib") or "-"))
+            return
     if selected_metric != "All Metrics":
         selected_metric_frame = device_history_frame[
             device_history_frame["metric_name"].astype(str) == str(selected_metric)
@@ -630,6 +644,8 @@ def _render_history_body() -> None:
         for metric_name, metric_frame in device_history_frame.groupby(device_history_frame["metric_name"].astype(str))
     }
     for metric_name in metric_names_to_render:
+        if selected_device_type == "nas" and _is_nas_card_only_metric(str(metric_name)):
+            continue
         metric_series_frame = metric_frame_by_name.get(str(metric_name))
         if metric_series_frame is None:
             continue

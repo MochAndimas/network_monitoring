@@ -1,7 +1,4 @@
-"""Define module logic for `dashboard/components/api.py`.
-
-This module contains project-specific implementation details.
-"""
+"""HTTP client, caching, and auth recovery helpers for Streamlit pages."""
 
 from __future__ import annotations
 
@@ -19,15 +16,7 @@ PENDING_API_REQUEST_KEY = "pending_api_request"
 
 
 def _request_headers(auth_token: str) -> dict[str, str]:
-    """Perform request headers.
-
-    Args:
-        auth_token: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Build authorization headers for a dashboard API request."""
     headers: dict[str, str] = {}
     if auth_token:
         headers["authorization"] = f"Bearer {auth_token}"
@@ -36,15 +25,7 @@ def _request_headers(auth_token: str) -> dict[str, str]:
 
 @st.cache_resource(show_spinner=False)
 def _client(api_base_url: str) -> httpx.Client:
-    """Perform client.
-
-    Args:
-        api_base_url: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return the cached synchronous HTTP client for one backend base URL."""
     return httpx.Client(
         base_url=api_base_url,
         timeout=httpx.Timeout(5.0),
@@ -52,13 +33,7 @@ def _client(api_base_url: str) -> httpx.Client:
 
 
 def _warn_backend_error(action: str, exc: httpx.HTTPError) -> None:
-    """Perform warn backend error.
-
-    Args:
-        action: Parameter input untuk routine ini.
-        exc: Parameter input untuk routine ini.
-
-    """
+    """Show a backend error message in the dashboard UI."""
     response = getattr(exc, "response", None)
     if response is not None:
         if response.status_code == 401:
@@ -81,20 +56,7 @@ def _request_json(
     api_base_url: str = API_BASE_URL,
     auth_token: str = "",
 ):
-    """Perform request json.
-
-    Args:
-        method: Parameter input untuk routine ini.
-        path: Parameter input untuk routine ini.
-        payload: Parameter input untuk routine ini.
-        timeout: Parameter input untuk routine ini.
-        api_base_url: Parameter input untuk routine ini.
-        auth_token: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Send one JSON API request and return the decoded response payload."""
     client = _client(api_base_url)
     response = client.request(
         method,
@@ -110,12 +72,7 @@ def _request_json(
 
 
 def _prepare_auth_restore() -> None:
-    """Perform prepare auth restore.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Clear local token state so the auth bridge can restore the session."""
     st.session_state.pop("auth_token", None)
     st.session_state.pop("auth_expires_at", None)
     st.session_state.pop("auth_bridge_request", None)
@@ -123,15 +80,7 @@ def _prepare_auth_restore() -> None:
 
 
 def _pending_api_request(action_key: str | None = None) -> dict | None:
-    """Perform pending API request.
-
-    Args:
-        action_key: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return the queued write request waiting for auth recovery."""
     payload = st.session_state.get(PENDING_API_REQUEST_KEY)
     if not isinstance(payload, dict):
         return None
@@ -141,41 +90,19 @@ def _pending_api_request(action_key: str | None = None) -> dict | None:
 
 
 def has_pending_action(action_key: str) -> bool:
-    """Return whether an API action is already pending in session state.
-
-    Args:
-        action_key: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return whether a write action is already queued for replay."""
     return _pending_api_request(action_key) is not None
 
 
 def _clear_pending_action(action_key: str | None = None) -> None:
-    """Perform clear pending action.
-
-    Args:
-        action_key: Parameter input untuk routine ini.
-
-    """
+    """Clear a queued API write action after it succeeds or fails."""
     payload = _pending_api_request(action_key)
     if payload is not None:
         st.session_state.pop(PENDING_API_REQUEST_KEY, None)
 
 
 def _queue_pending_action(action_key: str, method: str, path: str, payload, fallback) -> None:
-    """Perform queue pending action.
-
-    Args:
-        action_key: Parameter input untuk routine ini.
-        method: Parameter input untuk routine ini.
-        path: Parameter input untuk routine ini.
-        payload: Parameter input untuk routine ini.
-        fallback: Parameter input untuk routine ini.
-
-    """
+    """Store a write request and rerun the page to restore authentication."""
     st.session_state[PENDING_API_REQUEST_KEY] = {
         "action_key": action_key,
         "method": method,
@@ -200,24 +127,7 @@ def _request_with_auth_recovery(
     rerun_on_401: bool = False,
     action_key: str | None = None,
 ):
-    """Perform request with auth recovery.
-
-    Args:
-        method: Parameter input untuk routine ini.
-        path: Parameter input untuk routine ini.
-        payload: Parameter input untuk routine ini.
-        timeout: Parameter input untuk routine ini.
-        fallback: Parameter input untuk routine ini.
-        api_base_url: Parameter input untuk routine ini.
-        auth_token: Parameter input untuk routine ini.
-        action: Parameter input untuk routine ini.
-        rerun_on_401: Parameter input untuk routine ini.
-        action_key: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Run an API request and retry queued writes after token restoration."""
     pending_request = _pending_api_request(action_key) if action_key else None
     request_path = str(pending_request.get("path")) if pending_request else path
     request_payload = pending_request.get("payload") if pending_request else payload
@@ -257,18 +167,7 @@ def _request_with_auth_recovery(
 
 @st.cache_data(show_spinner=False, ttl=GET_CACHE_TTL_SECONDS)
 def _cached_get_json(path: str, timeout: float, api_base_url: str, auth_token: str):
-    """Perform cached get json.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        timeout: Parameter input untuk routine ini.
-        api_base_url: Parameter input untuk routine ini.
-        auth_token: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return a short-lived cached GET response."""
     return _request_json("GET", path, timeout=timeout, api_base_url=api_base_url, auth_token=auth_token)
 
 
@@ -278,17 +177,7 @@ def _cached_get_json_map(
     api_base_url: str,
     auth_token: str,
 ) -> dict[str, object]:
-    """Perform cached get json map.
-
-    Args:
-        request_items: Parameter input untuk routine ini.
-        api_base_url: Parameter input untuk routine ini.
-        auth_token: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return several cached GET responses keyed by caller-defined names."""
     payload: dict[str, object] = {}
     for name, path in request_items:
         payload[name] = _request_json("GET", path, api_base_url=api_base_url, auth_token=auth_token)
@@ -297,18 +186,7 @@ def _cached_get_json_map(
 
 @st.cache_data(show_spinner=False, ttl=GET_CACHE_TTL_SLOW_SECONDS)
 def _cached_get_json_slow(path: str, timeout: float, api_base_url: str, auth_token: str):
-    """Perform cached get json slow.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        timeout: Parameter input untuk routine ini.
-        api_base_url: Parameter input untuk routine ini.
-        auth_token: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return a longer-lived cached GET response for slow-changing data."""
     return _request_json("GET", path, timeout=timeout, api_base_url=api_base_url, auth_token=auth_token)
 
 
@@ -318,17 +196,7 @@ def _cached_get_json_map_slow(
     api_base_url: str,
     auth_token: str,
 ) -> dict[str, object]:
-    """Perform cached get json map slow.
-
-    Args:
-        request_items: Parameter input untuk routine ini.
-        api_base_url: Parameter input untuk routine ini.
-        auth_token: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return several longer-lived cached GET responses."""
     payload: dict[str, object] = {}
     for name, path in request_items:
         payload[name] = _request_json("GET", path, api_base_url=api_base_url, auth_token=auth_token)
@@ -336,15 +204,7 @@ def _cached_get_json_map_slow(
 
 
 def _is_slow_changing_path(path: str) -> bool:
-    """Perform is slow changing path.
-
-    Args:
-        path: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return whether a path can use the longer dashboard cache TTL."""
     normalized = str(path or "").lower()
     return (
         normalized.startswith("/devices/options")
@@ -354,18 +214,7 @@ def _is_slow_changing_path(path: str) -> bool:
 
 
 def _cached_get_by_profile(path: str, timeout: float, api_base_url: str, auth_token: str):
-    """Perform cached get by profile.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        timeout: Parameter input untuk routine ini.
-        api_base_url: Parameter input untuk routine ini.
-        auth_token: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Choose the appropriate cached GET helper for one path."""
     if _is_slow_changing_path(path):
         return _cached_get_json_slow(path, timeout, api_base_url, auth_token)
     return _cached_get_json(path, timeout, api_base_url, auth_token)
@@ -376,33 +225,14 @@ def _cached_get_map_by_profile(
     api_base_url: str,
     auth_token: str,
 ) -> dict[str, object]:
-    """Perform cached get map by profile.
-
-    Args:
-        request_items: Parameter input untuk routine ini.
-        api_base_url: Parameter input untuk routine ini.
-        auth_token: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Choose the appropriate cached GET-map helper for several paths."""
     if request_items and all(_is_slow_changing_path(path) for _, path in request_items):
         return _cached_get_json_map_slow(request_items, api_base_url, auth_token)
     return _cached_get_json_map(request_items, api_base_url, auth_token)
 
 
 def get_json(path: str, fallback):
-    """Get json.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        fallback: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Fetch a dashboard API payload with auth recovery enabled."""
     return _request_with_auth_recovery(
         "GET",
         path,
@@ -416,18 +246,7 @@ def get_json(path: str, fallback):
 
 
 def post_json(path: str, payload: dict | None, fallback, *, action_key: str | None = None):
-    """Return post json.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        payload: Parameter input untuk routine ini.
-        fallback: Parameter input untuk routine ini.
-        action_key: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """POST a dashboard API payload with optional replay after auth recovery."""
     return _request_with_auth_recovery(
         "POST",
         path,
@@ -441,18 +260,7 @@ def post_json(path: str, payload: dict | None, fallback, *, action_key: str | No
 
 
 def put_json(path: str, payload: dict, fallback, *, action_key: str | None = None):
-    """Return put json.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        payload: Parameter input untuk routine ini.
-        fallback: Parameter input untuk routine ini.
-        action_key: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """PUT a dashboard API payload with optional replay after auth recovery."""
     return _request_with_auth_recovery(
         "PUT",
         path,
@@ -466,17 +274,7 @@ def put_json(path: str, payload: dict, fallback, *, action_key: str | None = Non
 
 
 def delete_json(path: str, fallback=False, *, action_key: str | None = None):
-    """Delete json.
-
-    Args:
-        path: Parameter input untuk routine ini.
-        fallback: Parameter input untuk routine ini.
-        action_key: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """DELETE a dashboard API resource with optional replay after auth recovery."""
     return _request_with_auth_recovery(
         "DELETE",
         path,
@@ -489,15 +287,7 @@ def delete_json(path: str, fallback=False, *, action_key: str | None = None):
 
 
 def get_json_map(requests: Mapping[str, tuple[str, object]]) -> dict[str, object]:
-    """Get json map.
-
-    Args:
-        requests: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Fetch several dashboard API payloads and apply per-item fallbacks."""
     request_items = tuple((name, path) for name, (path, _fallback) in requests.items())
     try:
         payload = _cached_get_map_by_profile(request_items, API_BASE_URL, str(st.session_state.get("auth_token") or ""))
@@ -517,16 +307,7 @@ def get_json_map(requests: Mapping[str, tuple[str, object]]) -> dict[str, object
 
 
 def paged_items(payload, fallback: list[dict] | None = None) -> list[dict]:
-    """Return item list from a paged API payload with safe defaults.
-
-    Args:
-        payload: Parameter input untuk routine ini.
-        fallback: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Extract the item list from a paged API response."""
     if isinstance(payload, dict):
         items = payload.get("items")
         if isinstance(items, list):
@@ -535,15 +316,7 @@ def paged_items(payload, fallback: list[dict] | None = None) -> list[dict]:
 
 
 def paged_meta(payload) -> dict:
-    """Return pagination metadata map from a paged API payload.
-
-    Args:
-        payload: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Extract pagination metadata from a paged API response."""
     if isinstance(payload, dict):
         meta = payload.get("meta")
         if isinstance(meta, dict):

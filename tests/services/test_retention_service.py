@@ -22,15 +22,6 @@ from backend.app.services.retention_service import cleanup_monitoring_data
 from tests.test_utils import create_all, drop_all, run
 
 def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatch):
-    """Validate that cleanup rolls up old raw metrics and prunes resolved records.
-
-    Args:
-        monkeypatch: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -99,15 +90,6 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
 
 
 def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypatch):
-    """Validate that cleanup rolls up yesterday without deleting recent raw metrics.
-
-    Args:
-        monkeypatch: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -135,12 +117,6 @@ def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypa
 
 
 def test_latest_metric_map_uses_latest_metric_for_each_device_metric_pair():
-    """Validate that latest metric map uses latest metric for each device metric pair.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -162,15 +138,6 @@ def test_latest_metric_map_uses_latest_metric_for_each_device_metric_pair():
 
 
 def test_cleanup_keeps_latest_snapshot_metric_for_active_alert(monkeypatch):
-    """Validate retention does not resolve active alerts without a recovery metric.
-
-    Args:
-        monkeypatch: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -199,20 +166,6 @@ def test_cleanup_keeps_latest_snapshot_metric_for_active_alert(monkeypatch):
 
 
 def _metric(device_id: int, name: str, value: str, status: str, unit: str | None, checked_at):
-    """Perform metric.
-
-    Args:
-        device_id: Parameter input untuk routine ini.
-        name: Parameter input untuk routine ini.
-        value: Parameter input untuk routine ini.
-        status: Parameter input untuk routine ini.
-        unit: Parameter input untuk routine ini.
-        checked_at: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     return {
         "device_id": device_id,
         "metric_name": name,
@@ -224,27 +177,10 @@ def _metric(device_id: int, name: str, value: str, status: str, unit: str | None
 
 
 async def _noop_send_telegram_alert(_message: str) -> None:
-    """Perform noop send telegram alert.
-
-    Args:
-        _message: Parameter input untuk routine ini.
-
-    """
+    pass
 
 
 async def _cleanup_old_metrics(session_factory, old_timestamp, recent_timestamp, very_old_timestamp):
-    """Perform cleanup old metrics.
-
-    Args:
-        session_factory: Parameter input untuk routine ini.
-        old_timestamp: Parameter input untuk routine ini.
-        recent_timestamp: Parameter input untuk routine ini.
-        very_old_timestamp: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     async with session_factory() as db:
         device = (
             await DeviceRepository(db).upsert_devices(
@@ -312,16 +248,6 @@ async def _cleanup_old_metrics(session_factory, old_timestamp, recent_timestamp,
 
 
 async def _cleanup_yesterday_metrics(session_factory, yesterday):
-    """Perform cleanup yesterday metrics.
-
-    Args:
-        session_factory: Parameter input untuk routine ini.
-        yesterday: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     async with session_factory() as db:
         device = (
             await DeviceRepository(db).upsert_devices(
@@ -343,16 +269,6 @@ async def _cleanup_yesterday_metrics(session_factory, yesterday):
 
 
 async def _latest_metric_map_for_device(session_factory, now):
-    """Perform latest metric map for device.
-
-    Args:
-        session_factory: Parameter input untuk routine ini.
-        now: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     async with session_factory() as db:
         device = (
             await DeviceRepository(db).upsert_devices(
@@ -372,16 +288,6 @@ async def _latest_metric_map_for_device(session_factory, now):
 
 
 async def _cleanup_with_active_down_alert(session_factory, old_timestamp):
-    """Perform cleanup with active down alert.
-
-    Args:
-        session_factory: Parameter input untuk routine ini.
-        old_timestamp: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     async with session_factory() as db:
         device = (
             await DeviceRepository(db).upsert_devices(

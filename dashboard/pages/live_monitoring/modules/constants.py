@@ -1,0 +1,20 @@
+"""Constants used by the live monitoring dashboard."""
+
+from .impl import (
+    CHART_WINDOW_OPTIONS,
+    INTERNET_ONLY_METRICS,
+    METRIC_LABELS,
+    PRINTER_DETAIL_ONLY_METRICS,
+    PRINTER_METRIC_NAMES,
+    STATUS_OPTIONS,
+)
+
+__all__ = [
+    "CHART_WINDOW_OPTIONS",
+    "INTERNET_ONLY_METRICS",
+    "METRIC_LABELS",
+    "PRINTER_DETAIL_ONLY_METRICS",
+    "PRINTER_METRIC_NAMES",
+    "STATUS_OPTIONS",
+]
+

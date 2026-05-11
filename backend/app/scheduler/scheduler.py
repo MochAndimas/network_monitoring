@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/scheduler/scheduler.py`.
-
-This module contains project-specific implementation details.
-"""
+"""scheduler support code for scheduler."""
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -9,12 +6,7 @@ from .jobs import register_jobs
 
 
 def create_scheduler() -> AsyncIOScheduler:
-    """Create scheduler for scheduler execution workflows.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Create scheduler for scheduled monitoring execution."""
     scheduler = AsyncIOScheduler(timezone="Asia/Jakarta")
     register_jobs(scheduler)
     return scheduler

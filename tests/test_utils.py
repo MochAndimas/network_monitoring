@@ -15,72 +15,27 @@ from backend.app.db.base import Base
 
 
 def run(coro):
-    """Perform run.
-
-    Args:
-        coro: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     return asyncio.run(coro)
 
 
 async def create_all(engine: AsyncEngine) -> None:
-    """Perform create all.
-
-    Args:
-        engine: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
 
 async def drop_all(engine: AsyncEngine) -> None:
-    """Perform drop all.
-
-    Args:
-        engine: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)
     await engine.dispose()
 
 
 async def empty_checks(_db):
-    """Perform empty checks.
-
-    Args:
-        _db: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     return []
 
 
 def make_fake_safe_ping(samples: Iterable[float | None]):
-    """Perform make fake safe ping.
-
-    Args:
-        samples: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     sample_iter = iter(samples)
 
     async def _fake_safe_ping(_ip_address):

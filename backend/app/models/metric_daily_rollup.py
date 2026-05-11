@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/models/metric_daily_rollup.py`.
-
-This module contains project-specific implementation details.
-"""
+"""SQLAlchemy model definitions for metric daily rollup records."""
 
 from __future__ import annotations
 
@@ -19,10 +16,7 @@ if TYPE_CHECKING:
 
 
 class MetricDailyRollup(Base):
-    """Perform MetricDailyRollup.
-
-    This class encapsulates related behavior and data for this domain area.
-    """
+    """SQLAlchemy ORM model for MetricDailyRollup records."""
     __tablename__ = "metric_daily_rollups"
     __table_args__ = (UniqueConstraint("device_id", "rollup_date", name="uq_metric_daily_rollups_device_date"),)
 

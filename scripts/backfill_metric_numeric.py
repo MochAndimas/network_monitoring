@@ -1,7 +1,4 @@
-"""Define module logic for `scripts/backfill_metric_numeric.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Command-line utility for backfill metric numeric."""
 
 from __future__ import annotations
 
@@ -25,12 +22,7 @@ NUMERIC_PATTERN = r"^-?[0-9]+(\.[0-9]+)?$"
 
 
 async def _count_pending_metrics() -> int:
-    """Count pending metrics.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Count pending metrics for the command-line workflow."""
     async with SessionLocal() as db:
         query = (
             select(func.count())
@@ -44,15 +36,7 @@ async def _count_pending_metrics() -> int:
 
 
 async def _next_metric_ids(batch_size: int) -> list[int]:
-    """Perform next metric ids.
-
-    Args:
-        batch_size: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return next metric ids for the command-line workflow."""
     async with SessionLocal() as db:
         query = (
             select(Metric.id)
@@ -67,15 +51,7 @@ async def _next_metric_ids(batch_size: int) -> list[int]:
 
 
 async def _backfill_batch(metric_ids: list[int]) -> int:
-    """Perform backfill batch.
-
-    Args:
-        metric_ids: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Backfill batch for the command-line workflow."""
     if not metric_ids:
         return 0
 
@@ -95,12 +71,7 @@ async def _backfill_batch(metric_ids: list[int]) -> int:
 
 
 async def main() -> None:
-    """Run the module entrypoint.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Run the command-line workflow from parsed arguments."""
     parser = argparse.ArgumentParser(description="Backfill numeric metric values in small non-blocking batches.")
     parser.add_argument("--batch-size", type=int, default=500, help="Rows to update per transaction.")
     parser.add_argument("--sleep-seconds", type=float, default=0.05, help="Pause between batches.")

@@ -7,12 +7,6 @@ from scripts.concurrency_smoke import _collect_gate_failures, _resolve_threshold
 
 
 def test_summarize_results_builds_expected_metrics():
-    """Validate that summarize results builds expected metrics.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     summary = _summarize_results(
         path="/health/live",
         results=[
@@ -32,12 +26,6 @@ def test_summarize_results_builds_expected_metrics():
 
 
 def test_collect_gate_failures_returns_status_and_latency_breaches():
-    """Validate that collect gate failures returns status and latency breaches.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     result = {
         "path": "/metrics/history/paged",
         "p95_ms": 1600.0,
@@ -58,12 +46,6 @@ def test_collect_gate_failures_returns_status_and_latency_breaches():
 
 
 def test_resolve_thresholds_uses_expected_profiles():
-    """Validate that resolve thresholds uses expected profiles.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
     assert _resolve_thresholds(profile="ci", max_p95_ms=0.0, max_max_ms=0.0) == (1500.0, 2500.0)
     assert _resolve_thresholds(profile="strict", max_p95_ms=0.0, max_max_ms=0.0) == (1000.0, 2000.0)
     assert _resolve_thresholds(profile="custom", max_p95_ms=111.0, max_max_ms=222.0) == (111.0, 222.0)

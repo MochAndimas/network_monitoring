@@ -1,7 +1,4 @@
-"""Define module logic for `dashboard/components/auth_bridge.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Streamlit dashboard helpers for auth bridge."""
 
 from __future__ import annotations
 
@@ -16,19 +13,7 @@ _COMPONENT = components.declare_component(
 
 
 def auth_bridge(*, action: str, host: str, request_id: str, payload: dict | None = None, key: str):
-    """Return auth bridge.
-
-    Args:
-        action: Parameter input untuk routine ini.
-        host: Parameter input untuk routine ini.
-        request_id: Parameter input untuk routine ini.
-        payload: Parameter input untuk routine ini.
-        key: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Return auth bridge used by the dashboard UI."""
     return _COMPONENT(
         action=action,
         host=host,

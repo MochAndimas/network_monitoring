@@ -1,7 +1,4 @@
-"""Define module logic for `backend/app/services/audit_service.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Service-layer workflows for audit service."""
 
 from __future__ import annotations
 
@@ -25,23 +22,7 @@ async def record_admin_audit_log(
     details: dict | None = None,
     commit: bool = True,
 ) -> AdminAuditLog:
-    """Persist an admin audit-log event for privileged actions.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        actor: Parameter input untuk routine ini.
-        action: Parameter input untuk routine ini.
-        target_type: Parameter input untuk routine ini.
-        target_id: Parameter input untuk routine ini.
-        ip_address: Parameter input untuk routine ini.
-        user_agent: Parameter input untuk routine ini.
-        details: Parameter input untuk routine ini.
-        commit: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """Record admin audit log in the service layer."""
     user = getattr(actor, "user", None)
     entry = AdminAuditLog(
         actor_kind=str(getattr(actor, "kind", "unknown")),
@@ -69,15 +50,6 @@ async def list_admin_audit_logs(
     *,
     limit: int = 100,
 ) -> list[AdminAuditLog]:
-    """Return admin audit-log rows with optional filters and pagination.
-
-    Args:
-        db: Parameter input untuk routine ini.
-        limit: Parameter input untuk routine ini.
-
-    Returns:
-        Nilai balik routine atau efek samping yang dihasilkan.
-
-    """
+    """List admin audit logs in the service layer."""
     rows = await db.scalars(select(AdminAuditLog).order_by(desc(AdminAuditLog.created_at), desc(AdminAuditLog.id)).limit(limit))
     return list(rows.all())

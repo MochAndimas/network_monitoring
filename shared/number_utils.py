@@ -1,7 +1,4 @@
-"""Define module logic for `shared/number_utils.py`.
-
-This module contains project-specific implementation details.
-"""
+"""Shared helpers for number utils."""
 
 from __future__ import annotations
 
