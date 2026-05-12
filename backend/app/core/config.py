@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     scheduler_interval_mikrotik_seconds: int = 60
     scheduler_interval_alert_seconds: int = 30
     scheduler_job_max_instances: int = 1
+    scheduler_timezone: str = "Asia/Jakarta"
     monitoring_lock_name: str = "network_monitoring.pipeline"
     monitoring_lock_timeout_seconds: int = 900
     dns_check_host: str = "google.com"

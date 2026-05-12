@@ -469,9 +469,11 @@ def test_mikrotik_api_checks_collect_routeros_metrics(monkeypatch, session_facto
 def test_mikrotik_dynamic_metric_controls_support_section_toggle_limits_and_allowlist(monkeypatch, session_factory):
     ping_samples = iter([0.010, 0.010, 0.010])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
+    fetched_paths = []
 
     class FakeApi:
         def path(self, *parts):
+            fetched_paths.append(parts)
             paths = {
                 ("system", "resource"): [
                     {
@@ -531,6 +533,8 @@ def test_mikrotik_dynamic_metric_controls_support_section_toggle_limits_and_allo
     assert not any(name.startswith("interface:ether2:") for name in metric_names)
     assert not any(name.startswith("queue:user-b:") for name in metric_names)
     assert not any(name.startswith("firewall:") for name in metric_names)
+    assert ("ip", "firewall", "filter") not in fetched_paths
+    assert ("ip", "firewall", "nat") not in fetched_paths
 
 
 def test_mikrotik_api_metrics_attach_to_configured_host_device(monkeypatch, session_factory):

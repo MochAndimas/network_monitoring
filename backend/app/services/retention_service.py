@@ -7,7 +7,7 @@ from math import inf
 
 from shared.collection_utils import chunked
 from shared.number_utils import safe_float
-from sqlalchemy import and_, delete, func, or_, select, tuple_
+from sqlalchemy import and_, delete, exists, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
@@ -17,6 +17,7 @@ from ..models.latest_metric import LatestMetric
 from ..models.metric import Metric
 from ..models.metric_cold_archive import MetricColdArchive
 from ..models.metric_daily_rollup import MetricDailyRollup
+from ..models.retention_bucket_progress import RetentionBucketProgress
 from ..core.time import utcnow
 
 
@@ -172,6 +173,18 @@ async def _iter_rollup_payloads(db: AsyncSession, cutoff: datetime):
             Metric.status,
         )
         .where(Metric.checked_at < cutoff)
+        .where(
+            ~exists(
+                select(RetentionBucketProgress.id).where(
+                    RetentionBucketProgress.bucket_kind == "rollup",
+                    RetentionBucketProgress.device_id == Metric.device_id,
+                    RetentionBucketProgress.bucket_date == func.date(Metric.checked_at),
+                    RetentionBucketProgress.metric_name == "",
+                    RetentionBucketProgress.status == "",
+                    RetentionBucketProgress.unit == "",
+                )
+            )
+        )
         .order_by(Metric.device_id.asc(), Metric.checked_at.asc(), Metric.id.asc())
     )
     result = await db.stream(query)
@@ -203,6 +216,18 @@ async def _iter_archive_payloads(db: AsyncSession, cutoff: datetime):
             Metric.unit,
         )
         .where(Metric.checked_at < cutoff)
+        .where(
+            ~exists(
+                select(RetentionBucketProgress.id).where(
+                    RetentionBucketProgress.bucket_kind == "archive",
+                    RetentionBucketProgress.device_id == Metric.device_id,
+                    RetentionBucketProgress.bucket_date == func.date(Metric.checked_at),
+                    RetentionBucketProgress.metric_name == Metric.metric_name,
+                    RetentionBucketProgress.status == func.lower(func.coalesce(Metric.status, "unknown")),
+                    RetentionBucketProgress.unit == func.coalesce(Metric.unit, ""),
+                )
+            )
+        )
         .order_by(
             Metric.device_id.asc(),
             func.date(Metric.checked_at).asc(),
@@ -251,6 +276,7 @@ async def _upsert_rollup_payloads(db: AsyncSession, payloads: dict[tuple[int, ob
             continue
         for field_name, value in payload.items():
             setattr(existing, field_name, value)
+    await _mark_rollup_buckets_processed(db, payloads.keys(), processed_at=now)
     await db.flush()
 
 
@@ -266,7 +292,57 @@ async def _upsert_archive_payloads(db: AsyncSession, payloads: dict[tuple[int, o
             continue
         for field_name, value in payload.items():
             setattr(existing, field_name, value)
+    await _mark_archive_buckets_processed(db, payloads.keys(), processed_at=now)
     await db.flush()
+
+
+async def _mark_rollup_buckets_processed(db: AsyncSession, keys, *, processed_at: datetime) -> None:
+    """Persist processed markers for rollup buckets that have been aggregated."""
+    key_list = list(keys)
+    if not key_list:
+        return
+    marker_keys = [(int(device_id), bucket_date, "", "", "") for device_id, bucket_date in key_list]
+    existing_markers = await _load_existing_retention_markers(db, "rollup", marker_keys)
+    for device_id, bucket_date, metric_name, status, unit in marker_keys:
+        marker = existing_markers.get((device_id, bucket_date, metric_name, status, unit))
+        if marker is None:
+            db.add(
+                RetentionBucketProgress(
+                    bucket_kind="rollup",
+                    device_id=device_id,
+                    bucket_date=bucket_date,
+                    metric_name=metric_name,
+                    status=status,
+                    unit=unit,
+                    processed_at=processed_at,
+                )
+            )
+        else:
+            marker.processed_at = processed_at
+
+
+async def _mark_archive_buckets_processed(db: AsyncSession, keys, *, processed_at: datetime) -> None:
+    """Persist processed markers for archive buckets that have been aggregated."""
+    key_list = [(int(device_id), bucket_date, metric_name, status, unit) for device_id, bucket_date, metric_name, status, unit in keys]
+    if not key_list:
+        return
+    existing_markers = await _load_existing_retention_markers(db, "archive", key_list)
+    for device_id, bucket_date, metric_name, status, unit in key_list:
+        marker = existing_markers.get((device_id, bucket_date, metric_name, status, unit))
+        if marker is None:
+            db.add(
+                RetentionBucketProgress(
+                    bucket_kind="archive",
+                    device_id=device_id,
+                    bucket_date=bucket_date,
+                    metric_name=metric_name,
+                    status=status,
+                    unit=unit,
+                    processed_at=processed_at,
+                )
+            )
+        else:
+            marker.processed_at = processed_at
 
 
 async def _load_existing_rollups(db: AsyncSession, keys) -> dict[tuple[int, object], MetricDailyRollup]:
@@ -312,6 +388,41 @@ async def _load_existing_archives(db: AsyncSession, keys) -> dict[tuple[int, obj
                     archive.unit,
                 )
             ] = archive
+    return existing
+
+
+async def _load_existing_retention_markers(
+    db: AsyncSession,
+    bucket_kind: str,
+    keys,
+) -> dict[tuple[int, object, str, str, str], RetentionBucketProgress]:
+    """Load processed retention markers for the requested bucket keys."""
+    key_list = list(keys)
+    if not key_list:
+        return {}
+
+    existing: dict[tuple[int, object, str, str, str], RetentionBucketProgress] = {}
+    for chunk in chunked(key_list, 250):
+        query = select(RetentionBucketProgress).where(
+            RetentionBucketProgress.bucket_kind == bucket_kind,
+            tuple_(
+                RetentionBucketProgress.device_id,
+                RetentionBucketProgress.bucket_date,
+                RetentionBucketProgress.metric_name,
+                RetentionBucketProgress.status,
+                RetentionBucketProgress.unit,
+            ).in_(chunk),
+        )
+        for marker in (await db.scalars(query)).all():
+            existing[
+                (
+                    marker.device_id,
+                    marker.bucket_date,
+                    marker.metric_name,
+                    marker.status,
+                    marker.unit,
+                )
+            ] = marker
     return existing
 
 

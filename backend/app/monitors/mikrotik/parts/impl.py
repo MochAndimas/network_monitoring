@@ -61,17 +61,46 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
             username=settings.mikrotik_username,
             password=settings.mikrotik_password,
         )
-        resources = await asyncio.to_thread(lambda: list(api.path("system", "resource")))
-        interfaces = await asyncio.to_thread(lambda: list(api.path("interface")))
-        dhcp_leases = await asyncio.to_thread(lambda: list(api.path("ip", "dhcp-server", "lease")))
-        arp_entries = await asyncio.to_thread(lambda: list(api.path("ip", "arp")))
-        firewall_filters = await asyncio.to_thread(lambda: list(api.path("ip", "firewall", "filter")))
-        firewall_nat = await asyncio.to_thread(lambda: list(api.path("ip", "firewall", "nat")))
-        simple_queues = await asyncio.to_thread(lambda: list(api.path("queue", "simple")))
+        dynamic_sections = settings.normalized_mikrotik_dynamic_sections
+        firewall_sections = settings.normalized_mikrotik_dynamic_firewall_sections
+        resources = await asyncio.to_thread(_fetch_routeros_rows, api, ("system", "resource"), max_items=1)
+        interfaces = await asyncio.to_thread(_fetch_routeros_rows, api, ("interface",))
+        dhcp_leases = await asyncio.to_thread(_fetch_routeros_rows, api, ("ip", "dhcp-server", "lease"))
+        arp_entries = await asyncio.to_thread(_fetch_routeros_rows, api, ("ip", "arp"))
+        firewall_filters = (
+            await asyncio.to_thread(
+                _fetch_routeros_rows,
+                api,
+                ("ip", "firewall", "filter"),
+                max_items=settings.mikrotik_dynamic_max_firewall_rules,
+            )
+            if "firewall" in dynamic_sections and "filter" in firewall_sections
+            else []
+        )
+        firewall_nat = (
+            await asyncio.to_thread(
+                _fetch_routeros_rows,
+                api,
+                ("ip", "firewall", "nat"),
+                max_items=settings.mikrotik_dynamic_max_firewall_rules,
+            )
+            if "firewall" in dynamic_sections and "nat" in firewall_sections
+            else []
+        )
+        simple_queues = (
+            await asyncio.to_thread(
+                _fetch_routeros_rows,
+                api,
+                ("queue", "simple"),
+                max_items=settings.mikrotik_dynamic_max_queues,
+                allowlist=settings.normalized_mikrotik_queue_allowlist,
+            )
+            if "queue" in dynamic_sections
+            else []
+        )
         resource = resources[0] if resources else {}
         checked_at = utcnow()
         previous_metrics = await _latest_metric_map(db, target_device.id)
-        dynamic_sections = settings.normalized_mikrotik_dynamic_sections
 
         metrics.extend(
             [
@@ -177,7 +206,6 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
                 )
             )
         if "firewall" in dynamic_sections:
-            firewall_sections = settings.normalized_mikrotik_dynamic_firewall_sections
             if "filter" in firewall_sections:
                 metrics.extend(
                     _firewall_metrics(
@@ -253,6 +281,24 @@ def _resolve_api_target_device(devices: list):
     if len(devices) == 1:
         return devices[0]
     return None
+
+
+def _fetch_routeros_rows(
+    api,
+    path_parts: tuple[str, ...],
+    *,
+    max_items: int | None = None,
+    allowlist: set[str] | None = None,
+) -> list[dict]:
+    """Fetch RouterOS rows lazily and stop once the configured dynamic limit is reached."""
+    rows: list[dict] = []
+    for row in api.path(*path_parts):
+        if allowlist and not _is_allowed_dynamic_name(_object_name(row, fallback_prefix=path_parts[-1]), allowlist):
+            continue
+        rows.append(row)
+        if max_items is not None and max_items > 0 and len(rows) >= max_items:
+            break
+    return rows
 
 
 async def _build_ping_metrics(device_id: int, ip_address: str) -> list[dict]:

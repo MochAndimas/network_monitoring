@@ -546,6 +546,7 @@ Docs API (`/docs`, `/redoc`, `/openapi.json`) mati otomatis di production.
 | `SCHEDULER_INTERVAL_SERVER_SECONDS` | Interval server checks |
 | `SCHEDULER_INTERVAL_MIKROTIK_SECONDS` | Interval Mikrotik checks |
 | `SCHEDULER_INTERVAL_ALERT_SECONDS` | Interval alert evaluation |
+| `SCHEDULER_TIMEZONE` | Timezone scheduler APScheduler, default `Asia/Jakarta` |
 | `SCHEDULER_CLEANUP_INTERVAL_HOURS` | Interval cleanup/retention |
 | `SCHEDULER_JOB_STALE_FACTOR` | Faktor stale job untuk operational alert |
 | `MONITORING_LOCK_NAME` | Nama MySQL lock monitoring pipeline |
@@ -555,6 +556,7 @@ Docs API (`/docs`, `/redoc`, `/openapi.json`) mati otomatis di production.
 | `RETENTION_ARCHIVE_BATCH_SIZE` | Batch archive cold metrics |
 | `ALERT_RETENTION_DAYS` | Retention alert resolved |
 | `INCIDENT_RETENTION_DAYS` | Retention incident resolved |
+| `PROMETHEUS_MULTIPROC_CLEAN_ON_STARTUP` | Hapus shard Prometheus multiprocess saat startup hanya jika eksplisit `true` |
 
 ### Logging Dan Observability
 

@@ -14,6 +14,7 @@ from backend.app.models.incident import Incident
 from backend.app.models.metric import Metric
 from backend.app.models.metric_cold_archive import MetricColdArchive
 from backend.app.models.metric_daily_rollup import MetricDailyRollup
+from backend.app.models.retention_bucket_progress import RetentionBucketProgress
 from backend.app.alerting.engine import evaluate_alerts
 from backend.app.repositories.device_repository import DeviceRepository
 from backend.app.repositories.metric_repository import MetricRepository
@@ -104,14 +105,18 @@ def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypa
     yesterday = now - timedelta(days=1)
 
     try:
-        result, rollups, remaining_metrics = run(_cleanup_yesterday_metrics(SessionLocal, yesterday))
+        result, second_result, rollups, remaining_metrics, markers = run(_cleanup_yesterday_metrics(SessionLocal, yesterday))
 
         assert result["rolled_up_days"] == 1
         assert result["archived_metric_groups"] == 0
         assert result["deleted_metrics"] == 0
+        assert second_result["rolled_up_days"] == 0
+        assert second_result["archived_metric_groups"] == 0
+        assert second_result["deleted_metrics"] == 0
         assert len(rollups) == 1
         assert rollups[0].rollup_date == yesterday.date()
         assert len(remaining_metrics) == 2
+        assert [(marker.bucket_kind, marker.bucket_date) for marker in markers] == [("rollup", yesterday.date())]
     finally:
         run(drop_all(engine))
 
@@ -262,10 +267,12 @@ async def _cleanup_yesterday_metrics(session_factory, yesterday):
         )
 
         result = await cleanup_monitoring_data(db)
+        second_result = await cleanup_monitoring_data(db)
 
         rollups = (await db.scalars(select(MetricDailyRollup))).all()
         remaining_metrics = (await db.scalars(select(Metric))).all()
-        return result, rollups, remaining_metrics
+        markers = (await db.scalars(select(RetentionBucketProgress))).all()
+        return result, second_result, rollups, remaining_metrics, markers
 
 
 async def _latest_metric_map_for_device(session_factory, now):
