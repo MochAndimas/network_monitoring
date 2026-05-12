@@ -139,10 +139,10 @@ def _format_metric_value_components(
         return _humanize_printer_text(str(metric_value or "-"))
     if metric_name in {"printer_status", "printer_error_state", "printer_paper_status"}:
         return _humanize_printer_text(str(metric_value or "-"))
-    if metric_name in {"nas_system_status", "nas_power_status"} or metric_name.startswith(
-        ("nas_volume:", "nas_raid:", "nas_disk:", "nas_fan:")
-    ):
+    if metric_name in {"nas_system_status", "nas_power_status"} or metric_name.endswith(":status"):
         return _humanize_printer_text(str(metric_value or "-"))
+    if str(unit).lower() == "bytes" and pd.notna(metric_value_numeric):
+        return _format_bytes(float(metric_value_numeric))
     unit_suffix = f" {unit}" if _has_unit(unit) else ""
     return f"{metric_value}{unit_suffix}"
 
@@ -205,6 +205,9 @@ def _dynamic_nas_metric_label(metric_name: str) -> str | None:
     metric_labels = {
         "status": "Status",
         "used_percent": "Used",
+        "total_bytes": "Total",
+        "used_bytes": "Used",
+        "free_bytes": "Free",
         "temperature_c": "Temperature",
     }
     suffix = metric_labels.get(metric_key, metric_key.replace("_", " ").title())
@@ -351,6 +354,10 @@ def _format_metric_values(dataframe: pd.DataFrame) -> pd.Series:
     if pages_mask.any():
         display_values.loc[pages_mask] = numeric_values.loc[pages_mask].map(lambda value: f"{int(value):,} pages")
 
+    bytes_mask = dataframe["unit"].map(lambda unit: str(unit).lower() == "bytes") & numeric_values.notna()
+    if bytes_mask.any():
+        display_values.loc[bytes_mask] = numeric_values.loc[bytes_mask].map(_format_bytes)
+
     humanized_mask = metric_names.isin(
         {"printer_ink_status", "printer_status", "printer_error_state", "printer_paper_status"}
     )
@@ -359,8 +366,8 @@ def _format_metric_values(dataframe: pd.DataFrame) -> pd.Series:
             lambda value: _humanize_printer_text(str(value or "-"))
         )
 
-    nas_humanized_mask = metric_names.isin({"nas_system_status", "nas_power_status"}) | metric_names.str.startswith(
-        ("nas_volume:", "nas_raid:", "nas_disk:", "nas_fan:")
+    nas_humanized_mask = metric_names.isin({"nas_system_status", "nas_power_status"}) | metric_names.str.endswith(
+        ":status"
     )
     if nas_humanized_mask.any():
         display_values.loc[nas_humanized_mask] = dataframe.loc[nas_humanized_mask, "metric_value"].map(
@@ -947,6 +954,45 @@ def _latest_metric_display_from_map(
     return str(row.get("display_value") or row.get("metric_value") or default)
 
 
+def _nas_volume_capacity_view(latest_map: dict[str, pd.Series]) -> pd.DataFrame:
+    """Return latest NAS volume capacity rows grouped by volume."""
+    volumes: dict[str, dict[str, object]] = {}
+    for metric_name, row in latest_map.items():
+        parts = str(metric_name or "").split(":")
+        if len(parts) != 3 or parts[0] != "nas_volume":
+            continue
+        volume_key = parts[1]
+        metric_key = parts[2]
+        volume = volumes.setdefault(
+            volume_key,
+            {
+                "Volume": volume_key.replace("_", " ").title(),
+                "Status": "-",
+                "Total": "-",
+                "Terpakai": "-",
+                "Sisa": "-",
+                "Used": "-",
+                "Dicek (WIB)": row.get("checked_at_wib"),
+            },
+        )
+        if metric_key == "status":
+            volume["Status"] = _latest_metric_display_from_map(latest_map, metric_name)
+        elif metric_key == "total_bytes":
+            volume["Total"] = _latest_metric_display_from_map(latest_map, metric_name)
+        elif metric_key == "used_bytes":
+            volume["Terpakai"] = _latest_metric_display_from_map(latest_map, metric_name)
+        elif metric_key == "free_bytes":
+            volume["Sisa"] = _latest_metric_display_from_map(latest_map, metric_name)
+        elif metric_key == "used_percent":
+            volume["Used"] = _format_percent(str(row.get("metric_value") or row.get("metric_value_numeric") or ""))
+        checked_at = row.get("checked_at_wib")
+        if checked_at:
+            volume["Dicek (WIB)"] = checked_at
+    if not volumes:
+        return pd.DataFrame()
+    return pd.DataFrame(volumes.values()).sort_values("Volume")
+
+
 def _format_percent(value: str) -> str:
     """Format percent for the live monitoring dashboard."""
     try:
@@ -1165,6 +1211,7 @@ def _render_nas_history_section(nas_history_frame: pd.DataFrame) -> None:
         return
 
     latest_map = _latest_metric_snapshot_map(nas_history_frame)
+    volume_capacity_frame = _nas_volume_capacity_view(latest_map)
     st.markdown("### Kesehatan NAS")
     health_columns = st.columns(6)
     health_cards = [
@@ -1182,7 +1229,11 @@ def _render_nas_history_section(nas_history_frame: pd.DataFrame) -> None:
     temperature_rows = []
     for metric_name, row in sorted(latest_map.items()):
         metric_name = str(metric_name)
-        if _is_nas_card_only_metric(metric_name) and metric_name not in NAS_CARD_ONLY_METRIC_NAMES:
+        if (
+            _is_nas_card_only_metric(metric_name)
+            and metric_name not in NAS_CARD_ONLY_METRIC_NAMES
+            and metric_name.endswith(":status")
+        ):
             status_rows.append(
                 {
                     "Komponen": _friendly_metric_name(metric_name),
@@ -1200,6 +1251,25 @@ def _render_nas_history_section(nas_history_frame: pd.DataFrame) -> None:
                     "Dicek (WIB)": row.get("checked_at_wib"),
                 }
             )
+
+    st.markdown("#### Kapasitas Volume")
+    if volume_capacity_frame.empty:
+        st.info("Belum ada detail kapasitas volume NAS.")
+    else:
+        st.dataframe(
+            volume_capacity_frame,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Volume": st.column_config.TextColumn("Volume", width="medium"),
+                "Status": st.column_config.TextColumn("Status", width="small"),
+                "Total": st.column_config.TextColumn("Total", width="small"),
+                "Terpakai": st.column_config.TextColumn("Terpakai", width="small"),
+                "Sisa": st.column_config.TextColumn("Sisa", width="small"),
+                "Used": st.column_config.TextColumn("Used", width="small"),
+                "Dicek (WIB)": st.column_config.TextColumn("Dicek (WIB)", width="medium"),
+            },
+        )
 
     status_col, temp_col = st.columns(2)
     with status_col:

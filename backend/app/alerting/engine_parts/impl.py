@@ -96,7 +96,7 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
     for alert in active_alerts.values():
         active_alert_count_by_device[alert.device_id] = active_alert_count_by_device.get(alert.device_id, 0) + 1
     active_incidents_by_device = _group_incidents_by_device(
-        await incident_repository.list_active_incidents()
+        await incident_repository.list_active_incidents_by_device_ids(candidate_device_ids | set(active_alert_count_by_device))
     )
     printer_device_ids = [device.id for device in devices if device.device_type == "printer"]
     printer_uptime_history_by_device = (

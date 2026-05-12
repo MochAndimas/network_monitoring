@@ -30,7 +30,7 @@ async def run_internet_checks(db: AsyncSession) -> list[dict]:
 
     if devices:
         anchor_device = _select_internet_anchor_device(devices)
-        async with httpx.AsyncClient(timeout=settings.ping_timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=settings.http_check_timeout_seconds) as client:
             dns_metric, http_metric, public_ip_metric = await asyncio.gather(
                 _build_dns_metric(anchor_device.id),
                 _build_http_metric(anchor_device.id, client),
@@ -97,8 +97,7 @@ async def _build_http_metric(device_id: int, client: httpx.AsyncClient) -> dict:
     checked_at = utcnow()
     started_at = perf_counter()
     try:
-        response = await client.get(settings.http_check_url)
-        response.raise_for_status()
+        response = await _get_with_retries(client, settings.http_check_url)
     except httpx.HTTPError:
         return {
             "device_id": device_id,
@@ -124,8 +123,7 @@ async def _build_public_ip_metric(db: AsyncSession, device_id: int, client: http
     """Build public ip metric for monitoring collection."""
     checked_at = utcnow()
     try:
-        response = await client.get(settings.public_ip_check_url)
-        response.raise_for_status()
+        response = await _get_with_retries(client, settings.public_ip_check_url)
         public_ip = response.text.strip()
     except httpx.HTTPError:
         return {
@@ -137,7 +135,7 @@ async def _build_public_ip_metric(db: AsyncSession, device_id: int, client: http
             "checked_at": checked_at,
         }
 
-    latest_public_ip = await MetricRepository(db).get_latest_metric(device_id, "public_ip")
+    latest_public_ip = await MetricRepository(db).get_latest_valid_public_ip_metric(device_id)
     status = "warning" if latest_public_ip is not None and latest_public_ip.metric_value != public_ip else "up"
     return {
         "device_id": device_id,
@@ -147,3 +145,21 @@ async def _build_public_ip_metric(db: AsyncSession, device_id: int, client: http
         "unit": None,
         "checked_at": checked_at,
     }
+
+
+async def _get_with_retries(client: httpx.AsyncClient, url: str) -> httpx.Response:
+    """GET a URL with a small retry budget for transient internet check failures."""
+    attempts = max(int(settings.http_check_retries or 1), 1)
+    last_error: httpx.HTTPError | None = None
+    for attempt in range(attempts):
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response
+        except httpx.HTTPError as exc:
+            last_error = exc
+            if attempt < attempts - 1:
+                await asyncio.sleep(0.25)
+    if last_error is not None:
+        raise last_error
+    raise httpx.RequestError("HTTP check failed without a response")

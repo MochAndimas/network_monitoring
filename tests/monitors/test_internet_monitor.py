@@ -76,6 +76,65 @@ def test_internet_checks_collect_quality_dns_http_and_public_ip(monkeypatch, ses
     assert metrics_by_name["public_ip"]["status"] == "warning"
 
 
+def test_public_ip_change_detection_ignores_unavailable_samples(session_factory):
+    class FakeClient:
+        async def get(self, url, **_kwargs):
+            return httpx.Response(200, request=httpx.Request("GET", url), text="203.0.113.20")
+
+    async def scenario():
+        async with session_factory() as db:
+            device = (
+                await DeviceRepository(db).upsert_devices(
+                    [{"name": "MyRepublic - ISP", "ip_address": "192.168.1.1", "device_type": "internet_target"}]
+                )
+            )[0]
+            await MetricRepository(db).create_metrics(
+                [
+                    {
+                        "device_id": device.id,
+                        "metric_name": "public_ip",
+                        "metric_value": "203.0.113.20",
+                        "status": "up",
+                        "unit": None,
+                        "checked_at": utcnow() - timedelta(minutes=2),
+                    },
+                    {
+                        "device_id": device.id,
+                        "metric_name": "public_ip",
+                        "metric_value": "unavailable",
+                        "status": "down",
+                        "unit": None,
+                        "checked_at": utcnow() - timedelta(minutes=1),
+                    },
+                ]
+            )
+            return await internet_service._build_public_ip_metric(db, device.id, FakeClient())
+
+    metric = run(scenario())
+
+    assert metric["metric_value"] == "203.0.113.20"
+    assert metric["status"] == "up"
+
+
+def test_http_checks_retry_transient_failures(monkeypatch):
+    attempts = {"count": 0}
+
+    class FakeClient:
+        async def get(self, url, **_kwargs):
+            attempts["count"] += 1
+            request = httpx.Request("GET", url)
+            if attempts["count"] == 1:
+                raise httpx.ConnectTimeout("temporary timeout", request=request)
+            return httpx.Response(204, request=request)
+
+    monkeypatch.setattr(internet_service.settings, "http_check_retries", 2)
+
+    metric = run(internet_service._build_http_metric(1, FakeClient()))
+
+    assert attempts["count"] == 2
+    assert metric["status"] == "up"
+
+
 def test_internet_checks_anchor_dns_http_and_public_ip_to_preferred_isp(monkeypatch, session_factory):
     ping_samples = iter([0.010, 0.010, 0.010, 0.010, 0.010, 0.010])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)

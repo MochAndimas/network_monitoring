@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     monitoring_lock_timeout_seconds: int = 900
     dns_check_host: str = "google.com"
     http_check_url: str = "https://www.google.com/generate_204"
+    http_check_timeout_seconds: float = 5.0
+    http_check_retries: int = 2
     public_ip_check_url: str = "https://api.ipify.org"
     raw_metric_retention_days: int = 7
     retention_rollup_batch_size: int = 500

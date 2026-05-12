@@ -13,6 +13,7 @@ from .common import (
     DeviceRepository,
     empty_checks,
     Incident,
+    MetricRepository,
     run,
     select,
     timedelta,
@@ -213,6 +214,53 @@ def test_telegram_events_are_deduped_by_alert_state(monkeypatch):
         assert engine_module._filter_recent_telegram_events([event]) == []
     finally:
         engine_module._recent_telegram_notification_keys.clear()
+
+
+def test_alert_evaluation_scopes_active_incident_lookup(monkeypatch):
+    from backend.app.alerting.engine import evaluate_alerts
+    from backend.app.repositories.incident_repository import IncidentRepository
+
+    scoped_device_ids = []
+
+    async def fail_full_scan(self):
+        raise AssertionError("evaluate_alerts should not full-scan active incidents")
+
+    original_scoped_lookup = IncidentRepository.list_active_incidents_by_device_ids
+
+    async def track_scoped_lookup(self, device_ids):
+        scoped_device_ids.append(set(device_ids))
+        return await original_scoped_lookup(self, device_ids)
+
+    monkeypatch.setattr(IncidentRepository, "list_active_incidents", fail_full_scan)
+    monkeypatch.setattr(IncidentRepository, "list_active_incidents_by_device_ids", track_scoped_lookup)
+
+    with client_context() as (_client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                device = (
+                    await DeviceRepository(db).upsert_devices(
+                        [{"name": "Gateway Lokal", "ip_address": "192.168.1.1", "device_type": "internet_target"}]
+                    )
+                )[0]
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": device.id,
+                            "metric_name": "ping",
+                            "metric_value": "timeout",
+                            "status": "down",
+                            "unit": None,
+                            "checked_at": utcnow(),
+                        }
+                    ]
+                )
+                notifications = await evaluate_alerts(db)
+                return device.id, notifications
+
+        device_id, notifications = run(scenario())
+
+    assert scoped_device_ids == [{device_id}]
+    assert [notification["action"] for notification in notifications] == ["created"]
 
 
 def test_run_cycle_creates_alerts_and_incidents():

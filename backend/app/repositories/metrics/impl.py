@@ -563,6 +563,21 @@ class MetricRepository:
         )
         return (await self.db.scalars(query)).first()
 
+    async def get_latest_valid_public_ip_metric(self, device_id: int) -> Metric | None:
+        """Return the latest successful public IP sample for change detection."""
+        query = (
+            select(Metric)
+            .where(
+                Metric.device_id == device_id,
+                Metric.metric_name == "public_ip",
+                Metric.metric_value != "unavailable",
+                Metric.status.in_(("up", "warning")),
+            )
+            .order_by(desc(Metric.checked_at), desc(Metric.id))
+            .limit(1)
+        )
+        return (await self.db.scalars(query)).first()
+
     async def latest_metric_map(self) -> dict[tuple[int, str], Metric]:
         """Return latest latest metric map used by metric collection and history."""
         query = select(Metric).join(LatestMetric, Metric.id == LatestMetric.metric_id)
