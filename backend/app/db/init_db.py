@@ -1,4 +1,8 @@
-"""db support code for init db."""
+"""Explicit local-only schema bootstrap helper.
+
+Production and shared environments should use Alembic migrations. This helper is
+only called when DATABASE_AUTO_CREATE_TABLES=true or when run manually.
+"""
 
 from .base import Base
 from .session import engine

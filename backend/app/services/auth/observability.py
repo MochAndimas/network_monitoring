@@ -14,7 +14,7 @@ from ...models.user import AuthLoginAttempt, AuthSession
 
 async def build_auth_observability_summary(db: AsyncSession) -> dict[str, int]:
     """Build auth observability summary in the service layer."""
-    window_start = utcnow() - timedelta(minutes=settings.auth_login_rate_limit_window_minutes)
+    window_start = utcnow() - timedelta(minutes=settings.auth.login_rate_limit_window_minutes)
     now = utcnow()
     active_sessions = await db.scalar(
         select(func.count(AuthSession.id)).where(

@@ -50,7 +50,7 @@ class CursorPageMeta(BaseModel):
 class DeviceListPage(BaseModel):
     """Pydantic schema for DeviceListPage payloads."""
     items: list["DeviceListItem"]
-    meta: PageMeta
+    meta: CursorPageMeta
 
 
 class DeviceCreate(BaseModel):
@@ -123,7 +123,7 @@ class MetricHistoryItem(BaseModel):
 class MetricHistoryPage(BaseModel):
     """Pydantic schema for MetricHistoryPage payloads."""
     items: list["MetricHistoryItem"]
-    meta: PageMeta
+    meta: CursorPageMeta
 
 
 class MetricHistoryCursorPage(BaseModel):

@@ -57,10 +57,11 @@ async def authenticate_user_with_options(
 
     session_jti = generate_session_jwt_id()
     refresh_nonce = generate_session_jwt_id()
+    auth_settings = settings.auth
     refresh_expires_at = session_expiry(
-        settings.auth_remember_ttl_minutes if remember else settings.auth_token_ttl_minutes
+        auth_settings.remember_ttl_minutes if remember else auth_settings.token_ttl_minutes
     )
-    access_expires_at = min(session_expiry(settings.auth_token_ttl_minutes), refresh_expires_at)
+    access_expires_at = min(session_expiry(auth_settings.token_ttl_minutes), refresh_expires_at)
     db.add(
         AuthSession(
             user_id=user.id,
@@ -111,7 +112,7 @@ async def refresh_user_session(
     actor.session.token_hash = hash_session_token(new_refresh_nonce)
     actor.session.last_seen_at = utcnow()
     refresh_expires_at = actor.session.expires_at
-    access_expires_at = min(session_expiry(settings.auth_token_ttl_minutes), refresh_expires_at)
+    access_expires_at = min(session_expiry(settings.auth.token_ttl_minutes), refresh_expires_at)
     if commit:
         await db.commit()
     else:
@@ -193,7 +194,8 @@ async def revoke_token(db: AsyncSession, token: str, *, commit: bool = True) -> 
 
 async def ensure_login_not_rate_limited(db: AsyncSession, *, username: str, client_ip: str) -> None:
     """Ensure login not rate limited in the service layer."""
-    window_start = utcnow() - timedelta(minutes=settings.auth_login_rate_limit_window_minutes)
+    auth_settings = settings.auth
+    window_start = utcnow() - timedelta(minutes=auth_settings.login_rate_limit_window_minutes)
     failed_attempts = await db.scalar(
         select(func.count(AuthLoginAttempt.id)).where(
             AuthLoginAttempt.username == username,
@@ -202,7 +204,7 @@ async def ensure_login_not_rate_limited(db: AsyncSession, *, username: str, clie
             AuthLoginAttempt.attempted_at >= window_start,
         )
     )
-    if int(failed_attempts or 0) >= settings.auth_login_rate_limit_max_attempts:
+    if int(failed_attempts or 0) >= auth_settings.login_rate_limit_max_attempts:
         await record_login_attempt(db, username=username, client_ip=client_ip, was_successful=False, was_rate_limited=True)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -249,7 +251,7 @@ async def clear_failed_login_attempts(db: AsyncSession, *, username: str, client
 async def _touch_session_if_due(db: AsyncSession, session: AuthSession) -> None:
     """Touch session if due in the service layer."""
     now = utcnow()
-    if session.last_seen_at >= now - timedelta(seconds=settings.auth_session_touch_interval_seconds):
+    if session.last_seen_at >= now - timedelta(seconds=settings.auth.session_touch_interval_seconds):
         return
     session.last_seen_at = now
     await db.flush()

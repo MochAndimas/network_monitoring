@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, String
+from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db.base import Base
@@ -29,7 +29,7 @@ class Metric(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), nullable=False, index=True)
     metric_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    metric_value: Mapped[str] = mapped_column(String(100), nullable=False)
+    metric_value: Mapped[str] = mapped_column(Text, nullable=False)
     metric_value_numeric: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     unit: Mapped[str | None] = mapped_column(String(30), nullable=True)

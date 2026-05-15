@@ -18,7 +18,8 @@ from backend.app.models.user import AuthSession, User
 from backend.app.core.security import hash_password, verify_password
 from backend.app.repositories.device_repository import DeviceRepository
 from backend.app.services import run_cycle_service
-from backend.app.services.pipeline_control import monitoring_pipeline_guard
+from backend.app.services import pipeline_control as pipeline_control_module
+from backend.app.services.pipeline_control import MONITORING_FULL_CYCLE_LOCK_SCOPES
 from backend.app.services.auth.admin import reset_user_password_for_admin
 from backend.app.scheduler import jobs as scheduler_jobs
 from backend.app.core.time import utcnow
@@ -185,11 +186,11 @@ def test_auth_password_reset_can_join_outer_transaction_and_roll_back():
                     raise RuntimeError("forced-password-reset-failure")
 
         async with session_factory() as db:
-            user = await db.get(User, 1)
+            persisted_user: User | None = await db.get(User, 1)
             session = await db.scalar(
                 select(AuthSession).where(AuthSession.jwt_id == "session-to-keep-rollback-visible")
             )
-            return user, session
+            return persisted_user, session
 
     try:
         user, session = run(scenario())
@@ -201,16 +202,78 @@ def test_auth_password_reset_can_join_outer_transaction_and_roll_back():
         run(drop_all(engine))
 
 
-def test_monitoring_pipeline_guard_allows_independent_scopes():
+def test_monitoring_pipeline_guard_allows_independent_scopes(monkeypatch):
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    monkeypatch.setattr(pipeline_control_module, "engine", engine)
+    monkeypatch.setattr(pipeline_control_module, "_monitoring_pipeline_locks", {})
+
     async def scenario():
-        async with monitoring_pipeline_guard(wait=False, scope="metrics:internet") as first_acquired:
+        async with pipeline_control_module.monitoring_pipeline_guard(wait=False, scope="metrics:internet") as first_acquired:
             assert first_acquired is True
-            async with monitoring_pipeline_guard(wait=False, scope="metrics:internet") as same_scope_acquired:
+            async with pipeline_control_module.monitoring_pipeline_guard(wait=False, scope="metrics:internet") as same_scope_acquired:
                 assert same_scope_acquired is False
-            async with monitoring_pipeline_guard(wait=False, scope="metrics:server") as other_scope_acquired:
+            async with pipeline_control_module.monitoring_pipeline_guard(wait=False, scope="metrics:server") as other_scope_acquired:
                 assert other_scope_acquired is True
 
-    run(scenario())
+    try:
+        run(scenario())
+    finally:
+        run(engine.dispose())
+
+
+def test_monitoring_full_cycle_guard_blocks_scheduler_write_scopes(monkeypatch):
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    monkeypatch.setattr(pipeline_control_module, "engine", engine)
+    monkeypatch.setattr(pipeline_control_module, "_monitoring_pipeline_locks", {})
+
+    async def scenario():
+        async with pipeline_control_module.monitoring_pipeline_multi_guard(
+            wait=False,
+            scopes=MONITORING_FULL_CYCLE_LOCK_SCOPES,
+        ) as acquired:
+            assert acquired is True
+            for scope in MONITORING_FULL_CYCLE_LOCK_SCOPES:
+                async with pipeline_control_module.monitoring_pipeline_guard(wait=False, scope=scope) as scheduler_scope_acquired:
+                    assert scheduler_scope_acquired is False
+            async with pipeline_control_module.monitoring_pipeline_guard(wait=False, scope="unrelated:diagnostic") as unrelated_acquired:
+                assert unrelated_acquired is True
+
+    try:
+        run(scenario())
+    finally:
+        run(engine.dispose())
+
+
+def test_monitoring_full_cycle_guard_fails_when_scheduler_scope_is_active(monkeypatch):
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    monkeypatch.setattr(pipeline_control_module, "engine", engine)
+    monkeypatch.setattr(pipeline_control_module, "_monitoring_pipeline_locks", {})
+
+    async def scenario():
+        async with pipeline_control_module.monitoring_pipeline_guard(wait=False, scope="alerts") as alert_acquired:
+            assert alert_acquired is True
+            async with pipeline_control_module.monitoring_pipeline_multi_guard(
+                wait=False,
+                scopes=MONITORING_FULL_CYCLE_LOCK_SCOPES,
+            ) as acquired:
+                assert acquired is False
+
+    try:
+        run(scenario())
+    finally:
+        run(engine.dispose())
 
 
 def test_scheduler_job_failure_rolls_back_domain_writes_and_updates_job_status(monkeypatch):

@@ -214,7 +214,6 @@ def _consume_logout_request() -> bool:
 
     _clear_auth_state(restore_completed=True)
     st.rerun()
-    return True
 
 
 def require_dashboard_login() -> None:

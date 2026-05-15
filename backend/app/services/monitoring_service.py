@@ -16,7 +16,12 @@ logger = logging.getLogger("network_monitoring.service")
 
 async def persist_metrics(db: AsyncSession, metrics: list[dict], *, commit: bool = True) -> list:
     """Persist a batch of collected metric payloads."""
-    return await MetricRepository(db).create_metrics(metrics, commit=commit)
+    persisted_metrics = await MetricRepository(db).create_metrics(metrics, commit=commit)
+    if persisted_metrics:
+        from .dashboard_overview_service import invalidate_dashboard_overview_cache
+
+        invalidate_dashboard_overview_cache()
+    return persisted_metrics
 
 
 async def build_dashboard_summary(db: AsyncSession) -> dict:

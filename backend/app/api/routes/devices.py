@@ -1,11 +1,20 @@
 """FastAPI routes for devices endpoints."""
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.deps import require_write_access
 from ...api.lifecycle import apply_legacy_deprecation_headers
-from ...api.schemas import DeviceCreate, DeviceListItem, DeviceListPage, DeviceOption, DeviceTypeOption, PageMeta, DeviceUpdate
+from ...api.pagination import decode_page_cursor, encode_page_cursor
+from ...api.schemas import (
+    CursorPageMeta,
+    DeviceCreate,
+    DeviceListItem,
+    DeviceListPage,
+    DeviceOption,
+    DeviceTypeOption,
+    DeviceUpdate,
+)
 from ...core.constants import DEVICE_TYPE_CHOICES
 from ...db.session import get_db
 from ...repositories.device_repository import DeviceRepository
@@ -93,17 +102,35 @@ async def list_devices_paged(
     search: str | None = Query(default=None, min_length=1, max_length=150),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    cursor: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> DeviceListPage:
     """Handle the devices paged endpoint."""
-    rows, total = await DeviceRepository(db).list_device_status_rows_paged(
-        active_only=active_only,
-        device_type=device_type,
-        latest_status=latest_status,
-        search=search,
-        limit=limit,
-        offset=offset,
-    )
+    repository = DeviceRepository(db)
+    if cursor:
+        cursor_name, cursor_id = _decode_device_page_cursor(cursor)
+        rows, has_more = await repository.list_device_status_rows_after_cursor(
+            active_only=active_only,
+            device_type=device_type,
+            latest_status=latest_status,
+            search=search,
+            limit=limit,
+            cursor_name=cursor_name,
+            cursor_id=cursor_id,
+        )
+        total = None
+        next_cursor = _device_page_next_cursor(rows) if has_more else None
+    else:
+        rows, total = await repository.list_device_status_rows_paged(
+            active_only=active_only,
+            device_type=device_type,
+            latest_status=latest_status,
+            search=search,
+            limit=limit,
+            offset=offset,
+        )
+        has_more = total > offset + len(rows)
+        next_cursor = _device_page_next_cursor(rows) if has_more and offset == 0 else None
     payload_scope = "filtered" if active_only or device_type or latest_status or search else "all"
     record_api_payload_request(endpoint="/devices/paged", scope=payload_scope)
     record_api_payload_section(
@@ -112,11 +139,17 @@ async def list_devices_paged(
         section="items",
         rows=len(rows),
         total_rows=total,
-        sampled=total > len(rows),
+        sampled=has_more if total is None else total > len(rows),
     )
     return DeviceListPage(
         items=[DeviceListItem(**row) for row in rows],
-        meta=PageMeta(total=total, limit=limit, offset=offset),
+        meta=CursorPageMeta(
+            total=total,
+            limit=limit,
+            offset=0 if cursor else offset,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        ),
     )
 
 
@@ -213,3 +246,20 @@ async def delete_device_endpoint(
     except Exception:
         await db.rollback()
         raise
+
+
+def _device_page_next_cursor(rows: list[dict]) -> str | None:
+    """Build a cursor from the last row in a device list page."""
+    if not rows:
+        return None
+    last_row = rows[-1]
+    return encode_page_cursor({"name": str(last_row["name"]), "id": int(last_row["id"])})
+
+
+def _decode_device_page_cursor(cursor: str) -> tuple[str, int]:
+    """Decode the device-list cursor used by keyset pagination."""
+    payload = decode_page_cursor(cursor, detail="Invalid devices cursor")
+    try:
+        return str(payload["name"]), int(payload["id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid devices cursor") from exc

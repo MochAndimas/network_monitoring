@@ -78,7 +78,7 @@ async def run_server_checks(db: AsyncSession) -> list[dict]:
 
 def _resolve_server_resource_target(servers: list):
     """Resolve server resource target for monitoring collection."""
-    configured_ip = str(settings.server_resource_device_ip or "").strip()
+    configured_ip = str(settings.monitor.server_resource_device_ip or "").strip()
     if configured_ip:
         for server in servers:
             if str(server.ip_address) == configured_ip:

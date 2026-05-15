@@ -10,7 +10,7 @@ from ..core.config import settings
 from ..core.time import utcnow
 
 
-PING_SEMAPHORE = asyncio.Semaphore(max(settings.ping_concurrency_limit, 1))
+PING_SEMAPHORE = asyncio.Semaphore(max(settings.monitor.ping_concurrency_limit, 1))
 
 
 def build_ping_metric(device_id: int, latency_seconds: float | None) -> dict:
@@ -68,7 +68,7 @@ def build_ping_quality_metrics(device_id: int, samples: list[float | None]) -> l
 
 async def collect_ping_samples(ip_address: str) -> list[float | None]:
     """Collect ping samples for monitoring collection."""
-    sample_count = max(settings.ping_sample_count, 1)
+    sample_count = max(settings.monitor.ping_sample_count, 1)
     return list(await asyncio.gather(*[safe_ping(ip_address) for _ in range(sample_count)]))
 
 
@@ -82,7 +82,7 @@ async def safe_ping(ip_address: str) -> float | None:
     """Safely return safe ping for monitoring collection."""
     try:
         async with PING_SEMAPHORE:
-            return await asyncio.to_thread(ping, ip_address, timeout=int(settings.ping_timeout_seconds))
+            return await asyncio.to_thread(ping, ip_address, timeout=int(settings.monitor.ping_timeout_seconds))
     except OSError:
         return None
 
@@ -92,7 +92,7 @@ async def bounded_gather(coroutines, *, limit: int | None = None) -> list:
     coroutines = list(coroutines)
     if not coroutines:
         return []
-    concurrency_limit = max(limit or settings.monitor_task_concurrency_limit, 1)
+    concurrency_limit = max(limit or settings.monitor.task_concurrency_limit, 1)
     semaphore = asyncio.Semaphore(concurrency_limit)
 
     async def _run(coroutine):

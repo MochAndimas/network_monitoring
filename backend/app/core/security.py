@@ -53,12 +53,12 @@ def _required_secret(secret_value: str, env_name: str) -> bytes:
 
 def _password_secret() -> bytes:
     """Return password secret for security controls."""
-    return _required_secret(settings.auth_password_secret, "AUTH_PASSWORD_SECRET")
+    return _required_secret(settings.auth.password_secret, "AUTH_PASSWORD_SECRET")
 
 
 def _jwt_secret() -> bytes:
     """Return jwt secret for security controls."""
-    return _required_secret(settings.auth_jwt_secret, "AUTH_JWT_SECRET")
+    return _required_secret(settings.auth.jwt_secret, "AUTH_JWT_SECRET")
 
 
 def validate_auth_configuration() -> None:
@@ -71,8 +71,9 @@ def validate_auth_configuration() -> None:
 def validate_password_strength(password: str, *, username: str = "", full_name: str = "") -> None:
     """Validate password strength for configuration, time, or security helpers."""
     value = str(password or "")
-    if len(value) < settings.auth_password_min_length:
-        raise ValueError(f"Password must be at least {settings.auth_password_min_length} characters long.")
+    auth_settings = settings.auth
+    if len(value) < auth_settings.password_min_length:
+        raise ValueError(f"Password must be at least {auth_settings.password_min_length} characters long.")
     checks = {
         "uppercase": any(ch.isupper() for ch in value),
         "lowercase": any(ch.islower() for ch in value),
@@ -89,13 +90,14 @@ def validate_password_strength(password: str, *, username: str = "", full_name: 
 
 def _validate_production_security_defaults() -> None:
     """Validate production security defaults for configuration, time, or security helpers."""
-    if not settings.is_production:
+    auth_settings = settings.auth
+    if not settings.app.is_production:
         return
-    if settings.allow_insecure_no_auth:
+    if auth_settings.allow_insecure_no_auth:
         raise AuthConfigurationError("`ALLOW_INSECURE_NO_AUTH` must be false in production.")
-    if not settings.auth_cookie_secure:
+    if not auth_settings.cookie_secure:
         raise AuthConfigurationError("`AUTH_COOKIE_SECURE` must be true in production.")
-    if settings.normalized_auth_cookie_samesite == "none" and not settings.auth_cookie_secure:
+    if settings.normalized_auth_cookie_samesite == "none" and not auth_settings.cookie_secure:
         raise AuthConfigurationError("`AUTH_COOKIE_SAMESITE=none` requires `AUTH_COOKIE_SECURE=true`.")
     if not internal_api_key_map():
         raise AuthConfigurationError("`INTERNAL_API_KEY` or `INTERNAL_API_KEYS` must be configured in production.")
@@ -181,7 +183,7 @@ def hash_session_token(token: str) -> str:
 
 def session_expiry(ttl_minutes: int | None = None) -> datetime:
     """Return session expiry for security controls."""
-    minutes = ttl_minutes if ttl_minutes is not None else settings.auth_token_ttl_minutes
+    minutes = ttl_minutes if ttl_minutes is not None else settings.auth.token_ttl_minutes
     return utcnow() + timedelta(minutes=minutes)
 
 
@@ -228,10 +230,11 @@ def _create_signed_token(
 ) -> str:
     """Create signed token for configuration, time, or security helpers."""
     issued_at = utcnow()
-    header = {"alg": settings.auth_jwt_algorithm or JWT_ALGORITHM, "typ": "JWT"}
+    auth_settings = settings.auth
+    header = {"alg": auth_settings.jwt_algorithm or JWT_ALGORITHM, "typ": "JWT"}
     payload = {
         "token_type": token_type,
-        "iss": settings.auth_jwt_issuer,
+        "iss": auth_settings.jwt_issuer,
         "sub": str(subject),
         "username": username,
         "role": role,
@@ -270,9 +273,10 @@ def decode_access_token(token: str) -> TokenPayload:
     except json.JSONDecodeError as exc:
         raise JWTValidationError("Invalid JWT payload") from exc
 
-    if header.get("alg") != (settings.auth_jwt_algorithm or JWT_ALGORITHM):
+    auth_settings = settings.auth
+    if header.get("alg") != (auth_settings.jwt_algorithm or JWT_ALGORITHM):
         raise JWTValidationError("Unsupported JWT algorithm")
-    if payload.get("iss") != settings.auth_jwt_issuer:
+    if payload.get("iss") != auth_settings.jwt_issuer:
         raise JWTValidationError("Invalid JWT issuer")
 
     subject_raw = payload.get("sub")

@@ -41,14 +41,15 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
         for metric in device_metrics
     ]
 
-    if not devices or not settings.mikrotik_host or connect is None:
+    mikrotik_settings = settings.mikrotik
+    if not devices or not mikrotik_settings.host or connect is None:
         return metrics
 
     target_device = _resolve_api_target_device(devices)
     if target_device is None:
         logger.warning(
             "Skipping Mikrotik API metrics because MIKROTIK_HOST=%s does not match any active Mikrotik device",
-            settings.mikrotik_host,
+            mikrotik_settings.host,
         )
         return metrics
 
@@ -56,10 +57,10 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
     try:
         api = await asyncio.to_thread(
             connect,
-            host=settings.mikrotik_host,
-            port=settings.mikrotik_port,
-            username=settings.mikrotik_username,
-            password=settings.mikrotik_password,
+            host=mikrotik_settings.host,
+            port=mikrotik_settings.port,
+            username=mikrotik_settings.username,
+            password=mikrotik_settings.password,
         )
         dynamic_sections = settings.normalized_mikrotik_dynamic_sections
         firewall_sections = settings.normalized_mikrotik_dynamic_firewall_sections
@@ -72,7 +73,7 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
                 _fetch_routeros_rows,
                 api,
                 ("ip", "firewall", "filter"),
-                max_items=settings.mikrotik_dynamic_max_firewall_rules,
+                max_items=mikrotik_settings.dynamic_max_firewall_rules,
             )
             if "firewall" in dynamic_sections and "filter" in firewall_sections
             else []
@@ -82,7 +83,7 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
                 _fetch_routeros_rows,
                 api,
                 ("ip", "firewall", "nat"),
-                max_items=settings.mikrotik_dynamic_max_firewall_rules,
+                max_items=mikrotik_settings.dynamic_max_firewall_rules,
             )
             if "firewall" in dynamic_sections and "nat" in firewall_sections
             else []
@@ -92,7 +93,7 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
                 _fetch_routeros_rows,
                 api,
                 ("queue", "simple"),
-                max_items=settings.mikrotik_dynamic_max_queues,
+                max_items=mikrotik_settings.dynamic_max_queues,
                 allowlist=settings.normalized_mikrotik_queue_allowlist,
             )
             if "queue" in dynamic_sections
@@ -202,7 +203,7 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
                     previous_metrics,
                     checked_at,
                     allowlist=settings.normalized_mikrotik_interface_allowlist,
-                    max_items=settings.mikrotik_dynamic_max_interfaces,
+                    max_items=mikrotik_settings.dynamic_max_interfaces,
                 )
             )
         if "firewall" in dynamic_sections:
@@ -214,7 +215,7 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
                         firewall_filters,
                         previous_metrics,
                         checked_at,
-                        max_items=settings.mikrotik_dynamic_max_firewall_rules,
+                        max_items=mikrotik_settings.dynamic_max_firewall_rules,
                     )
                 )
             if "nat" in firewall_sections:
@@ -225,7 +226,7 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
                         firewall_nat,
                         previous_metrics,
                         checked_at,
-                        max_items=settings.mikrotik_dynamic_max_firewall_rules,
+                        max_items=mikrotik_settings.dynamic_max_firewall_rules,
                     )
                 )
         if "queue" in dynamic_sections:
@@ -236,11 +237,11 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
                     previous_metrics,
                     checked_at,
                     allowlist=settings.normalized_mikrotik_queue_allowlist,
-                    max_items=settings.mikrotik_dynamic_max_queues,
+                    max_items=mikrotik_settings.dynamic_max_queues,
                 )
             )
     except Exception:
-        logger.exception("Mikrotik API check failed for host %s", settings.mikrotik_host)
+        logger.exception("Mikrotik API check failed for host %s", mikrotik_settings.host)
         checked_at = utcnow()
         metrics.append(
             {
@@ -272,7 +273,7 @@ def _should_collect_ping(device) -> bool:
 
 def _resolve_api_target_device(devices: list):
     """Select the active Mikrotik device that matches the configured RouterOS host."""
-    host = str(settings.mikrotik_host or "").strip().lower()
+    host = str(settings.mikrotik.host or "").strip().lower()
     if not host:
         return None
     for device in devices:

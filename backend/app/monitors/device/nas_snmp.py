@@ -195,8 +195,11 @@ def _build_uptime_metric(raw_values: dict[str, object | None]) -> NasMetric:
 
 
 def _build_cpu_metric(processor_loads: dict[int, dict[int, str]]) -> NasMetric:
-    values = [_safe_float(row.get(2)) for row in processor_loads.values()]
-    values = [value for value in values if value is not None]
+    values: list[float] = [
+        value
+        for row in processor_loads.values()
+        if (value := _safe_float(row.get(2))) is not None
+    ]
     if not values:
         return NasMetric("cpu_percent", "unavailable", "warning", "%")
     return NasMetric("cpu_percent", f"{sum(values) / len(values):.2f}", "ok", "%")

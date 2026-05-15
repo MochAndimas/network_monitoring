@@ -1,6 +1,5 @@
 """Printer-specific live monitoring helpers."""
 
-from .impl import _render_printer_history_section
+from .device import _render_printer_history_section
 
 __all__ = ["_render_printer_history_section"]
-

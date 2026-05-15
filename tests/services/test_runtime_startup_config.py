@@ -3,6 +3,33 @@
 from scripts.prepare_prometheus_multiproc_dir import main as prepare_prometheus_multiproc_dir
 
 
+def test_production_rejects_auto_create_tables(monkeypatch):
+    import backend.app.main as main_module
+
+    monkeypatch.setattr(main_module.settings, "database_auto_create_tables", True)
+    monkeypatch.setattr(main_module.settings, "app_env", "production")
+
+    try:
+        main_module._should_auto_create_tables()
+    except RuntimeError as exc:
+        assert "DATABASE_AUTO_CREATE_TABLES" in str(exc)
+    else:
+        assert False, "production startup must reject auto table creation"
+
+
+def test_development_create_all_requires_explicit_opt_in(monkeypatch):
+    import backend.app.main as main_module
+
+    monkeypatch.setattr(main_module.settings, "app_env", "development")
+    monkeypatch.setattr(main_module.settings, "database_auto_create_tables", False)
+
+    assert main_module._should_auto_create_tables() is False
+
+    monkeypatch.setattr(main_module.settings, "database_auto_create_tables", True)
+
+    assert main_module._should_auto_create_tables() is True
+
+
 def test_scheduler_timezone_is_config_driven(monkeypatch):
     import backend.app.scheduler.scheduler as scheduler_module
 

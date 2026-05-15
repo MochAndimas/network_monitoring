@@ -213,7 +213,7 @@ python -m backend.app.scheduler.worker
 streamlit run dashboard/Overview.py
 ```
 
-Catatan: di `APP_ENV=development`, backend juga memanggil `create_all()` saat startup untuk memudahkan lokal, tapi tetap disarankan memakai Alembic agar schema konsisten.
+Catatan: schema runtime dikelola lewat Alembic. `create_all()` hanya berjalan jika `DATABASE_AUTO_CREATE_TABLES=true`, dan flag ini tidak boleh aktif di production.
 
 ## Alur Data Monitoring
 
@@ -477,6 +477,7 @@ Docs API (`/docs`, `/redoc`, `/openapi.json`) mati otomatis di production.
 | `APP_NAME` | Nama aplikasi |
 | `APP_ENV` | `development` atau `production` |
 | `DATABASE_URL` | URL database SQLAlchemy, contoh MySQL `mysql+pymysql://...` |
+| `DATABASE_AUTO_CREATE_TABLES` | Jalankan `create_all()` saat startup hanya untuk bootstrap lokal eksplisit; default `false` |
 | `MYSQL_DATABASE` | Nama database untuk Compose |
 | `MYSQL_USER` | User MySQL untuk Compose |
 | `MYSQL_PASSWORD` | Password MySQL untuk Compose |
@@ -764,7 +765,7 @@ Docker Compose migration:
 docker compose --profile ops run --rm migrate
 ```
 
-Di production, backend tidak menjalankan `create_all()`. Schema harus dikelola lewat Alembic.
+Backend tidak menjalankan `create_all()` kecuali `DATABASE_AUTO_CREATE_TABLES=true`, dan flag itu ditolak di production. Schema production/shared environment harus dikelola lewat Alembic.
 
 Model utama:
 - `devices`

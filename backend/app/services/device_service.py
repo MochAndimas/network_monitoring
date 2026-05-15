@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.device_repository import DeviceRepository
+from .dashboard_overview_service import invalidate_dashboard_overview_cache
 
 
 async def list_device_rows_filtered(
@@ -41,7 +42,9 @@ async def create_device(db: AsyncSession, payload: dict, *, commit: bool = True)
     existing = await repository.get_by_ip_address(payload["ip_address"])
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="IP address already exists")
-    return await repository.create_device(payload, commit=commit)
+    device = await repository.create_device(payload, commit=commit)
+    invalidate_dashboard_overview_cache()
+    return device
 
 
 async def update_device(db: AsyncSession, device_id: int, payload: dict, *, commit: bool = True):
@@ -57,7 +60,9 @@ async def update_device(db: AsyncSession, device_id: int, payload: dict, *, comm
         if existing is not None and existing.id != device_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="IP address already exists")
 
-    return await repository.update_device(device, payload, commit=commit)
+    updated_device = await repository.update_device(device, payload, commit=commit)
+    invalidate_dashboard_overview_cache()
+    return updated_device
 
 
 async def delete_device(db: AsyncSession, device_id: int, *, commit: bool = True) -> None:
@@ -67,3 +72,4 @@ async def delete_device(db: AsyncSession, device_id: int, *, commit: bool = True
     if device is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
     await repository.delete_device(device, commit=commit)
+    invalidate_dashboard_overview_cache()

@@ -32,12 +32,12 @@ async def run_scheduler_worker() -> None:
     """Run scheduler worker for scheduled monitoring execution."""
     configure_logging()
     validate_auth_configuration()
-    if not settings.is_production:
+    if not settings.app.is_production:
         await init_db()
     async with SessionLocal() as db:
         await ensure_bootstrap_admin(db)
 
-    if not settings.scheduler_enabled:
+    if not settings.scheduler.enabled:
         logger.warning("Scheduler worker started with scheduler disabled; exiting.")
         return
 

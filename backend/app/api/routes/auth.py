@@ -69,11 +69,12 @@ def _max_age_from_expiry(expires_at) -> int:
 def _set_auth_cookie(response: Response, token: str, *, expires_at) -> None:
     """Handle the auth cookie endpoint."""
     max_age = _max_age_from_expiry(expires_at)
+    auth_settings = settings.auth
     response.set_cookie(
-        key=settings.auth_cookie_name,
+        key=auth_settings.cookie_name,
         value=token,
         httponly=True,
-        secure=settings.auth_cookie_secure,
+        secure=auth_settings.cookie_secure,
         samesite=settings.normalized_auth_cookie_samesite,
         max_age=max_age,
         expires=max_age,
@@ -83,10 +84,11 @@ def _set_auth_cookie(response: Response, token: str, *, expires_at) -> None:
 
 def _clear_auth_cookie(response: Response) -> None:
     """Handle the auth cookie endpoint."""
+    auth_settings = settings.auth
     response.delete_cookie(
-        key=settings.auth_cookie_name,
+        key=auth_settings.cookie_name,
         httponly=True,
-        secure=settings.auth_cookie_secure,
+        secure=auth_settings.cookie_secure,
         samesite=settings.normalized_auth_cookie_samesite,
         path="/",
     )
@@ -95,11 +97,12 @@ def _clear_auth_cookie(response: Response) -> None:
 def _set_refresh_cookie(response: Response, token: str, *, expires_at) -> None:
     """Handle the refresh cookie endpoint."""
     max_age = _max_age_from_expiry(expires_at)
+    auth_settings = settings.auth
     response.set_cookie(
-        key=settings.auth_refresh_cookie_name,
+        key=auth_settings.refresh_cookie_name,
         value=token,
         httponly=True,
-        secure=settings.auth_cookie_secure,
+        secure=auth_settings.cookie_secure,
         samesite=settings.normalized_auth_cookie_samesite,
         max_age=max_age,
         expires=max_age,
@@ -109,10 +112,11 @@ def _set_refresh_cookie(response: Response, token: str, *, expires_at) -> None:
 
 def _clear_refresh_cookie(response: Response) -> None:
     """Handle the refresh cookie endpoint."""
+    auth_settings = settings.auth
     response.delete_cookie(
-        key=settings.auth_refresh_cookie_name,
+        key=auth_settings.refresh_cookie_name,
         httponly=True,
-        secure=settings.auth_cookie_secure,
+        secure=auth_settings.cookie_secure,
         samesite=settings.normalized_auth_cookie_samesite,
         path="/",
     )
@@ -222,8 +226,8 @@ async def login(
 async def restore_session(
     request: Request,
     response: Response,
-    session_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
-    refresh_cookie: str | None = Cookie(default=None, alias=settings.auth_refresh_cookie_name),
+    session_cookie: str | None = Cookie(default=None, alias=settings.auth.cookie_name),
+    refresh_cookie: str | None = Cookie(default=None, alias=settings.auth.refresh_cookie_name),
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     """Handle the session endpoint."""
@@ -533,8 +537,8 @@ async def logout(
     request: Request,
     response: Response,
     authorization: str | None = Header(default=None),
-    session_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
-    refresh_cookie: str | None = Cookie(default=None, alias=settings.auth_refresh_cookie_name),
+    session_cookie: str | None = Cookie(default=None, alias=settings.auth.cookie_name),
+    refresh_cookie: str | None = Cookie(default=None, alias=settings.auth.refresh_cookie_name),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Handle the logout endpoint."""

@@ -14,7 +14,7 @@ def _validate_internal_api_key(x_api_key: str | None) -> AuthenticatedActor | No
     """Validate internal api key for the application."""
     api_keys = internal_api_key_map()
     if not api_keys:
-        if settings.allow_insecure_no_auth:
+        if settings.auth.allow_insecure_no_auth:
             return AuthenticatedActor(kind="insecure", role="admin", permissions=frozenset({"admin", "ops", "read", "write"}))
         return None
     if x_api_key and x_api_key in api_keys:
@@ -69,7 +69,7 @@ async def require_api_access(
 async def require_api_access_with_session_cookie(
     authorization: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None),
-    session_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
+    session_cookie: str | None = Cookie(default=None, alias=settings.auth.cookie_name),
     db: AsyncSession = Depends(get_db),
 ) -> AuthenticatedActor:
     """Require api access with session cookie for the application."""

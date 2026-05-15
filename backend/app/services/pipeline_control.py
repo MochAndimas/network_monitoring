@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from collections.abc import AsyncIterator
 import logging
 import re
@@ -17,11 +17,19 @@ from ..db.session import engine
 
 _monitoring_pipeline_locks: dict[str, asyncio.Lock] = {}
 logger = logging.getLogger("network_monitoring.pipeline")
+MONITORING_METRIC_LOCK_SCOPES = ("metrics:internet", "metrics:device", "metrics:server", "metrics:mikrotik")
+MONITORING_ALERT_LOCK_SCOPE = "alerts"
+MONITORING_CLEANUP_LOCK_SCOPE = "cleanup"
+MONITORING_FULL_CYCLE_LOCK_SCOPES = (
+    *MONITORING_METRIC_LOCK_SCOPES,
+    MONITORING_ALERT_LOCK_SCOPE,
+    MONITORING_CLEANUP_LOCK_SCOPE,
+)
 
 
 def _mysql_lock_timeout_seconds(*, wait: bool) -> int:
     """Return the MySQL advisory lock timeout for blocking or non-blocking calls."""
-    return max(settings.monitoring_lock_timeout_seconds, 1) if wait else 0
+    return max(settings.monitor.lock_timeout_seconds, 1) if wait else 0
 
 
 def _normalized_lock_scope(scope: str | None) -> str:
@@ -33,7 +41,7 @@ def _normalized_lock_scope(scope: str | None) -> str:
 def _scoped_lock_name(scope: str | None) -> str:
     """Return the configured lock name with a scope suffix for independent work streams."""
     normalized_scope = _normalized_lock_scope(scope)
-    base_name = settings.monitoring_lock_name.rstrip(".")
+    base_name = settings.monitor.lock_name.rstrip(".")
     lock_name = base_name if normalized_scope == "pipeline" else f"{base_name}.{normalized_scope}"
     if len(lock_name) <= 64:
         return lock_name
@@ -45,10 +53,26 @@ def _process_lock_for_scope(scope: str | None) -> asyncio.Lock:
     """Return the process-local asyncio lock for one monitoring scope."""
     normalized_scope = _normalized_lock_scope(scope)
     lock = _monitoring_pipeline_locks.get(normalized_scope)
+    current_loop = asyncio.get_running_loop()
+    lock_loop = getattr(lock, "_loop", None) if lock is not None else None
+    if lock is not None and lock_loop is not None and lock_loop is not current_loop and not lock.locked():
+        lock = None
     if lock is None:
         lock = asyncio.Lock()
         _monitoring_pipeline_locks[normalized_scope] = lock
     return lock
+
+
+def _ordered_unique_scopes(scopes: list[str | None] | tuple[str | None, ...]) -> list[str | None]:
+    """Return lock scopes in a deterministic order to avoid multi-lock deadlocks."""
+    unique_scopes = {
+        _normalized_lock_scope(scope): scope
+        for scope in scopes
+    }
+    return [
+        unique_scopes[normalized_scope]
+        for normalized_scope in sorted(unique_scopes)
+    ]
 
 
 async def _acquire_mysql_lock(*, wait: bool, scope: str | None) -> tuple[object | None, bool]:
@@ -112,3 +136,25 @@ async def monitoring_pipeline_guard(*, wait: bool, scope: str | None = None) -> 
     finally:
         if acquired:
             process_lock.release()
+
+
+@asynccontextmanager
+async def monitoring_pipeline_multi_guard(
+    *,
+    wait: bool,
+    scopes: list[str | None] | tuple[str | None, ...],
+) -> AsyncIterator[bool]:
+    """Acquire several monitoring lock scopes as one coordinated critical section."""
+    ordered_scopes = _ordered_unique_scopes(tuple(scopes))
+    async with AsyncExitStack() as stack:
+        for scope in ordered_scopes:
+            acquired = await stack.enter_async_context(monitoring_pipeline_guard(wait=wait, scope=scope))
+            if not acquired:
+                logger.info(
+                    "Skipping monitoring multi-scope guard because scope is active scope=%s scopes=%s",
+                    _normalized_lock_scope(scope),
+                    ",".join(_normalized_lock_scope(item) for item in ordered_scopes),
+                )
+                yield False
+                return
+        yield True

@@ -22,6 +22,21 @@ class DeviceRepository:
         self.db = db
 
     @staticmethod
+    def _device_status_row_payload(row) -> dict:
+        """Convert a device status query row into the API response dictionary shape."""
+        return {
+            "id": row.id,
+            "name": row.name,
+            "ip_address": row.ip_address,
+            "device_type": row.device_type,
+            "site": row.site,
+            "description": row.description,
+            "is_active": row.is_active,
+            "latest_status": row.latest_status or "unknown",
+            "latest_checked_at": row.latest_checked_at,
+        }
+
+    @staticmethod
     def _latest_ping_metrics_subquery():
         """Return latest latest ping metrics subquery used by device inventory and status."""
         mikrotik_device_filter = or_(
@@ -216,27 +231,14 @@ class DeviceRepository:
             latest_status=latest_status,
             search=search,
         )
-        query = query.order_by(Device.name.asc())
+        query = query.order_by(Device.name.asc(), Device.id.asc())
         if offset:
             query = query.offset(offset)
         if limit is not None:
             query = query.limit(limit)
 
         rows = (await self.db.execute(query)).all()
-        return [
-            {
-                "id": row.id,
-                "name": row.name,
-                "ip_address": row.ip_address,
-                "device_type": row.device_type,
-                "site": row.site,
-                "description": row.description,
-                "is_active": row.is_active,
-                "latest_status": row.latest_status or "unknown",
-                "latest_checked_at": row.latest_checked_at,
-            }
-            for row in rows
-        ]
+        return [self._device_status_row_payload(row) for row in rows]
 
     async def list_device_status_rows_paged(
         self,
@@ -257,7 +259,7 @@ class DeviceRepository:
         )
         rows = (
             await self.db.execute(
-                query.order_by(Device.name.asc()).offset(offset).limit(limit)
+                query.order_by(Device.name.asc(), Device.id.asc()).offset(offset).limit(limit)
             )
         ).all()
         if offset == 0 and len(rows) < limit:
@@ -269,20 +271,39 @@ class DeviceRepository:
                 latest_status=latest_status,
                 search=search,
             )
-        return [
-            {
-                "id": row.id,
-                "name": row.name,
-                "ip_address": row.ip_address,
-                "device_type": row.device_type,
-                "site": row.site,
-                "description": row.description,
-                "is_active": row.is_active,
-                "latest_status": row.latest_status or "unknown",
-                "latest_checked_at": row.latest_checked_at,
-            }
-            for row in rows
-        ], total
+        return [self._device_status_row_payload(row) for row in rows], total
+
+    async def list_device_status_rows_after_cursor(
+        self,
+        *,
+        active_only: bool = False,
+        device_type: str | None = None,
+        latest_status: str | list[str] | tuple[str, ...] | None = None,
+        search: str | None = None,
+        limit: int = 100,
+        cursor_name: str,
+        cursor_id: int,
+    ) -> tuple[list[dict], bool]:
+        """Query the next device status page using keyset pagination."""
+        query, _latest_ping = self._device_status_query(
+            active_only=active_only,
+            device_type=device_type,
+            latest_status=latest_status,
+            search=search,
+        )
+        query = query.where(
+            or_(
+                Device.name > cursor_name,
+                and_(Device.name == cursor_name, Device.id > cursor_id),
+            )
+        )
+        rows = (
+            await self.db.execute(
+                query.order_by(Device.name.asc(), Device.id.asc()).limit(limit + 1)
+            )
+        ).all()
+        has_more = len(rows) > limit
+        return [self._device_status_row_payload(row) for row in rows[:limit]], has_more
 
     async def summarize_active_device_statuses(self) -> dict[str, dict[str, int]]:
         """Query active device statuses from the database."""

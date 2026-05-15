@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..core.time import now
@@ -43,7 +43,7 @@ class MetricColdArchive(Base):
     avg_numeric_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     first_checked_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_checked_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    last_metric_value: Mapped[str] = mapped_column(String(100), nullable=False)
+    last_metric_value: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)
 

@@ -70,6 +70,7 @@ def client_context():
     import backend.app.api.deps as deps_module
     import backend.app.services.pipeline_control as pipeline_control_module
     import backend.app.services.run_cycle_service as run_cycle_module
+    import backend.app.services.dashboard_overview_service as overview_cache_module
 
     original_init_db = main_module.init_db
     original_main_app_env = main_module.settings.app_env
@@ -84,6 +85,7 @@ def client_context():
     original_deps_api_key = deps_module.settings.internal_api_key
     original_deps_cookie_secure = deps_module.settings.auth_cookie_secure
     original_pipeline_engine = pipeline_control_module.engine
+    original_pipeline_locks = pipeline_control_module._monitoring_pipeline_locks
     original_run_cycle_session_local = run_cycle_module.SessionLocal
 
     async def fake_init_db():
@@ -102,6 +104,8 @@ def client_context():
     deps_module.settings.internal_api_key = TEST_API_KEY
     deps_module.settings.auth_cookie_secure = False
     pipeline_control_module.engine = engine
+    pipeline_control_module._monitoring_pipeline_locks = {}
+    overview_cache_module.invalidate_dashboard_overview_cache()
     run_cycle_module.SessionLocal = TestingSessionLocal
 
     try:
@@ -121,6 +125,8 @@ def client_context():
         deps_module.settings.internal_api_key = original_deps_api_key
         deps_module.settings.auth_cookie_secure = original_deps_cookie_secure
         pipeline_control_module.engine = original_pipeline_engine
+        pipeline_control_module._monitoring_pipeline_locks = original_pipeline_locks
+        overview_cache_module.invalidate_dashboard_overview_cache()
         run_cycle_module.SessionLocal = original_run_cycle_session_local
         app.dependency_overrides.clear()
         run(drop_all(engine))

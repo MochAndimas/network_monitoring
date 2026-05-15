@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import asyncio
 from time import perf_counter
+from typing import Protocol
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.config import settings
+from ...models.device import Device
 from ...repositories.device_repository import DeviceRepository
 from ...repositories.metric_repository import MetricRepository
 from ...core.time import utcnow
 from ..helpers import bounded_gather, build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping
+
+
+class HttpGetClient(Protocol):
+    async def get(self, url: str) -> httpx.Response:
+        ...
 
 
 async def run_internet_checks(db: AsyncSession) -> list[dict]:
@@ -30,7 +37,7 @@ async def run_internet_checks(db: AsyncSession) -> list[dict]:
 
     if devices:
         anchor_device = _select_internet_anchor_device(devices)
-        async with httpx.AsyncClient(timeout=settings.http_check_timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=settings.internet.http_timeout_seconds) as client:
             dns_metric, http_metric, public_ip_metric = await asyncio.gather(
                 _build_dns_metric(anchor_device.id),
                 _build_http_metric(anchor_device.id, client),
@@ -41,9 +48,9 @@ async def run_internet_checks(db: AsyncSession) -> list[dict]:
     return metrics
 
 
-def _select_internet_anchor_device(devices):
+def _select_internet_anchor_device(devices: list[Device]) -> Device:
     """Return select internet anchor device for monitoring collection."""
-    def priority(device) -> tuple[int, str]:
+    def priority(device: Device) -> tuple[int, str]:
         name = str(getattr(device, "name", "") or "").lower()
         if "myrepublic" in name:
             return (0, name)
@@ -70,7 +77,7 @@ async def _build_dns_metric(device_id: int) -> dict:
     checked_at = utcnow()
     started_at = perf_counter()
     try:
-        await asyncio.get_running_loop().getaddrinfo(settings.dns_check_host, None)
+        await asyncio.get_running_loop().getaddrinfo(settings.internet.dns_host, None)
     except OSError:
         return {
             "device_id": device_id,
@@ -92,12 +99,12 @@ async def _build_dns_metric(device_id: int) -> dict:
     }
 
 
-async def _build_http_metric(device_id: int, client: httpx.AsyncClient) -> dict:
+async def _build_http_metric(device_id: int, client: HttpGetClient) -> dict:
     """Build http metric for monitoring collection."""
     checked_at = utcnow()
     started_at = perf_counter()
     try:
-        response = await _get_with_retries(client, settings.http_check_url)
+        await _get_with_retries(client, settings.internet.http_url)
     except httpx.HTTPError:
         return {
             "device_id": device_id,
@@ -119,11 +126,11 @@ async def _build_http_metric(device_id: int, client: httpx.AsyncClient) -> dict:
     }
 
 
-async def _build_public_ip_metric(db: AsyncSession, device_id: int, client: httpx.AsyncClient) -> dict:
+async def _build_public_ip_metric(db: AsyncSession, device_id: int, client: HttpGetClient) -> dict:
     """Build public ip metric for monitoring collection."""
     checked_at = utcnow()
     try:
-        response = await _get_with_retries(client, settings.public_ip_check_url)
+        response = await _get_with_retries(client, settings.internet.public_ip_url)
         public_ip = response.text.strip()
     except httpx.HTTPError:
         return {
@@ -147,9 +154,9 @@ async def _build_public_ip_metric(db: AsyncSession, device_id: int, client: http
     }
 
 
-async def _get_with_retries(client: httpx.AsyncClient, url: str) -> httpx.Response:
+async def _get_with_retries(client: HttpGetClient, url: str) -> httpx.Response:
     """GET a URL with a small retry budget for transient internet check failures."""
-    attempts = max(int(settings.http_check_retries or 1), 1)
+    attempts = max(int(settings.internet.http_retries or 1), 1)
     last_error: httpx.HTTPError | None = None
     for attempt in range(attempts):
         try:

@@ -1,6 +1,6 @@
 """Mikrotik-specific live monitoring helpers."""
 
-from .impl import (
+from .device import (
     _default_mikrotik_trend_metrics,
     _dynamic_mikrotik_metric_table,
     _firewall_view,
@@ -17,4 +17,3 @@ __all__ = [
     "_is_dynamic_mikrotik_metric",
     "_render_mikrotik_history_section",
 ]
-

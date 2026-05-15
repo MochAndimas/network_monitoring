@@ -6,6 +6,7 @@ This module contains automated regression and validation scenarios.
 from types import SimpleNamespace
 
 from .common import (
+    _create_user,
     _seed_devices_and_metrics,
     API_HEADERS,
     Alert,
@@ -391,7 +392,16 @@ def test_run_cycle_creates_ping_latency_alert():
             _seed_devices_and_metrics(
                 session_factory,
                 [{"name": "MyRepublic", "ip_address": "8.8.8.8", "device_type": "internet_target"}],
-                [],
+                lambda devices: [
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "http_response_time",
+                        "metric_value": "1300.00",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow() - timedelta(seconds=30),
+                    },
+                ],
             )
         )[0].id
 
@@ -438,6 +448,118 @@ def test_run_cycle_creates_ping_latency_alert():
         assert len(alerts_payload) == 1
         assert alerts_payload[0]["alert_type"] == "high_ping_latency_critical"
         assert alerts_payload[0]["severity"] == "critical"
+
+
+def test_internet_service_latency_alerts_ignore_single_sample_spikes():
+    with client_context() as (_client, session_factory):
+        device = run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "MyRepublic", "ip_address": "192.168.1.1", "device_type": "internet_target"}],
+                lambda devices: [
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "dns_resolution_time",
+                        "metric_value": "42.00",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow() - timedelta(seconds=30),
+                    },
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "http_response_time",
+                        "metric_value": "150.00",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow() - timedelta(seconds=30),
+                    },
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "dns_resolution_time",
+                        "metric_value": "904.03",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow(),
+                    },
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "http_response_time",
+                        "metric_value": "4531.15",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow(),
+                    },
+                ],
+            )
+        )[0]
+
+        import backend.app.alerting.engine as engine_module
+
+        async def scenario():
+            async with session_factory() as db:
+                return await engine_module.evaluate_alerts(db)
+
+        notifications = run(scenario())
+
+        assert notifications == []
+        assert device.name == "MyRepublic"
+
+
+def test_internet_service_latency_alerts_require_consecutive_slow_samples():
+    with client_context() as (_client, session_factory):
+        run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "MyRepublic", "ip_address": "192.168.1.1", "device_type": "internet_target"}],
+                lambda devices: [
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "dns_resolution_time",
+                        "metric_value": "711.80",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow() - timedelta(seconds=30),
+                    },
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "http_response_time",
+                        "metric_value": "4206.93",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow() - timedelta(seconds=30),
+                    },
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "dns_resolution_time",
+                        "metric_value": "904.03",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow(),
+                    },
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "http_response_time",
+                        "metric_value": "4531.15",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow(),
+                    },
+                ],
+            )
+        )
+
+        import backend.app.alerting.engine as engine_module
+
+        async def scenario():
+            async with session_factory() as db:
+                return await engine_module.evaluate_alerts(db)
+
+        notifications = run(scenario())
+
+        assert {notification["alert_type"] for notification in notifications} == {
+            "slow_dns_resolution",
+            "slow_http_response",
+        }
 
 
 def test_nas_snmp_status_metrics_create_alert_and_incident():
@@ -576,7 +698,16 @@ def test_run_cycle_creates_internet_quality_alerts():
             _seed_devices_and_metrics(
                 session_factory,
                 [{"name": "MyRepublic", "ip_address": "8.8.8.8", "device_type": "internet_target"}],
-                [],
+                lambda devices: [
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "http_response_time",
+                        "metric_value": "1300.00",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow() - timedelta(seconds=30),
+                    },
+                ],
             )
         )[0].id
 
@@ -1224,6 +1355,40 @@ def test_internal_api_key_scopes_split_write_and_ops_access():
         config_module.settings.internal_api_key = original_internal_api_key
         config_module.settings.internal_api_keys = original_internal_api_keys
         config_module._parse_internal_api_key_map.cache_clear()
+
+
+def test_run_cycle_accepts_admin_bearer_token_after_auth_session_lookup():
+    import backend.app.services.run_cycle_service as run_cycle_module
+
+    original_internet = run_cycle_module.run_internet_checks
+    original_device = run_cycle_module.run_device_checks
+    original_server = run_cycle_module.run_server_checks
+    original_mikrotik = run_cycle_module.run_mikrotik_checks
+
+    try:
+        run_cycle_module.run_internet_checks = empty_checks
+        run_cycle_module.run_device_checks = empty_checks
+        run_cycle_module.run_server_checks = empty_checks
+        run_cycle_module.run_mikrotik_checks = empty_checks
+
+        with client_context() as (client, session_factory):
+            run(_create_user(session_factory, username="opsadmin", password="StrongPass123!", role="admin"))
+            login_response = client.post("/auth/login", json={"username": "opsadmin", "password": "StrongPass123!"})
+            assert login_response.status_code == 200
+
+            cycle_response = client.post(
+                "/system/run-cycle",
+                headers={"authorization": f"Bearer {login_response.json()['access_token']}"},
+            )
+
+        assert cycle_response.status_code == 200
+        assert cycle_response.json()["metrics_collected"] == 0
+    finally:
+        run_cycle_module.run_internet_checks = original_internet
+        run_cycle_module.run_device_checks = original_device
+        run_cycle_module.run_server_checks = original_server
+        run_cycle_module.run_mikrotik_checks = original_mikrotik
+
 
 def test_internal_api_key_protects_read_endpoints():
     with client_context() as (client, _session_factory):

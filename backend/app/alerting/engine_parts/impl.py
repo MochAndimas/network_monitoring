@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
-
-from shared.device_utils import is_mikrotik_device
-from shared.number_utils import safe_float
+from datetime import datetime, timedelta
 
 from ...core.config import settings
 from ...core.time import utcnow
@@ -16,59 +13,30 @@ from ...repositories.incident_repository import IncidentRepository
 from ...repositories.metric_repository import MetricRepository
 from ...models.alert import Alert
 from ...models.incident import Incident
+from ...models.metric import Metric
+from ...services.dashboard_overview_service import invalidate_dashboard_overview_cache
 from ...services.threshold_service import get_threshold_map
 from ..notifiers.telegram_notifier import send_telegram_alert
 from ..rules import ALERT_RULES
-
-
-TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE = {
-    "voip": {
-        "high_ping_latency_warning",
-        "high_ping_latency_critical",
-        "high_jitter_warning",
-        "high_jitter_critical",
-    },
-    "printer": {
-        "high_ping_latency_warning",
-        "high_ping_latency_critical",
-        "high_jitter_warning",
-        "high_jitter_critical",
-    },
-}
-TELEGRAM_NOTIFICATION_DEDUPE_TTL = timedelta(minutes=5)
-_recent_telegram_notification_keys: dict[tuple, object] = {}
-ALERT_EXACT_METRIC_NAMES = {
-    "ping",
-    "packet_loss",
-    "jitter",
-    "dns_resolution_time",
-    "http_response_time",
-    "public_ip",
-    "cpu_percent",
-    "memory_percent",
-    "disk_percent",
-    "mikrotik_api",
-    "connected_clients",
-    "printer_uptime_seconds",
-    "printer_status",
-    "printer_error_state",
-    "printer_paper_status",
-    "printer_ink_status",
-    "nas_system_status",
-    "nas_power_status",
-    "nas_system_temperature_c",
-}
-ALERT_DYNAMIC_METRIC_NAME_PATTERNS = (
-    "interface:%:rx_mbps",
-    "interface:%:tx_mbps",
-    "firewall:%:pps",
-    "firewall:%:mbps",
-    "nas_fan:%:status",
-    "nas_volume:%:status",
-    "nas_raid:%:status",
-    "nas_disk:%:status",
-    "nas_disk:%:temperature_c",
+from .constants import (
+    ALERT_DYNAMIC_METRIC_NAME_PATTERNS,
+    ALERT_EXACT_METRIC_NAMES,
+    TELEGRAM_NOTIFICATION_DEDUPE_TTL,
+    TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE,
 )
+from .device_evaluators import _evaluate_mikrotik_alerts as _evaluate_mikrotik_alerts
+from .device_evaluators import _evaluate_nas_alerts as _evaluate_nas_alerts
+from .evaluation_context import AlertEvaluationContext
+from .rule_evaluators import evaluate_expected_alerts_for_device
+from .utils import (
+    _build_alert_payload as _build_alert_payload,
+    _highest_dynamic_metric as _highest_dynamic_metric,
+    _metric_numeric_value as _metric_numeric_value,
+    _threshold_for_device as _threshold_for_device,
+)
+
+
+_recent_telegram_notification_keys: dict[tuple, datetime] = {}
 
 
 async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
@@ -95,8 +63,12 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
     active_alert_count_by_device: dict[int | None, int] = {}
     for alert in active_alerts.values():
         active_alert_count_by_device[alert.device_id] = active_alert_count_by_device.get(alert.device_id, 0) + 1
+    active_incident_device_ids: set[int | None] = set(candidate_device_ids)
+    active_incident_device_ids.update(
+        device_id for device_id in active_alert_count_by_device if device_id is not None
+    )
     active_incidents_by_device = _group_incidents_by_device(
-        await incident_repository.list_active_incidents_by_device_ids(candidate_device_ids | set(active_alert_count_by_device))
+        await incident_repository.list_active_incidents_by_device_ids(active_incident_device_ids)
     )
     printer_device_ids = [device.id for device in devices if device.device_type == "printer"]
     printer_uptime_history_by_device = (
@@ -108,201 +80,26 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
         if printer_device_ids
         else {}
     )
+    internet_target_device_ids = [device.id for device in devices if device.device_type == "internet_target"]
+    internet_service_history_by_device = await _load_internet_service_history_by_device(
+        metric_repository,
+        internet_target_device_ids,
+    )
     has_pending_writes = False
 
     expected_alerts: dict[tuple[int | None, str], dict] = {}
 
     for device in devices:
-        ping_metric = latest_metrics.get((device.id, "ping"))
-        if ping_metric is not None and ping_metric.status == "down":
-            alert_type = "internet_loss" if device.device_type == "internet_target" else "device_down"
-            expected_alerts[(device.id, alert_type)] = _build_alert_payload(
-                device_id=device.id,
-                alert_type=alert_type,
-                message=f"{device.name} is unreachable",
-            )
-        elif ping_metric is not None:
-            ping_value = _metric_numeric_value(ping_metric)
-
-            if ping_value is not None:
-                ping_warning_threshold = _threshold_for_device(thresholds, device.device_type, "ping_latency_warning")
-                ping_critical_threshold = _threshold_for_device(thresholds, device.device_type, "ping_latency_critical")
-                if ping_value >= ping_critical_threshold:
-                    expected_alerts[(device.id, "high_ping_latency_critical")] = _build_alert_payload(
-                        device_id=device.id,
-                        alert_type="high_ping_latency_critical",
-                        message=f"{device.name} ping latency reached {ping_value:.2f}{ping_metric.unit or ''}",
-                    )
-                elif ping_value >= ping_warning_threshold:
-                    expected_alerts[(device.id, "high_ping_latency_warning")] = _build_alert_payload(
-                        device_id=device.id,
-                        alert_type="high_ping_latency_warning",
-                        message=f"{device.name} ping latency reached {ping_value:.2f}{ping_metric.unit or ''}",
-                    )
-
-        for metric_name, warning_alert, critical_alert, warning_key, critical_key in [
-            (
-                "packet_loss",
-                "high_packet_loss_warning",
-                "high_packet_loss_critical",
-                "packet_loss_warning",
-                "packet_loss_critical",
-            ),
-            (
-                "jitter",
-                "high_jitter_warning",
-                "high_jitter_critical",
-                "jitter_warning",
-                "jitter_critical",
-            ),
-        ]:
-            metric = latest_metrics.get((device.id, metric_name))
-            if metric is None:
-                continue
-            value = safe_float(metric.metric_value)
-            if value is None:
-                continue
-            warning_threshold = _threshold_for_device(thresholds, device.device_type, warning_key)
-            critical_threshold = _threshold_for_device(thresholds, device.device_type, critical_key)
-            if value >= critical_threshold:
-                expected_alerts[(device.id, critical_alert)] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type=critical_alert,
-                    message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
-                )
-            elif value >= warning_threshold:
-                expected_alerts[(device.id, warning_alert)] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type=warning_alert,
-                    message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
-                )
-
-        dns_metric = latest_metrics.get((device.id, "dns_resolution_time"))
-        if dns_metric is not None:
-            dns_value = safe_float(dns_metric.metric_value)
-            if dns_metric.status == "down":
-                expected_alerts[(device.id, "dns_resolution_failed")] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type="dns_resolution_failed",
-                    message=f"{device.name} DNS resolution failed",
-                )
-            elif dns_value is not None and dns_value >= thresholds["dns_resolution_warning"]:
-                expected_alerts[(device.id, "slow_dns_resolution")] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type="slow_dns_resolution",
-                    message=f"{device.name} DNS resolution reached {dns_value:.2f}{dns_metric.unit or ''}",
-                )
-
-        http_metric = latest_metrics.get((device.id, "http_response_time"))
-        if http_metric is not None:
-            http_value = safe_float(http_metric.metric_value)
-            if http_metric.status == "down":
-                expected_alerts[(device.id, "http_check_failed")] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type="http_check_failed",
-                    message=f"{device.name} HTTP check failed",
-                )
-            elif http_value is not None and http_value >= thresholds["http_response_warning"]:
-                expected_alerts[(device.id, "slow_http_response")] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type="slow_http_response",
-                    message=f"{device.name} HTTP response reached {http_value:.2f}{http_metric.unit or ''}",
-                )
-
-        public_ip_metric = latest_metrics.get((device.id, "public_ip"))
-        if public_ip_metric is not None and public_ip_metric.status == "warning":
-            expected_alerts[(device.id, "public_ip_changed")] = _build_alert_payload(
-                device_id=device.id,
-                alert_type="public_ip_changed",
-                message=f"{device.name} public IP changed to {public_ip_metric.metric_value}",
-            )
-
-        for metric_name, alert_type, threshold in [
-            ("cpu_percent", "high_cpu", thresholds["cpu_warning"]),
-            ("memory_percent", "high_ram", thresholds["ram_warning"]),
-            ("disk_percent", "high_disk", thresholds["disk_warning"]),
-        ]:
-            metric = latest_metrics.get((device.id, metric_name))
-            if metric is None:
-                continue
-            value = _metric_numeric_value(metric)
-            if value is None:
-                continue
-
-            if value >= threshold:
-                expected_alerts[(device.id, alert_type)] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type=alert_type,
-                    message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
-                )
-
-        if is_mikrotik_device(device.device_type, device.name):
-            _evaluate_mikrotik_alerts(
+        evaluate_expected_alerts_for_device(
+            AlertEvaluationContext(
                 device=device,
                 latest_metrics=latest_metrics,
                 thresholds=thresholds,
                 expected_alerts=expected_alerts,
+                printer_uptime_history_by_device=printer_uptime_history_by_device,
+                internet_service_history_by_device=internet_service_history_by_device,
             )
-
-        if device.device_type == "nas":
-            _evaluate_nas_alerts(
-                device=device,
-                latest_metrics=latest_metrics,
-                thresholds=thresholds,
-                expected_alerts=expected_alerts,
-            )
-
-        if device.device_type == "printer":
-            uptime_metric = latest_metrics.get((device.id, "printer_uptime_seconds"))
-            current_uptime = safe_float(uptime_metric.metric_value) if uptime_metric is not None else None
-            if current_uptime is not None:
-                uptime_history = printer_uptime_history_by_device.get(device.id, [])
-                if len(uptime_history) >= 2:
-                    previous_uptime = safe_float(uptime_history[1].metric_value)
-                    if previous_uptime is not None and current_uptime < previous_uptime:
-                        expected_alerts[(device.id, "printer_reboot_detected")] = _build_alert_payload(
-                            device_id=device.id,
-                            alert_type="printer_reboot_detected",
-                            message=f"{device.name} appears to have rebooted; uptime reset to {int(current_uptime)}s",
-                        )
-
-            printer_status_metric = latest_metrics.get((device.id, "printer_status"))
-            if printer_status_metric is not None and printer_status_metric.status == "warning":
-                expected_alerts[(device.id, "printer_status_warning")] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type="printer_status_warning",
-                    message=f"{device.name} reported printer status {printer_status_metric.metric_value}",
-                )
-
-            printer_error_metric = latest_metrics.get((device.id, "printer_error_state"))
-            if printer_error_metric is not None and printer_error_metric.metric_value not in {"", "none"}:
-                expected_alerts[(device.id, "printer_error_state")] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type="printer_error_state",
-                    message=f"{device.name} printer error state: {printer_error_metric.metric_value.replace(',', ', ')}",
-                )
-
-            printer_paper_metric = latest_metrics.get((device.id, "printer_paper_status"))
-            if printer_paper_metric is not None and printer_paper_metric.metric_value not in {"", "ok"}:
-                expected_alerts[(device.id, "printer_paper_issue")] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type="printer_paper_issue",
-                    message=f"{device.name} paper status is {printer_paper_metric.metric_value}",
-                )
-
-            printer_ink_status_metric = latest_metrics.get((device.id, "printer_ink_status"))
-            if printer_ink_status_metric is not None and printer_ink_status_metric.metric_value == "empty":
-                expected_alerts[(device.id, "printer_ink_empty")] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type="printer_ink_empty",
-                    message=f"{device.name} ink status is empty",
-                )
-            elif printer_ink_status_metric is not None and printer_ink_status_metric.metric_value == "low":
-                expected_alerts[(device.id, "printer_ink_low")] = _build_alert_payload(
-                    device_id=device.id,
-                    alert_type="printer_ink_low",
-                    message=f"{device.name} ink status is low",
-                )
+        )
 
     for key, payload in expected_alerts.items():
         if key in active_alerts:
@@ -358,7 +155,7 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
                     "alert_type": alert.alert_type,
                     "severity": alert.severity,
                     "message": alert.message,
-                    "device": device_by_id.get(alert.device_id),
+                    "device": device_by_id.get(alert.device_id) if alert.device_id is not None else None,
                     "created_at": alert.created_at,
                     "resolved_at": resolved_at,
                 }
@@ -379,6 +176,7 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
             await db.commit()
         else:
             await db.flush()
+        invalidate_dashboard_overview_cache()
     telegram_events.extend(
         _pending_active_telegram_events(
             active_alerts.values(),
@@ -396,23 +194,6 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
     return notifications
 
 
-def _metric_numeric_value(metric) -> float | None:
-    """Return the numeric metric value using the precomputed column when available."""
-    numeric_value = getattr(metric, "metric_value_numeric", None)
-    if numeric_value is not None:
-        try:
-            return float(numeric_value)
-        except (TypeError, ValueError):
-            pass
-    return safe_float(getattr(metric, "metric_value", None))
-
-
-def _threshold_for_device(thresholds: dict[str, float], device_type: str | None, key: str) -> float:
-    """Return a device-specific threshold when configured, otherwise the global value."""
-    device_key = f"{str(device_type or '').lower()}_{key}"
-    return thresholds.get(device_key, thresholds[key])
-
-
 def _should_send_telegram_alert(alert_type: str, device_type: str | None) -> bool:
     """Return whether an alert state change should be sent to Telegram."""
     return alert_type not in TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE.get(str(device_type or ""), set())
@@ -425,11 +206,11 @@ def _should_send_telegram_resolved_alert(alert, resolved_at, device_type: str | 
     return alert.telegram_notified_at is not None
 
 
-def _alert_reached_telegram_grace_period(started_at, current_time) -> bool:
+def _alert_reached_telegram_grace_period(started_at: datetime | None, current_time: datetime | None) -> bool:
     """Return whether an alert has stayed active long enough for Telegram."""
     if started_at is None or current_time is None:
         return False
-    grace_period = timedelta(seconds=max(int(settings.telegram_alert_grace_period_seconds or 0), 0))
+    grace_period = timedelta(seconds=max(int(settings.telegram.alert_grace_period_seconds or 0), 0))
     return started_at <= current_time - grace_period
 
 
@@ -645,203 +426,6 @@ def _highest_severity(severities) -> str:
     return max(normalized, key=lambda severity: severity_order.get(severity, 0))
 
 
-def _evaluate_mikrotik_alerts(*, device, latest_metrics: dict, thresholds: dict[str, float], expected_alerts: dict) -> None:
-    """Add Mikrotik-specific expected alerts for API, client, interface, and firewall metrics."""
-    api_metric = latest_metrics.get((device.id, "mikrotik_api"))
-    if api_metric is not None and (
-        str(api_metric.status or "").lower() == "error" or str(api_metric.metric_value or "") == "connection_failed"
-    ):
-        expected_alerts[(device.id, "mikrotik_api_failed")] = _build_alert_payload(
-            device_id=device.id,
-            alert_type="mikrotik_api_failed",
-            message=f"{device.name} Mikrotik API connection failed",
-        )
-
-    client_metric = latest_metrics.get((device.id, "connected_clients"))
-    client_count = safe_float(client_metric.metric_value) if client_metric is not None else None
-    if client_count is not None and client_count >= thresholds["mikrotik_connected_clients_warning"]:
-        expected_alerts[(device.id, "mikrotik_connected_clients_high")] = _build_alert_payload(
-            device_id=device.id,
-            alert_type="mikrotik_connected_clients_high",
-            message=f"{device.name} connected clients reached {int(client_count)}",
-        )
-
-    interface_spike = _highest_dynamic_metric(
-        latest_metrics,
-        device_id=device.id,
-        prefix="interface:",
-        suffixes=(":rx_mbps", ":tx_mbps"),
-    )
-    if interface_spike is not None:
-        metric_name, metric = interface_spike
-        value = safe_float(metric.metric_value)
-        if value is not None and value >= thresholds["mikrotik_interface_mbps_warning"]:
-            expected_alerts[(device.id, "mikrotik_interface_traffic_high")] = _build_alert_payload(
-                device_id=device.id,
-                alert_type="mikrotik_interface_traffic_high",
-                message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
-            )
-
-    firewall_spike = _highest_dynamic_metric(
-        latest_metrics,
-        device_id=device.id,
-        prefix="firewall:",
-        suffixes=(":pps", ":mbps"),
-    )
-    if firewall_spike is not None:
-        metric_name, metric = firewall_spike
-        value = safe_float(metric.metric_value)
-        threshold = (
-            thresholds["mikrotik_firewall_spike_pps_warning"]
-            if metric_name.endswith(":pps")
-            else thresholds["mikrotik_firewall_spike_mbps_warning"]
-        )
-        if value is not None and (value >= threshold or str(metric.status or "").lower() == "warning"):
-            expected_alerts[(device.id, "mikrotik_firewall_spike")] = _build_alert_payload(
-                device_id=device.id,
-                alert_type="mikrotik_firewall_spike",
-                message=f"{device.name} firewall spike on {metric_name}: {value:.2f}{metric.unit or ''}",
-            )
-
-
-def _evaluate_nas_alerts(*, device, latest_metrics: dict, thresholds: dict[str, float], expected_alerts: dict) -> None:
-    """Add NAS-specific expected alerts for SNMP health metrics."""
-    for metric_name, alert_type, label in [
-        ("nas_system_status", "nas_system_status_problem", "system status"),
-        ("nas_power_status", "nas_power_status_problem", "power status"),
-    ]:
-        metric = latest_metrics.get((device.id, metric_name))
-        value = str(getattr(metric, "metric_value", "") or "").lower()
-        if metric is not None and value not in {"normal", "ok"}:
-            expected_alerts[(device.id, alert_type)] = _build_alert_payload(
-                device_id=device.id,
-                alert_type=alert_type,
-                message=f"{device.name} NAS {label} is {metric.metric_value}",
-            )
-
-    system_temperature_metric = latest_metrics.get((device.id, "nas_system_temperature_c"))
-    system_temperature = _metric_numeric_value(system_temperature_metric) if system_temperature_metric is not None else None
-    if system_temperature is not None and system_temperature >= thresholds["nas_system_temperature_warning"]:
-        expected_alerts[(device.id, "nas_system_temperature_high")] = _build_alert_payload(
-            device_id=device.id,
-            alert_type="nas_system_temperature_high",
-            message=f"{device.name} NAS system temperature reached {system_temperature:.2f}C",
-        )
-
-    _add_nas_status_alert(
-        device=device,
-        latest_metrics=latest_metrics,
-        expected_alerts=expected_alerts,
-        prefix="nas_fan:",
-        suffix=":status",
-        alert_type="nas_fan_status_problem",
-        label="fan",
-    )
-    _add_nas_status_alert(
-        device=device,
-        latest_metrics=latest_metrics,
-        expected_alerts=expected_alerts,
-        prefix="nas_volume:",
-        suffix=":status",
-        alert_type="nas_volume_status_problem",
-        label="volume",
-    )
-    _add_nas_status_alert(
-        device=device,
-        latest_metrics=latest_metrics,
-        expected_alerts=expected_alerts,
-        prefix="nas_raid:",
-        suffix=":status",
-        alert_type="nas_raid_status_problem",
-        label="storage pool",
-    )
-    _add_nas_status_alert(
-        device=device,
-        latest_metrics=latest_metrics,
-        expected_alerts=expected_alerts,
-        prefix="nas_disk:",
-        suffix=":status",
-        alert_type="nas_disk_status_problem",
-        label="disk",
-        ok_values={"normal", "initialized", "ok"},
-    )
-
-    hot_disks = []
-    for (current_device_id, metric_name), metric in latest_metrics.items():
-        if current_device_id != device.id or not str(metric_name).startswith("nas_disk:") or not str(metric_name).endswith(":temperature_c"):
-            continue
-        value = _metric_numeric_value(metric)
-        if value is not None and value >= thresholds["nas_disk_temperature_warning"]:
-            hot_disks.append((metric_name, value))
-    if hot_disks:
-        metric_name, value = max(hot_disks, key=lambda item: item[1])
-        expected_alerts[(device.id, "nas_disk_temperature_high")] = _build_alert_payload(
-            device_id=device.id,
-            alert_type="nas_disk_temperature_high",
-            message=f"{device.name} NAS {metric_name} reached {value:.2f}C",
-        )
-
-
-def _add_nas_status_alert(
-    *,
-    device,
-    latest_metrics: dict,
-    expected_alerts: dict,
-    prefix: str,
-    suffix: str,
-    alert_type: str,
-    label: str,
-    ok_values: set[str] | None = None,
-) -> None:
-    """Aggregate abnormal NAS dynamic status metrics into one alert type."""
-    normalized_ok_values = ok_values or {"normal", "ok"}
-    problems = []
-    for (current_device_id, metric_name), metric in latest_metrics.items():
-        if current_device_id != device.id or not str(metric_name).startswith(prefix) or not str(metric_name).endswith(suffix):
-            continue
-        value = str(getattr(metric, "metric_value", "") or "").lower()
-        if value not in normalized_ok_values:
-            problems.append(f"{metric_name}={metric.metric_value}")
-    if not problems:
-        return
-    expected_alerts[(device.id, alert_type)] = _build_alert_payload(
-        device_id=device.id,
-        alert_type=alert_type,
-        message=f"{device.name} NAS {label} problem: {', '.join(problems[:3])}",
-    )
-
-
-def _highest_dynamic_metric(latest_metrics: dict, *, device_id: int, prefix: str, suffixes: tuple[str, ...]):
-    """Return the highest numeric dynamic metric matching a prefix and suffix set."""
-    matches = [
-        (metric_name, metric)
-        for (current_device_id, metric_name), metric in latest_metrics.items()
-        if current_device_id == device_id and str(metric_name).startswith(prefix) and str(metric_name).endswith(suffixes)
-    ]
-    numeric_matches = [
-        (metric_name, metric, value)
-        for metric_name, metric in matches
-        if (value := safe_float(metric.metric_value)) is not None
-    ]
-    if not numeric_matches:
-        return None
-    metric_name, metric, _value = max(numeric_matches, key=lambda item: item[2])
-    return metric_name, metric
-
-
-def _build_alert_payload(device_id: int | None, alert_type: str, message: str) -> dict:
-    """Build the database payload for a newly active alert."""
-    rule = ALERT_RULES[alert_type]
-    return {
-        "device_id": device_id,
-        "alert_type": alert_type,
-        "severity": rule["severity"],
-        "message": message,
-        "status": "active",
-        "created_at": utcnow(),
-    }
-
-
 def _group_incidents_by_device(incidents: list[Incident]) -> dict[int | None, list[Incident]]:
     """Group active incidents by device without dropping duplicate rows."""
     incidents_by_device: dict[int | None, list[Incident]] = {}
@@ -918,3 +502,22 @@ async def _resolve_orphan_incidents(
             }
         )
     return notifications
+
+
+async def _load_internet_service_history_by_device(
+    metric_repository: MetricRepository,
+    device_ids: list[int],
+) -> dict[int, dict[str, list[Metric]]]:
+    """Load bounded DNS/HTTP history used to debounce transient internet-service spikes."""
+    if not device_ids:
+        return {}
+    history_by_device: dict[int, dict[str, list[Metric]]] = {}
+    for metric_name in ("dns_resolution_time", "http_response_time"):
+        metric_history = await metric_repository.list_recent_metrics_by_device(
+            device_ids=device_ids,
+            metric_name=metric_name,
+            per_device_limit=2,
+        )
+        for device_id, metrics in metric_history.items():
+            history_by_device.setdefault(device_id, {})[metric_name] = metrics
+    return history_by_device

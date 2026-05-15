@@ -29,19 +29,20 @@ def _engine_options(database_url: str) -> dict[str, object]:
     }
     if database_url.startswith("sqlite+aiosqlite:///"):
         return options
+    database_settings = settings.database
     options.update(
         {
-            "pool_size": settings.db_pool_size,
-            "max_overflow": settings.db_max_overflow,
-            "pool_timeout": settings.db_pool_timeout_seconds,
-            "pool_recycle": settings.db_pool_recycle_seconds,
+            "pool_size": database_settings.pool_size,
+            "max_overflow": database_settings.max_overflow,
+            "pool_timeout": database_settings.pool_timeout_seconds,
+            "pool_recycle": database_settings.pool_recycle_seconds,
             "pool_use_lifo": True,
         }
     )
     return options
 
 
-_resolved_database_url = _async_database_url(settings.database_url)
+_resolved_database_url = _async_database_url(settings.database.url)
 engine = create_async_engine(_resolved_database_url, **_engine_options(_resolved_database_url))
 SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, autoflush=False, autocommit=False, expire_on_commit=False)
 

@@ -14,18 +14,19 @@ from ...models.user import User
 
 async def ensure_bootstrap_admin(db: AsyncSession, *, commit: bool = True) -> bool:
     """Ensure bootstrap admin in the service layer."""
-    if not settings.bootstrap_admin_password:
+    auth_settings = settings.auth
+    if not auth_settings.bootstrap_admin_password:
         return False
 
-    username = settings.bootstrap_admin_username.strip().lower()
+    username = auth_settings.bootstrap_admin_username.strip().lower()
     existing = await db.scalar(select(User).where(User.username == username))
     if existing is not None:
         return False
 
     user = User(
         username=username,
-        full_name=settings.bootstrap_admin_full_name.strip() or "Monitoring Admin",
-        password_hash=hash_password(settings.bootstrap_admin_password),
+        full_name=auth_settings.bootstrap_admin_full_name.strip() or "Monitoring Admin",
+        password_hash=hash_password(auth_settings.bootstrap_admin_password),
         role="admin",
         is_active=True,
         password_changed_at=utcnow(),

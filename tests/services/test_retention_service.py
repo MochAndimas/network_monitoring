@@ -170,6 +170,28 @@ def test_cleanup_keeps_latest_snapshot_metric_for_active_alert(monkeypatch):
         run(drop_all(engine))
 
 
+def test_metric_values_support_long_dynamic_payloads(monkeypatch):
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    run(create_all(engine))
+
+    monkeypatch.setattr("backend.app.services.retention_service.settings.raw_metric_retention_days", 7)
+    long_payload = "diagnostic:" + ("x" * 180)
+    old_timestamp = utcnow() - timedelta(days=9)
+
+    try:
+        latest_metric, cold_archive = run(_cleanup_long_metric_value(SessionLocal, old_timestamp, long_payload))
+
+        assert latest_metric.metric_value == long_payload
+        assert cold_archive.last_metric_value == long_payload
+    finally:
+        run(drop_all(engine))
+
+
 def _metric(device_id: int, name: str, value: str, status: str, unit: str | None, checked_at):
     return {
         "device_id": device_id,
@@ -319,3 +341,28 @@ async def _cleanup_with_active_down_alert(session_factory, old_timestamp):
             [alert.status for alert in alerts],
             latest_metrics.get((device.id, "ping")),
         )
+
+
+async def _cleanup_long_metric_value(session_factory, old_timestamp, long_payload):
+    async with session_factory() as db:
+        device = (
+            await DeviceRepository(db).upsert_devices(
+                [{"name": "NAS Archive", "ip_address": "192.168.1.50", "device_type": "nas"}]
+            )
+        )[0]
+        await MetricRepository(db).create_metrics(
+            [_metric(device.id, "nas_volume:main:status_detail", long_payload, "warning", None, old_timestamp)]
+        )
+
+        await cleanup_monitoring_data(db)
+
+        latest_metrics = await MetricRepository(db).latest_metric_map()
+        cold_archive = (
+            await db.scalars(
+                select(MetricColdArchive).where(
+                    MetricColdArchive.device_id == device.id,
+                    MetricColdArchive.metric_name == "nas_volume:main:status_detail",
+                )
+            )
+        ).one()
+        return latest_metrics[(device.id, "nas_volume:main:status_detail")], cold_archive

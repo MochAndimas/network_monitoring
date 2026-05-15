@@ -33,6 +33,15 @@ from .services.observability_service import record_exception, record_http_reques
 logger = logging.getLogger("network_monitoring.http")
 
 
+def _should_auto_create_tables() -> bool:
+    """Return whether startup may create missing tables in this runtime."""
+    if not settings.database.auto_create_tables:
+        return False
+    if settings.app.is_production:
+        raise RuntimeError("DATABASE_AUTO_CREATE_TABLES must not be enabled in production")
+    return True
+
+
 def _route_template(request) -> str | None:
     """Return route template for the application."""
     route = request.scope.get("route")
@@ -77,7 +86,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 duration_ms=duration_ms,
                 route_path=_route_template(request),
             )
-            log_fn = logger.warning if duration_ms >= settings.request_slow_log_threshold_ms else logger.info
+            threshold_ms = settings.observability.request_slow_log_threshold_ms
+            log_fn = logger.warning if duration_ms >= threshold_ms else logger.info
             log_fn(
                 "request_completed method=%s path=%s status=%s duration_ms=%.2f",
                 request.method,
@@ -119,7 +129,7 @@ async def lifespan(_: FastAPI):
     """Return lifespan for the application."""
     configure_logging()
     validate_auth_configuration()
-    if not settings.is_production:
+    if _should_auto_create_tables():
         await init_db()
     async with SessionLocal() as db:
         await ensure_bootstrap_admin(db)
@@ -127,11 +137,11 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title=settings.app_name,
+    title=settings.app.name,
     lifespan=lifespan,
-    docs_url=None if settings.is_production else "/docs",
-    redoc_url=None if settings.is_production else "/redoc",
-    openapi_url=None if settings.is_production else "/openapi.json",
+    docs_url=None if settings.app.is_production else "/docs",
+    redoc_url=None if settings.app.is_production else "/redoc",
+    openapi_url=None if settings.app.is_production else "/openapi.json",
 )
 app.add_middleware(
     CORSMiddleware,
@@ -161,4 +171,4 @@ app.include_router(observability_router, prefix="/observability", tags=["observa
 @app.get("/")
 async def root() -> dict:
     """Return root for the application."""
-    return {"message": f"{settings.app_name} API is running"}
+    return {"message": f"{settings.app.name} API is running"}

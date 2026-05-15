@@ -7,7 +7,7 @@ from ...api.deps import require_ops_access
 from ...api.schemas import RunCycleResult
 from ...db.session import get_db
 from ...services.audit_service import record_admin_audit_log
-from ...services.pipeline_control import monitoring_pipeline_guard
+from ...services.pipeline_control import MONITORING_FULL_CYCLE_LOCK_SCOPES, monitoring_pipeline_multi_guard
 from ...services.run_cycle_service import run_monitoring_cycle
 
 router = APIRouter()
@@ -20,12 +20,14 @@ async def run_cycle(
     db: AsyncSession = Depends(get_db),
 ) -> RunCycleResult:
     """Handle the cycle endpoint."""
-    async with monitoring_pipeline_guard(wait=False, scope="run-cycle") as acquired:
+    async with monitoring_pipeline_multi_guard(wait=False, scopes=MONITORING_FULL_CYCLE_LOCK_SCOPES) as acquired:
         if not acquired:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Monitoring pipeline is already running",
             )
+        if db.in_transaction():
+            await db.commit()
         result = RunCycleResult(**await run_monitoring_cycle(db))
         await record_admin_audit_log(
             db,

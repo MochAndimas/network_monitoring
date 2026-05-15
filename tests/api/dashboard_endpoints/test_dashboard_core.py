@@ -455,3 +455,68 @@ def test_dashboard_overview_panels_and_problem_devices_endpoints():
         assert compatibility_response.status_code == 200
         assert "problem_devices" in compatibility_response.json()
 
+
+def test_dashboard_overview_payload_uses_backend_cache_until_invalidated():
+    from backend.app.services.dashboard_overview_service import get_overview_payload, invalidate_dashboard_overview_cache
+
+    with client_context() as (_client, session_factory):
+        async def scenario():
+            invalidate_dashboard_overview_cache()
+            async with session_factory() as db:
+                first_payload = await get_overview_payload(
+                    db,
+                    snapshot_limit=12,
+                    alerts_limit=5,
+                    incidents_limit=5,
+                    include_problem_devices=True,
+                )
+                await DeviceRepository(db).upsert_devices(
+                    [{"name": "Cache Probe", "ip_address": "192.168.1.88", "device_type": "server"}]
+                )
+                cached_payload = await get_overview_payload(
+                    db,
+                    snapshot_limit=12,
+                    alerts_limit=5,
+                    incidents_limit=5,
+                    include_problem_devices=True,
+                )
+                invalidate_dashboard_overview_cache()
+                refreshed_payload = await get_overview_payload(
+                    db,
+                    snapshot_limit=12,
+                    alerts_limit=5,
+                    incidents_limit=5,
+                    include_problem_devices=True,
+                )
+                return first_payload, cached_payload, refreshed_payload
+
+        first_payload, cached_payload, refreshed_payload = run(scenario())
+
+        assert first_payload["device_counts"]["total"] == 0
+        assert cached_payload["device_counts"]["total"] == 0
+        assert refreshed_payload["device_counts"]["total"] == 1
+
+
+def test_dashboard_overview_cache_is_invalidated_after_device_mutation():
+    with client_context() as (client, _session_factory):
+        initial_response = client.get("/dashboard/overview-data", headers=API_HEADERS)
+        create_response = client.post(
+            "/devices",
+            headers=API_HEADERS,
+            json={
+                "name": "Overview Cache AP",
+                "ip_address": "192.168.1.89",
+                "device_type": "access_point",
+                "site": "Main Office",
+                "description": "Cache invalidation probe",
+                "is_active": True,
+            },
+        )
+        refreshed_response = client.get("/dashboard/overview-data", headers=API_HEADERS)
+
+        assert initial_response.status_code == 200
+        assert initial_response.json()["device_counts"]["total"] == 0
+        assert create_response.status_code == 201
+        assert refreshed_response.status_code == 200
+        assert refreshed_response.json()["device_counts"]["total"] == 1
+

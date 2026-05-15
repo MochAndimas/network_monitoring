@@ -59,8 +59,9 @@ async def revoke_other_sessions_for_user(
 async def cleanup_auth_data(db: AsyncSession, *, commit: bool = True) -> dict[str, int]:
     """Clean up auth data in the service layer."""
     now = utcnow()
-    session_cutoff = now - timedelta(days=settings.auth_session_retention_days)
-    attempt_cutoff = now - timedelta(days=settings.auth_login_attempt_retention_days)
+    auth_settings = settings.auth
+    session_cutoff = now - timedelta(days=auth_settings.session_retention_days)
+    attempt_cutoff = now - timedelta(days=auth_settings.login_attempt_retention_days)
 
     deleted_sessions_result = await db.execute(
         delete(AuthSession).where(

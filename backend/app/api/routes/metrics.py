@@ -1,7 +1,5 @@
 """FastAPI routes for metrics endpoints."""
 
-import base64
-import json
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status as http_status
@@ -17,6 +15,7 @@ from ...api.schemas import (
     PageMeta,
 )
 from ...api.lifecycle import apply_legacy_deprecation_headers
+from ...api.pagination import decode_page_cursor, encode_page_cursor
 from ...core.time import now
 from ...db.session import get_db
 from ...repositories.metric_repository import MetricRepository
@@ -444,12 +443,25 @@ async def get_metrics_daily_summary(
 async def get_latest_metrics_snapshot_paged(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    cursor: str | None = Query(default=None),
     device_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricHistoryPage:
     """Return get latest metrics snapshot paged used by metric collection and history."""
     repository = MetricRepository(db)
-    metrics, total = await repository.list_latest_metric_rows_paged(limit=limit, offset=offset, device_id=device_id)
+    if cursor:
+        cursor_payload = _decode_latest_snapshot_cursor(cursor)
+        metrics, has_more = await repository.list_latest_metric_rows_after_cursor(
+            limit=limit,
+            cursor_payload=cursor_payload,
+            device_id=device_id,
+        )
+        total = None
+        next_cursor = _latest_snapshot_next_cursor(metrics) if has_more else None
+    else:
+        metrics, total = await repository.list_latest_metric_rows_paged(limit=limit, offset=offset, device_id=device_id)
+        has_more = total > offset + len(metrics)
+        next_cursor = _latest_snapshot_next_cursor(metrics) if has_more and offset == 0 else None
     payload_scope = "device" if device_id is not None else "global"
     record_api_payload_request(endpoint="/metrics/latest-snapshot/paged", scope=payload_scope)
     record_api_payload_section(
@@ -458,11 +470,17 @@ async def get_latest_metrics_snapshot_paged(
         section="items",
         rows=len(metrics),
         total_rows=total,
-        sampled=total > len(metrics),
+        sampled=has_more if total is None else total > len(metrics),
     )
     return MetricHistoryPage(
         items=_metric_history_response_items(metrics),
-        meta=PageMeta(total=total, limit=limit, offset=offset),
+        meta=CursorPageMeta(
+            total=total,
+            limit=limit,
+            offset=0 if cursor else offset,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        ),
     )
 
 
@@ -514,18 +532,46 @@ def _metric_history_next_cursor(metrics: list[dict]) -> str | None:
     last_metric = metrics[-1]
     checked_at = last_metric["checked_at"]
     checked_at_value = checked_at.isoformat() if hasattr(checked_at, "isoformat") else str(checked_at)
-    payload = {"checked_at": checked_at_value, "id": int(last_metric["id"])}
-    raw_cursor = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-    return base64.urlsafe_b64encode(raw_cursor).decode("ascii").rstrip("=")
+    return encode_page_cursor({"checked_at": checked_at_value, "id": int(last_metric["id"])})
 
 
 def _decode_metric_history_cursor(cursor: str) -> tuple[datetime, int]:
     """Decode a metric-history keyset cursor from the public API token."""
+    payload = decode_page_cursor(cursor, detail="Invalid metrics history cursor")
     try:
-        padded_cursor = cursor + "=" * (-len(cursor) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(padded_cursor.encode("ascii")).decode("utf-8"))
         checked_at = datetime.fromisoformat(str(payload["checked_at"]))
         metric_id = int(payload["id"])
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+    except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid metrics history cursor") from exc
     return checked_at, metric_id
+
+
+def _latest_snapshot_next_cursor(metrics: list[dict]) -> str | None:
+    """Build a cursor from the last row in a latest-snapshot page."""
+    if not metrics:
+        return None
+    last_metric = metrics[-1]
+    return encode_page_cursor(
+        {
+            "device_type_priority": int(last_metric["_sort_device_type_priority"]),
+            "internet_target_name_priority": int(last_metric["_sort_internet_target_name_priority"]),
+            "device_name": str(last_metric["_sort_device_name"]),
+            "metric_name": str(last_metric["_sort_metric_name"]),
+            "id": int(last_metric["id"]),
+        }
+    )
+
+
+def _decode_latest_snapshot_cursor(cursor: str) -> dict:
+    """Decode the latest-snapshot cursor used by keyset pagination."""
+    payload = decode_page_cursor(cursor, detail="Invalid latest snapshot cursor")
+    try:
+        return {
+            "device_type_priority": int(payload["device_type_priority"]),
+            "internet_target_name_priority": int(payload["internet_target_name_priority"]),
+            "device_name": str(payload["device_name"]),
+            "metric_name": str(payload["metric_name"]),
+            "id": int(payload["id"]),
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid latest snapshot cursor") from exc

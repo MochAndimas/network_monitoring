@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import platform
 from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -47,6 +48,13 @@ _prometheus_multiproc_dir = str(os.getenv("PROMETHEUS_MULTIPROC_DIR") or "").str
 _prometheus_multiprocess_enabled = bool(
     _prometheus_multiproc_dir and PromCounter is not None and Summary is not None and multiprocess is not None
 )
+_process_identity = {
+    "pid": os.getpid(),
+    "hostname": platform.node(),
+    "prometheus_multiprocess_enabled": _prometheus_multiprocess_enabled,
+    "prometheus_multiproc_dir": _prometheus_multiproc_dir,
+    "web_concurrency": str(os.getenv("WEB_CONCURRENCY") or "").strip(),
+}
 
 if _prometheus_multiprocess_enabled:
     assert PromCounter is not None
@@ -131,9 +139,10 @@ class RedactingFormatter(logging.Formatter):
 def redact_sensitive_log_message(message: str) -> str:
     """Mask configured secrets from log output."""
     redacted_message = str(message)
+    telegram_settings = settings.telegram
     sensitive_values = {
-        settings.telegram_bot_token: "[telegram_bot_token]",
-        settings.telegram_chat_id: "[telegram_chat_id]",
+        telegram_settings.bot_token: "[telegram_bot_token]",
+        telegram_settings.chat_id: "[telegram_chat_id]",
     }
     for secret_value, replacement in sensitive_values.items():
         normalized_secret = str(secret_value or "").strip()
@@ -146,7 +155,7 @@ def configure_structured_logging() -> None:
     """Install JSON or redacting log formatters on existing handlers."""
     root_logger = logging.getLogger()
     formatter: logging.Formatter
-    if settings.log_as_json:
+    if settings.observability.log_as_json:
         formatter = JsonLogFormatter()
     else:
         formatter = RedactingFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -241,6 +250,11 @@ def record_api_payload_section(
             _prom_api_payload_sampled.labels(metric_endpoint, metric_scope, metric_section).inc()
 
 
+def build_observability_runtime_info() -> dict[str, object]:
+    """Return process-local observability mode details for operational diagnostics."""
+    return dict(_process_identity)
+
+
 async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str, commit: bool = True) -> None:
     """Store the start timestamp for a scheduler job run."""
     status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
@@ -309,7 +323,7 @@ def scheduler_job_is_stale(job: SchedulerJobStatus) -> bool:
     if expected_interval is None:
         return False
     last_reference = job.last_finished_at or job.last_started_at or job.updated_at
-    stale_after_seconds = max(expected_interval * max(settings.scheduler_job_stale_factor, 1), 60)
+    stale_after_seconds = max(expected_interval * max(settings.scheduler.job_stale_factor, 1), 60)
     return last_reference <= utcnow() - timedelta(seconds=stale_after_seconds)
 
 
@@ -349,6 +363,17 @@ def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, 
         lines.extend(generate_latest(registry).decode("utf-8").splitlines())
     lines.extend(
         [
+        "# HELP network_monitoring_observability_multiprocess_enabled Prometheus multiprocess collection mode",
+        "# TYPE network_monitoring_observability_multiprocess_enabled gauge",
+        f"network_monitoring_observability_multiprocess_enabled {1 if _prometheus_multiprocess_enabled else 0}",
+        "# HELP network_monitoring_observability_process_info Process-local observability runtime metadata",
+        "# TYPE network_monitoring_observability_process_info gauge",
+        (
+            'network_monitoring_observability_process_info'
+            f'{{pid="{os.getpid()}",hostname="{platform.node()}",'
+            f'prometheus_multiproc_dir="{_prometheus_multiproc_dir}",'
+            f'web_concurrency="{str(os.getenv("WEB_CONCURRENCY") or "").strip()}"}} 1'
+        ),
         "# HELP network_monitoring_database_up Database connectivity status",
         "# TYPE network_monitoring_database_up gauge",
         f"network_monitoring_database_up {1 if database_up else 0}",
@@ -416,12 +441,13 @@ async def _get_or_create_scheduler_job_status(db: AsyncSession, *, job_name: str
 
 def _expected_scheduler_interval_seconds(job_name: str) -> int | None:
     """Return expected scheduler interval seconds used by service-layer code."""
+    scheduler_settings = settings.scheduler
     mapping = {
-        "internet_checks": settings.scheduler_interval_internet_seconds,
-        "device_checks": settings.scheduler_interval_device_seconds,
-        "server_checks": settings.scheduler_interval_server_seconds,
-        "mikrotik_checks": settings.scheduler_interval_mikrotik_seconds,
-        "alert_evaluation": settings.scheduler_interval_alert_seconds,
-        "retention_cleanup": settings.scheduler_cleanup_interval_hours * 3600,
+        "internet_checks": scheduler_settings.interval_internet_seconds,
+        "device_checks": scheduler_settings.interval_device_seconds,
+        "server_checks": scheduler_settings.interval_server_seconds,
+        "mikrotik_checks": scheduler_settings.interval_mikrotik_seconds,
+        "alert_evaluation": scheduler_settings.interval_alert_seconds,
+        "retention_cleanup": scheduler_settings.cleanup_interval_hours * 3600,
     }
     return mapping.get(job_name)

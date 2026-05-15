@@ -13,6 +13,7 @@ from ...repositories.metric_repository import MetricRepository
 from ...repositories.threshold_repository import ThresholdRepository
 from ...services.auth_service import build_auth_observability_summary
 from ...services.observability_service import (
+    build_observability_runtime_info,
     build_scheduler_operational_alerts,
     list_scheduler_job_statuses,
     render_prometheus_metrics,
@@ -41,6 +42,7 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
         "incidents_active": incidents_active,
         "thresholds_total": thresholds_total,
         "auth": auth.model_dump(),
+        "runtime": build_observability_runtime_info(),
         "scheduler_jobs": [
             {
                 "job_name": job.job_name,

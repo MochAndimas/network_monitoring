@@ -27,65 +27,66 @@ logger = logging.getLogger("network_monitoring.scheduler")
 
 def register_jobs(scheduler) -> None:
     """Register jobs for scheduled monitoring execution."""
+    scheduler_settings = settings.scheduler
     scheduler.add_job(
         run_internet_job,
         "interval",
-        seconds=settings.scheduler_interval_internet_seconds,
+        seconds=scheduler_settings.interval_internet_seconds,
         id="internet_checks",
         replace_existing=True,
         coalesce=True,
-        max_instances=settings.scheduler_job_max_instances,
-        misfire_grace_time=_misfire_grace_time(settings.scheduler_interval_internet_seconds),
+        max_instances=scheduler_settings.job_max_instances,
+        misfire_grace_time=_misfire_grace_time(scheduler_settings.interval_internet_seconds),
     )
     scheduler.add_job(
         run_device_job,
         "interval",
-        seconds=settings.scheduler_interval_device_seconds,
+        seconds=scheduler_settings.interval_device_seconds,
         id="device_checks",
         replace_existing=True,
         coalesce=True,
-        max_instances=settings.scheduler_job_max_instances,
-        misfire_grace_time=_misfire_grace_time(settings.scheduler_interval_device_seconds),
+        max_instances=scheduler_settings.job_max_instances,
+        misfire_grace_time=_misfire_grace_time(scheduler_settings.interval_device_seconds),
     )
     scheduler.add_job(
         run_server_job,
         "interval",
-        seconds=settings.scheduler_interval_server_seconds,
+        seconds=scheduler_settings.interval_server_seconds,
         id="server_checks",
         replace_existing=True,
         coalesce=True,
-        max_instances=settings.scheduler_job_max_instances,
-        misfire_grace_time=_misfire_grace_time(settings.scheduler_interval_server_seconds),
+        max_instances=scheduler_settings.job_max_instances,
+        misfire_grace_time=_misfire_grace_time(scheduler_settings.interval_server_seconds),
     )
     scheduler.add_job(
         run_mikrotik_job,
         "interval",
-        seconds=settings.scheduler_interval_mikrotik_seconds,
+        seconds=scheduler_settings.interval_mikrotik_seconds,
         id="mikrotik_checks",
         replace_existing=True,
         coalesce=True,
-        max_instances=settings.scheduler_job_max_instances,
-        misfire_grace_time=_misfire_grace_time(settings.scheduler_interval_mikrotik_seconds),
+        max_instances=scheduler_settings.job_max_instances,
+        misfire_grace_time=_misfire_grace_time(scheduler_settings.interval_mikrotik_seconds),
     )
     scheduler.add_job(
         run_alert_job,
         "interval",
-        seconds=settings.scheduler_interval_alert_seconds,
+        seconds=scheduler_settings.interval_alert_seconds,
         id="alert_evaluation",
         replace_existing=True,
         coalesce=True,
-        max_instances=settings.scheduler_job_max_instances,
-        misfire_grace_time=_misfire_grace_time(settings.scheduler_interval_alert_seconds),
+        max_instances=scheduler_settings.job_max_instances,
+        misfire_grace_time=_misfire_grace_time(scheduler_settings.interval_alert_seconds),
     )
     scheduler.add_job(
         run_cleanup_job,
         "interval",
-        hours=settings.scheduler_cleanup_interval_hours,
+        hours=scheduler_settings.cleanup_interval_hours,
         id="retention_cleanup",
         replace_existing=True,
         coalesce=True,
-        max_instances=settings.scheduler_job_max_instances,
-        misfire_grace_time=_misfire_grace_time(settings.scheduler_cleanup_interval_hours * 3600),
+        max_instances=scheduler_settings.job_max_instances,
+        misfire_grace_time=_misfire_grace_time(scheduler_settings.cleanup_interval_hours * 3600),
     )
 
 

@@ -108,9 +108,9 @@ payload = get_json_map(
     }
 )
 devices = list(payload.get("devices", []))
-device_options = {"Semua Device": None}
+device_options: dict[str, int | None] = {"Semua Device": None}
 for device in devices:
-    device_options[format_device_label(device)] = device["id"]
+    device_options[format_device_label(device)] = cast(int, device["id"])
 
 today = datetime.now().date()
 default_start_date = today - timedelta(days=7)

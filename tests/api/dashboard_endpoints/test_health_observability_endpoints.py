@@ -234,12 +234,16 @@ def test_observability_summary_endpoint():
         assert payload["metrics_latest_snapshot"] >= 1
         assert payload["alerts_active"] == 1
         assert "auth" in payload
+        assert "runtime" in payload
+        assert "prometheus_multiprocess_enabled" in payload["runtime"]
         assert "active_sessions" in payload["auth"]
         assert "login_failures_window" in payload["auth"]
         assert "scheduler_jobs" in payload
         assert "operational_alerts" in payload
         assert metrics_response.status_code == 200
         assert "network_monitoring_database_up 1" in metrics_response.text
+        assert "network_monitoring_observability_multiprocess_enabled" in metrics_response.text
+        assert "network_monitoring_observability_process_info" in metrics_response.text
     finally:
         observability_module.check_database_connection = original_check
 

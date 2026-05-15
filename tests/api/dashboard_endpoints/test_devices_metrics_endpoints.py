@@ -264,6 +264,49 @@ def test_devices_endpoint_supports_filters_and_pagination():
         assert paged_payload["meta"]["limit"] == 1
         assert len(paged_payload["items"]) == 1
 
+def test_devices_paged_supports_cursor_pagination():
+    with client_context() as (client, session_factory):
+        run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [
+                    {"name": "AP Alpha", "ip_address": "192.168.1.40", "device_type": "access_point"},
+                    {"name": "AP Bravo", "ip_address": "192.168.1.41", "device_type": "access_point"},
+                    {"name": "Switch Core", "ip_address": "192.168.1.30", "device_type": "switch"},
+                ],
+                lambda devices: [
+                    {
+                        "device_id": devices[0].id,
+                        "metric_name": "ping",
+                        "metric_value": "10.00",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow(),
+                    }
+                ],
+            )
+        )
+
+        first_response = client.get("/devices/paged?limit=2", headers=API_HEADERS)
+        assert first_response.status_code == 200
+        first_payload = first_response.json()
+        assert [item["name"] for item in first_payload["items"]] == ["AP Alpha", "AP Bravo"]
+        assert first_payload["meta"]["total"] == 3
+        assert first_payload["meta"]["has_more"] is True
+        assert first_payload["meta"]["next_cursor"]
+
+        second_response = client.get(
+            f'/devices/paged?limit=2&cursor={first_payload["meta"]["next_cursor"]}',
+            headers=API_HEADERS,
+        )
+        assert second_response.status_code == 200
+        second_payload = second_response.json()
+        assert [item["name"] for item in second_payload["items"]] == ["Switch Core"]
+        assert second_payload["meta"]["total"] is None
+        assert second_payload["meta"]["offset"] == 0
+        assert second_payload["meta"]["has_more"] is False
+        assert second_payload["meta"]["next_cursor"] is None
+
 def test_metrics_history_supports_time_window_filters():
     with client_context() as (client, session_factory):
         async def scenario():
@@ -603,6 +646,73 @@ def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
         uptime_map = uptime_map_response.json()
         assert uptime_map
         assert any(value == "300" for value in uptime_map.values())
+
+def test_latest_snapshot_paged_supports_cursor_pagination():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [
+                        {"name": "AP Alpha", "ip_address": "192.168.1.40", "device_type": "access_point"},
+                        {"name": "AP Bravo", "ip_address": "192.168.1.41", "device_type": "access_point"},
+                    ]
+                )
+                current_time = utcnow()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "cpu_percent",
+                            "metric_value": "80.00",
+                            "status": "warning",
+                            "unit": "%",
+                            "checked_at": current_time,
+                        },
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "ping",
+                            "metric_value": "10.00",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": current_time,
+                        },
+                        {
+                            "device_id": devices[1].id,
+                            "metric_name": "ping",
+                            "metric_value": "12.00",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": current_time,
+                        },
+                    ]
+                )
+
+        run(scenario())
+
+        first_response = client.get("/metrics/latest-snapshot/paged?limit=2", headers=API_HEADERS)
+        assert first_response.status_code == 200
+        first_payload = first_response.json()
+        assert [(item["device_name"], item["metric_name"]) for item in first_payload["items"]] == [
+            ("AP Alpha", "cpu_percent"),
+            ("AP Alpha", "ping"),
+        ]
+        assert first_payload["meta"]["total"] == 3
+        assert first_payload["meta"]["has_more"] is True
+        assert first_payload["meta"]["next_cursor"]
+
+        second_response = client.get(
+            f'/metrics/latest-snapshot/paged?limit=2&cursor={first_payload["meta"]["next_cursor"]}',
+            headers=API_HEADERS,
+        )
+        assert second_response.status_code == 200
+        second_payload = second_response.json()
+        assert [(item["device_name"], item["metric_name"]) for item in second_payload["items"]] == [
+            ("AP Bravo", "ping"),
+        ]
+        assert second_payload["meta"]["total"] is None
+        assert second_payload["meta"]["offset"] == 0
+        assert second_payload["meta"]["has_more"] is False
+        assert second_payload["meta"]["next_cursor"] is None
 
 def test_metrics_history_context_endpoint():
     with client_context() as (client, session_factory):
