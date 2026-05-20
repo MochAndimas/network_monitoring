@@ -1,7 +1,11 @@
 """Shared helpers for metric repository mixins."""
 
+from datetime import datetime
+from typing import Any
+
 from shared.number_utils import safe_float
 from sqlalchemy import select
+from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,12 +15,12 @@ from ...models.metric import Metric
 
 class MetricRepositoryBase:
     """Shared database session and row-shaping helpers for metric repositories."""
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession) -> None:
         """Initialize the object with its runtime dependencies."""
         self.db = db
 
     @staticmethod
-    def _metric_row_payload(row) -> dict:
+    def _metric_row_payload(row: Any) -> dict[str, Any]:
         """Convert a metric query row into the API response dictionary shape."""
         metric_value_numeric = row.metric_value_numeric
         if metric_value_numeric is None:
@@ -57,8 +61,8 @@ class MetricRepositoryBase:
         metric_name: str | None = None,
         metric_names: list[str] | None = None,
         status: str | None = None,
-        checked_from=None,
-        checked_to=None,
+        checked_from: datetime | None = None,
+        checked_to: datetime | None = None,
     ) -> list[ColumnElement[bool]]:
         """Build SQLAlchemy filters shared by metric history queries."""
         conditions: list[ColumnElement[bool]] = []
@@ -85,9 +89,9 @@ class MetricRepositoryBase:
         metric_name: str | None = None,
         metric_names: list[str] | None = None,
         status: str | None = None,
-        checked_from=None,
-        checked_to=None,
-    ):
+        checked_from: datetime | None = None,
+        checked_to: datetime | None = None,
+    ) -> Select[Any]:
         """Build the base joined query for metric history rows."""
         query = (
             select(

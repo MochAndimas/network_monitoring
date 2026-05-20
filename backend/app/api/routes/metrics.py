@@ -1,25 +1,20 @@
 """FastAPI routes for metrics endpoints."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status as http_status
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.schemas import (
-    CursorPageMeta,
-    MetricDailySummaryItem,
     MetricDailySummaryPage,
+    MetricHistoryContextPayload,
     MetricHistoryCursorPage,
     MetricHistoryItem,
     MetricHistoryPage,
-    PageMeta,
 )
 from ...api.lifecycle import apply_legacy_deprecation_headers
-from ...api.pagination import decode_page_cursor, encode_page_cursor
-from ...core.time import now
 from ...db.session import get_db
-from ...repositories.metric_repository import MetricRepository
-from ...services.observability_service import record_api_payload_request, record_api_payload_section
+from ...services import metrics_read_service
 
 router = APIRouter()
 
@@ -29,8 +24,8 @@ async def get_metric_names(
     device_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[str]:
-    """Return get metric names used by metric collection and history."""
-    return await MetricRepository(db).list_metric_names(device_id=device_id)
+    """Return metric names currently present in latest snapshots."""
+    return await metrics_read_service.list_metric_names(db, device_id=device_id)
 
 
 @router.get("/history", response_model=list[MetricHistoryItem], deprecated=True)
@@ -44,18 +39,17 @@ async def get_metrics_history(
     checked_to: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[MetricHistoryItem]:
-    """Return get metrics history used by metric collection and history."""
+    """Return legacy metric history rows."""
     apply_legacy_deprecation_headers(response, legacy_endpoint="/metrics/history")
-    metrics = await MetricRepository(db).list_recent_metric_rows(
+    return await metrics_read_service.get_metrics_history(
+        db,
         limit=limit,
-        offset=0,
         device_id=device_id,
         metric_name=metric_name,
         status=status,
         checked_from=checked_from,
         checked_to=checked_to,
     )
-    return _metric_history_response_items(metrics)
 
 
 @router.get("/history/paged", response_model=MetricHistoryCursorPage)
@@ -72,78 +66,23 @@ async def get_metrics_history_paged(
     checked_to: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricHistoryCursorPage:
-    """Return get metrics history paged used by metric collection and history."""
-    repository = MetricRepository(db)
-    if cursor:
-        if per_metric_limit is not None:
-            raise HTTPException(
-                status_code=http_status.HTTP_400_BAD_REQUEST,
-                detail="Cursor pagination is not supported with per_metric_limit",
-            )
-        cursor_checked_at, cursor_id = _decode_metric_history_cursor(cursor)
-        metrics, has_more = await repository.list_recent_metric_rows_after_cursor(
-            limit=limit,
-            cursor_checked_at=cursor_checked_at,
-            cursor_id=cursor_id,
-            device_id=device_id,
-            metric_name=metric_name,
-            metric_names=metric_names,
-            status=status,
-            checked_from=checked_from,
-            checked_to=checked_to,
-        )
-        total = None
-        next_cursor = _metric_history_next_cursor(metrics) if has_more else None
-    else:
-        metrics, total = await repository.list_recent_metric_rows_paged(
-            limit=limit,
-            offset=offset,
-            device_id=device_id,
-            metric_name=metric_name,
-            metric_names=metric_names,
-            per_metric_limit=per_metric_limit,
-            status=status,
-            checked_from=checked_from,
-            checked_to=checked_to,
-        )
-        has_more = total > offset + len(metrics)
-        next_cursor = _metric_history_next_cursor(metrics) if has_more and offset == 0 and per_metric_limit is None else None
-    payload_scope = "device" if device_id is not None else "global"
-    record_api_payload_request(endpoint="/metrics/history/paged", scope=payload_scope)
-    record_api_payload_section(
-        endpoint="/metrics/history/paged",
-        scope=payload_scope,
-        section="items",
-        rows=len(metrics),
-        total_rows=total,
-        sampled=has_more if total is None else total > len(metrics),
-    )
-    return MetricHistoryCursorPage(
-        items=[
-            MetricHistoryItem(
-                id=metric["id"],
-                device_id=metric["device_id"],
-                device_name=metric["device_name"],
-                metric_name=metric["metric_name"],
-                metric_value=metric["metric_value"],
-                metric_value_numeric=metric["metric_value_numeric"],
-                status=metric["status"],
-                unit=metric["unit"],
-                checked_at=metric["checked_at"],
-            )
-            for metric in metrics
-        ],
-        meta=CursorPageMeta(
-            total=total,
-            limit=limit,
-            offset=0 if cursor else offset,
-            next_cursor=next_cursor,
-            has_more=has_more,
-        ),
+    """Return paginated metric history rows."""
+    return await metrics_read_service.get_metrics_history_page(
+        db,
+        limit=limit,
+        offset=offset,
+        cursor=cursor,
+        device_id=device_id,
+        metric_name=metric_name,
+        metric_names=metric_names,
+        per_metric_limit=per_metric_limit,
+        status=status,
+        checked_from=checked_from,
+        checked_to=checked_to,
     )
 
 
-@router.get("/history/context")
+@router.get("/history/context", response_model=MetricHistoryContextPayload)
 async def get_metrics_history_context(
     limit: int = Query(default=100, ge=1, le=500),
     device_id: int | None = Query(default=None),
@@ -153,127 +92,35 @@ async def get_metrics_history_context(
     checked_to: datetime | None = Query(default=None),
     selected_device_limit: int = Query(default=200, ge=1, le=500),
     selected_device_offset: int = Query(default=0, ge=0),
+    include_selected_device_trend: bool = Query(default=False),
+    trend_metric_names: list[str] | None = Query(default=None),
+    trend_limit: int = Query(default=200, ge=1, le=2000),
     snapshot_limit: int = Query(default=10, ge=1, le=500),
     snapshot_offset: int = Query(default=0, ge=0),
     include_selected_device_snapshot: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Return get metrics history context used by metric collection and history."""
-    repository = MetricRepository(db)
-    history_rows, history_total = await repository.list_recent_metric_rows_paged(
+) -> MetricHistoryContextPayload:
+    """Return dashboard history context payload."""
+    return await metrics_read_service.get_metrics_history_context(
+        db,
         limit=limit,
-        offset=0,
         device_id=device_id,
         metric_name=metric_name,
         status=status,
         checked_from=checked_from,
         checked_to=checked_to,
+        selected_device_limit=selected_device_limit,
+        selected_device_offset=selected_device_offset,
+        include_selected_device_trend=include_selected_device_trend,
+        trend_metric_names=trend_metric_names,
+        trend_limit=trend_limit,
+        snapshot_limit=snapshot_limit,
+        snapshot_offset=snapshot_offset,
+        include_selected_device_snapshot=include_selected_device_snapshot,
     )
-    selected_device_history_rows: list[dict] = []
-    selected_device_history_total = 0
-    if device_id is not None:
-        if selected_device_offset == 0 and selected_device_limit <= limit:
-            selected_device_history_rows = history_rows[:selected_device_limit]
-            selected_device_history_total = history_total
-        else:
-            selected_device_history_rows, selected_device_history_total = await repository.list_recent_metric_rows_paged(
-                limit=selected_device_limit,
-                offset=selected_device_offset,
-                device_id=device_id,
-                metric_name=metric_name,
-                status=status,
-                checked_from=checked_from,
-                checked_to=checked_to,
-            )
-    latest_snapshot_rows, latest_snapshot_total = await repository.list_latest_metric_rows_paged(
-        limit=snapshot_limit,
-        offset=snapshot_offset,
-    )
-    if snapshot_offset == 0 and latest_snapshot_total <= snapshot_limit:
-        latest_snapshot_status_summary = repository.summarize_latest_snapshot_status_counts_for_rows(latest_snapshot_rows)
-    else:
-        latest_snapshot_status_summary = await repository.summarize_latest_snapshot_status_counts()
-    selected_device_snapshot_rows: list[dict] = []
-    selected_device_snapshot_total = 0
-    if include_selected_device_snapshot and device_id is not None:
-        selected_device_snapshot_rows, selected_device_snapshot_total = await repository.list_latest_metric_rows_paged(
-            limit=500,
-            offset=0,
-            device_id=device_id,
-        )
-    history_items = _metric_history_dicts(history_rows)
-    selected_device_history_items = (
-        history_items
-        if selected_device_history_rows is history_rows
-        else _metric_history_dicts(selected_device_history_rows)
-    )
-    latest_snapshot_items = _metric_history_dicts(latest_snapshot_rows)
-    selected_device_snapshot_items = _metric_history_dicts(selected_device_snapshot_rows)
-    payload_scope = "device" if device_id is not None else "global"
-    latest_snapshot_sampled = latest_snapshot_total > len(latest_snapshot_items)
-    selected_history_sampled = selected_device_history_total > len(selected_device_history_items)
-    selected_snapshot_sampled = selected_device_snapshot_total > len(selected_device_snapshot_items)
-    record_api_payload_request(endpoint="/metrics/history/context", scope=payload_scope)
-    record_api_payload_section(
-        endpoint="/metrics/history/context",
-        scope=payload_scope,
-        section="history",
-        rows=len(history_items),
-        total_rows=history_total,
-        sampled=history_total > len(history_items),
-    )
-    record_api_payload_section(
-        endpoint="/metrics/history/context",
-        scope=payload_scope,
-        section="selected_device_history",
-        rows=len(selected_device_history_items),
-        total_rows=selected_device_history_total,
-        sampled=selected_history_sampled,
-    )
-    record_api_payload_section(
-        endpoint="/metrics/history/context",
-        scope=payload_scope,
-        section="latest_snapshot",
-        rows=len(latest_snapshot_items),
-        total_rows=latest_snapshot_total,
-        sampled=latest_snapshot_sampled,
-    )
-    record_api_payload_section(
-        endpoint="/metrics/history/context",
-        scope=payload_scope,
-        section="selected_device_snapshot",
-        rows=len(selected_device_snapshot_items),
-        total_rows=selected_device_snapshot_total,
-        sampled=selected_snapshot_sampled,
-    )
-    return {
-        "metric_names": await repository.list_metric_names(device_id=device_id),
-        "history": {
-            "items": history_items,
-            "meta": {"total": history_total, "limit": limit, "offset": 0},
-        },
-        "selected_device_history": {
-            "items": selected_device_history_items,
-            "meta": {
-                "total": selected_device_history_total,
-                "limit": selected_device_limit,
-                "offset": selected_device_offset,
-            },
-        },
-        "latest_snapshot": {
-            "items": latest_snapshot_items,
-            "meta": {"total": latest_snapshot_total, "limit": snapshot_limit, "offset": snapshot_offset},
-        },
-        "selected_device_snapshot": {
-            "items": selected_device_snapshot_items,
-            "meta": {"total": selected_device_snapshot_total, "limit": 500, "offset": 0},
-        },
-        "latest_snapshot_status_summary": latest_snapshot_status_summary,
-        "snapshot_uptime_map": await repository.latest_snapshot_uptime_map_for_rows(latest_snapshot_rows),
-    }
 
 
-@router.get("/history/live")
+@router.get("/history/live", response_model=MetricHistoryContextPayload)
 async def get_metrics_history_live(
     limit: int = Query(default=100, ge=1, le=500),
     device_id: int | None = Query(default=None),
@@ -282,128 +129,30 @@ async def get_metrics_history_live(
     checked_from: datetime | None = Query(default=None),
     checked_to: datetime | None = Query(default=None),
     selected_device_limit: int = Query(default=200, ge=1, le=500),
+    include_selected_device_trend: bool = Query(default=False),
+    trend_metric_names: list[str] | None = Query(default=None),
+    trend_limit: int = Query(default=200, ge=1, le=2000),
     snapshot_limit: int = Query(default=10, ge=1, le=500),
     snapshot_offset: int = Query(default=0, ge=0),
     include_selected_device_snapshot: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Return get metrics history live used by metric collection and history."""
-    repository = MetricRepository(db)
-    # Live mode is intentionally fixed to the most recent 24 hours.
-    live_checked_to = now()
-    live_checked_from = live_checked_to - timedelta(hours=24)
-    history_rows = await repository.list_recent_metric_rows(
+) -> MetricHistoryContextPayload:
+    """Return lightweight live dashboard history payload."""
+    _ = (checked_from, checked_to)
+    return await metrics_read_service.get_metrics_history_live(
+        db,
         limit=limit,
-        offset=0,
         device_id=device_id,
         metric_name=metric_name,
         status=status,
-        checked_from=live_checked_from,
-        checked_to=live_checked_to,
+        selected_device_limit=selected_device_limit,
+        include_selected_device_trend=include_selected_device_trend,
+        trend_metric_names=trend_metric_names,
+        trend_limit=trend_limit,
+        snapshot_limit=snapshot_limit,
+        snapshot_offset=snapshot_offset,
+        include_selected_device_snapshot=include_selected_device_snapshot,
     )
-    selected_device_history_rows: list[dict] = []
-    if device_id is not None:
-        if selected_device_limit <= limit:
-            selected_device_history_rows = history_rows[:selected_device_limit]
-        else:
-            selected_device_history_rows = await repository.list_recent_metric_rows(
-                limit=selected_device_limit,
-                offset=0,
-                device_id=device_id,
-                metric_name=metric_name,
-                status=status,
-                checked_from=live_checked_from,
-                checked_to=live_checked_to,
-            )
-
-    latest_snapshot_rows, latest_snapshot_total = await repository.list_latest_metric_rows_paged(
-        limit=snapshot_limit,
-        offset=snapshot_offset,
-        device_id=device_id,
-    )
-    if device_id is None:
-        # Keep summary representative for all devices even when snapshot items are paged.
-        latest_snapshot_status_summary = await repository.summarize_latest_snapshot_status_counts()
-    else:
-        latest_snapshot_status_summary = repository.summarize_latest_snapshot_status_counts_for_rows(latest_snapshot_rows)
-    selected_device_snapshot_rows: list[dict] = []
-    if include_selected_device_snapshot and device_id is not None:
-        selected_device_snapshot_rows = await repository.list_latest_metric_rows(
-            limit=500,
-            offset=0,
-            device_id=device_id,
-        )
-
-    history_items = _metric_history_dicts(history_rows)
-    selected_device_history_items = _metric_history_dicts(selected_device_history_rows)
-    snapshot_items = _metric_history_dicts(latest_snapshot_rows)
-    selected_device_snapshot_items = _metric_history_dicts(selected_device_snapshot_rows)
-    payload_scope = "device" if device_id is not None else "global"
-    latest_snapshot_sampled = latest_snapshot_total > len(snapshot_items)
-    record_api_payload_request(endpoint="/metrics/history/live", scope=payload_scope)
-    record_api_payload_section(
-        endpoint="/metrics/history/live",
-        scope=payload_scope,
-        section="history",
-        rows=len(history_items),
-        total_rows=len(history_items),
-        sampled=True,
-    )
-    record_api_payload_section(
-        endpoint="/metrics/history/live",
-        scope=payload_scope,
-        section="selected_device_history",
-        rows=len(selected_device_history_items),
-        total_rows=len(selected_device_history_items),
-        sampled=True,
-    )
-    record_api_payload_section(
-        endpoint="/metrics/history/live",
-        scope=payload_scope,
-        section="latest_snapshot",
-        rows=len(snapshot_items),
-        total_rows=latest_snapshot_total,
-        sampled=latest_snapshot_sampled,
-    )
-    record_api_payload_section(
-        endpoint="/metrics/history/live",
-        scope=payload_scope,
-        section="selected_device_snapshot",
-        rows=len(selected_device_snapshot_items),
-        total_rows=len(selected_device_snapshot_items),
-        sampled=True,
-    )
-    return {
-        "metric_names": await repository.list_metric_names(device_id=device_id),
-        "history": {
-            "items": history_items,
-            "meta": {"total": len(history_items), "limit": limit, "offset": 0, "sampled": True},
-        },
-        "selected_device_history": {
-            "items": selected_device_history_items,
-            "meta": {
-                "total": len(selected_device_history_items),
-                "limit": selected_device_limit,
-                "offset": 0,
-                "sampled": True,
-            },
-        },
-        "latest_snapshot": {
-            "items": snapshot_items,
-            "meta": {
-                "total": latest_snapshot_total,
-                "limit": snapshot_limit,
-                "offset": snapshot_offset,
-                "sampled": latest_snapshot_sampled,
-            },
-        },
-        "selected_device_snapshot": {
-            "items": selected_device_snapshot_items,
-            "meta": {"total": len(selected_device_snapshot_items), "limit": 500, "offset": 0, "sampled": True},
-        },
-        "latest_snapshot_status_summary": latest_snapshot_status_summary,
-        "snapshot_uptime_map": await repository.latest_snapshot_uptime_map_for_rows(latest_snapshot_rows),
-    }
 
 
 @router.get("/daily-summary", response_model=MetricDailySummaryPage)
@@ -415,27 +164,14 @@ async def get_metrics_daily_summary(
     rollup_to: date | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricDailySummaryPage:
-    """Return get metrics daily summary used by metric collection and history."""
-    rows, total = await MetricRepository(db).list_daily_summary_rows_paged(
+    """Return paginated daily metric rollup rows."""
+    return await metrics_read_service.get_metrics_daily_summary(
+        db,
         limit=limit,
         offset=offset,
         device_id=device_id,
         rollup_from=rollup_from,
         rollup_to=rollup_to,
-    )
-    payload_scope = "device" if device_id is not None else "global"
-    record_api_payload_request(endpoint="/metrics/daily-summary", scope=payload_scope)
-    record_api_payload_section(
-        endpoint="/metrics/daily-summary",
-        scope=payload_scope,
-        section="items",
-        rows=len(rows),
-        total_rows=total,
-        sampled=total > len(rows),
-    )
-    return MetricDailySummaryPage(
-        items=[MetricDailySummaryItem(**row) for row in rows],
-        meta=PageMeta(total=total, limit=limit, offset=offset),
     )
 
 
@@ -447,40 +183,13 @@ async def get_latest_metrics_snapshot_paged(
     device_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> MetricHistoryPage:
-    """Return get latest metrics snapshot paged used by metric collection and history."""
-    repository = MetricRepository(db)
-    if cursor:
-        cursor_payload = _decode_latest_snapshot_cursor(cursor)
-        metrics, has_more = await repository.list_latest_metric_rows_after_cursor(
-            limit=limit,
-            cursor_payload=cursor_payload,
-            device_id=device_id,
-        )
-        total = None
-        next_cursor = _latest_snapshot_next_cursor(metrics) if has_more else None
-    else:
-        metrics, total = await repository.list_latest_metric_rows_paged(limit=limit, offset=offset, device_id=device_id)
-        has_more = total > offset + len(metrics)
-        next_cursor = _latest_snapshot_next_cursor(metrics) if has_more and offset == 0 else None
-    payload_scope = "device" if device_id is not None else "global"
-    record_api_payload_request(endpoint="/metrics/latest-snapshot/paged", scope=payload_scope)
-    record_api_payload_section(
-        endpoint="/metrics/latest-snapshot/paged",
-        scope=payload_scope,
-        section="items",
-        rows=len(metrics),
-        total_rows=total,
-        sampled=has_more if total is None else total > len(metrics),
-    )
-    return MetricHistoryPage(
-        items=_metric_history_response_items(metrics),
-        meta=CursorPageMeta(
-            total=total,
-            limit=limit,
-            offset=0 if cursor else offset,
-            next_cursor=next_cursor,
-            has_more=has_more,
-        ),
+    """Return paginated latest metric snapshot rows."""
+    return await metrics_read_service.get_latest_metrics_snapshot_page(
+        db,
+        limit=limit,
+        offset=offset,
+        cursor=cursor,
+        device_id=device_id,
     )
 
 
@@ -488,8 +197,8 @@ async def get_latest_metrics_snapshot_paged(
 async def get_latest_snapshot_status_summary(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
-    """Return get latest snapshot status summary used by metric collection and history."""
-    return await MetricRepository(db).summarize_latest_snapshot_status_counts()
+    """Return latest-snapshot status summary."""
+    return await metrics_read_service.get_latest_snapshot_status_summary(db)
 
 
 @router.get("/latest-snapshot/uptime-map", response_model=dict[str, str])
@@ -498,80 +207,5 @@ async def get_latest_snapshot_uptime_map(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    """Return get latest snapshot uptime map used by metric collection and history."""
-    return await MetricRepository(db).latest_snapshot_uptime_map(limit=limit, offset=offset)
-
-
-def _metric_history_response_items(metrics: list[dict]) -> list[MetricHistoryItem]:
-    """Handle the metric history response items endpoint."""
-    return [MetricHistoryItem(**metric) for metric in _metric_history_dicts(metrics)]
-
-
-def _metric_history_dicts(metrics: list[dict]) -> list[dict]:
-    """Handle the metric history dicts endpoint."""
-    return [
-        {
-            "id": metric["id"],
-            "device_id": metric["device_id"],
-            "device_name": metric["device_name"],
-            "metric_name": metric["metric_name"],
-            "metric_value": metric["metric_value"],
-            "metric_value_numeric": metric["metric_value_numeric"],
-            "status": metric["status"],
-            "unit": metric["unit"],
-            "checked_at": metric["checked_at"],
-        }
-        for metric in metrics
-    ]
-
-
-def _metric_history_next_cursor(metrics: list[dict]) -> str | None:
-    """Build a cursor from the last row in a metric-history page."""
-    if not metrics:
-        return None
-    last_metric = metrics[-1]
-    checked_at = last_metric["checked_at"]
-    checked_at_value = checked_at.isoformat() if hasattr(checked_at, "isoformat") else str(checked_at)
-    return encode_page_cursor({"checked_at": checked_at_value, "id": int(last_metric["id"])})
-
-
-def _decode_metric_history_cursor(cursor: str) -> tuple[datetime, int]:
-    """Decode a metric-history keyset cursor from the public API token."""
-    payload = decode_page_cursor(cursor, detail="Invalid metrics history cursor")
-    try:
-        checked_at = datetime.fromisoformat(str(payload["checked_at"]))
-        metric_id = int(payload["id"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid metrics history cursor") from exc
-    return checked_at, metric_id
-
-
-def _latest_snapshot_next_cursor(metrics: list[dict]) -> str | None:
-    """Build a cursor from the last row in a latest-snapshot page."""
-    if not metrics:
-        return None
-    last_metric = metrics[-1]
-    return encode_page_cursor(
-        {
-            "device_type_priority": int(last_metric["_sort_device_type_priority"]),
-            "internet_target_name_priority": int(last_metric["_sort_internet_target_name_priority"]),
-            "device_name": str(last_metric["_sort_device_name"]),
-            "metric_name": str(last_metric["_sort_metric_name"]),
-            "id": int(last_metric["id"]),
-        }
-    )
-
-
-def _decode_latest_snapshot_cursor(cursor: str) -> dict:
-    """Decode the latest-snapshot cursor used by keyset pagination."""
-    payload = decode_page_cursor(cursor, detail="Invalid latest snapshot cursor")
-    try:
-        return {
-            "device_type_priority": int(payload["device_type_priority"]),
-            "internet_target_name_priority": int(payload["internet_target_name_priority"]),
-            "device_name": str(payload["device_name"]),
-            "metric_name": str(payload["metric_name"]),
-            "id": int(payload["id"]),
-        }
-    except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid latest snapshot cursor") from exc
+    """Return latest-snapshot uptime map."""
+    return await metrics_read_service.get_latest_snapshot_uptime_map(db, limit=limit, offset=offset)

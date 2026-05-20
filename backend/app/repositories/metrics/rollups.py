@@ -1,6 +1,10 @@
 """Daily metric rollup query operations."""
 
+from datetime import date
+from typing import Any
+
 from sqlalchemy import desc, distinct, func, select
+from sqlalchemy.sql import Select
 
 from .base import MetricRepositoryBase
 from ...models.device import Device
@@ -22,9 +26,9 @@ class MetricRollupMixin(MetricRepositoryBase):
         self,
         *,
         device_id: int | None = None,
-        rollup_from=None,
-        rollup_to=None,
-    ):
+        rollup_from: date | None = None,
+        rollup_to: date | None = None,
+    ) -> Select[Any]:
         """Build the base query for daily metric rollup rows."""
         query = (
             select(
@@ -61,9 +65,9 @@ class MetricRollupMixin(MetricRepositoryBase):
         limit: int = 100,
         offset: int = 0,
         device_id: int | None = None,
-        rollup_from=None,
-        rollup_to=None,
-    ) -> tuple[list[dict], int]:
+        rollup_from: date | None = None,
+        rollup_to: date | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
         """List daily summary rows paged for metric repository queries."""
         rows = (
             await self.db.execute(
@@ -110,8 +114,8 @@ class MetricRollupMixin(MetricRepositoryBase):
         self,
         *,
         device_id: int | None = None,
-        rollup_from=None,
-        rollup_to=None,
+        rollup_from: date | None = None,
+        rollup_to: date | None = None,
     ) -> int:
         """Count daily summary rows for metric repository queries."""
         query = select(func.count()).select_from(MetricDailyRollup)

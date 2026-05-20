@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
-from collections.abc import Mapping
+import threading
+from collections.abc import Coroutine, Mapping
+from typing import Any, TypeVar
 
 import httpx
 import streamlit as st
@@ -13,6 +16,34 @@ API_BASE_URL = os.getenv("DASHBOARD_API_URL", "http://localhost:8000").rstrip("/
 GET_CACHE_TTL_SECONDS = 5
 GET_CACHE_TTL_SLOW_SECONDS = 15
 PENDING_API_REQUEST_KEY = "pending_api_request"
+T = TypeVar("T")
+
+
+def _run_async(coroutine: Coroutine[Any, Any, T]) -> T:
+    """Run an async dashboard API operation from Streamlit's synchronous page code."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coroutine)
+
+    result: dict[str, T | BaseException] = {}
+
+    def _runner() -> None:
+        try:
+            result["value"] = asyncio.run(coroutine)
+        except BaseException as exc:  # pragma: no cover - only used when a host loop is already running
+            result["error"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    error = result.get("error")
+    if isinstance(error, BaseException):
+        raise error
+    value = result["value"]
+    if isinstance(value, BaseException):
+        raise value
+    return value
 
 
 def _request_headers(auth_token: str) -> dict[str, str]:
@@ -21,15 +52,6 @@ def _request_headers(auth_token: str) -> dict[str, str]:
     if auth_token:
         headers["authorization"] = f"Bearer {auth_token}"
     return headers
-
-
-@st.cache_resource(show_spinner=False)
-def _client(api_base_url: str) -> httpx.Client:
-    """Return the cached synchronous HTTP client for one backend base URL."""
-    return httpx.Client(
-        base_url=api_base_url,
-        timeout=httpx.Timeout(5.0),
-    )
 
 
 def _warn_backend_error(action: str, exc: httpx.HTTPError) -> None:
@@ -47,6 +69,54 @@ def _warn_backend_error(action: str, exc: httpx.HTTPError) -> None:
     st.warning(f"{action}: backend tidak bisa dijangkau.")
 
 
+async def _request_json_async(
+    method: str,
+    path: str,
+    *,
+    payload: dict | None = None,
+    timeout: float = 5.0,
+    api_base_url: str = API_BASE_URL,
+    auth_token: str = "",
+):
+    """Send one async JSON API request and return the decoded response payload."""
+    async with httpx.AsyncClient(base_url=api_base_url, timeout=httpx.Timeout(5.0)) as client:
+        response = await client.request(
+            method,
+            path,
+            json=payload,
+            timeout=timeout,
+            headers=_request_headers(auth_token),
+        )
+    response.raise_for_status()
+    if response.status_code == 204 or not response.content:
+        return True
+    return response.json()
+
+
+async def _request_json_map_async(
+    request_items: tuple[tuple[str, str], ...],
+    api_base_url: str,
+    auth_token: str,
+) -> dict[str, object]:
+    """Fetch several GET responses concurrently with one async client."""
+    async with httpx.AsyncClient(base_url=api_base_url, timeout=httpx.Timeout(5.0)) as client:
+        responses = await asyncio.gather(
+            *[
+                client.request(
+                    "GET",
+                    path,
+                    headers=_request_headers(auth_token),
+                )
+                for _name, path in request_items
+            ]
+        )
+    payload: dict[str, object] = {}
+    for (name, _path), response in zip(request_items, responses, strict=True):
+        response.raise_for_status()
+        payload[name] = True if response.status_code == 204 or not response.content else response.json()
+    return payload
+
+
 def _request_json(
     method: str,
     path: str,
@@ -57,18 +127,16 @@ def _request_json(
     auth_token: str = "",
 ):
     """Send one JSON API request and return the decoded response payload."""
-    client = _client(api_base_url)
-    response = client.request(
-        method,
-        path,
-        json=payload,
-        timeout=timeout,
-        headers=_request_headers(auth_token),
+    return _run_async(
+        _request_json_async(
+            method,
+            path,
+            payload=payload,
+            timeout=timeout,
+            api_base_url=api_base_url,
+            auth_token=auth_token,
+        )
     )
-    response.raise_for_status()
-    if response.status_code == 204 or not response.content:
-        return True
-    return response.json()
 
 
 def _prepare_auth_restore() -> None:
@@ -168,7 +236,9 @@ def _request_with_auth_recovery(
 @st.cache_data(show_spinner=False, ttl=GET_CACHE_TTL_SECONDS)
 def _cached_get_json(path: str, timeout: float, api_base_url: str, auth_token: str):
     """Return a short-lived cached GET response."""
-    return _request_json("GET", path, timeout=timeout, api_base_url=api_base_url, auth_token=auth_token)
+    return _run_async(
+        _request_json_async("GET", path, timeout=timeout, api_base_url=api_base_url, auth_token=auth_token)
+    )
 
 
 @st.cache_data(show_spinner=False, ttl=GET_CACHE_TTL_SECONDS)
@@ -178,16 +248,15 @@ def _cached_get_json_map(
     auth_token: str,
 ) -> dict[str, object]:
     """Return several cached GET responses keyed by caller-defined names."""
-    payload: dict[str, object] = {}
-    for name, path in request_items:
-        payload[name] = _request_json("GET", path, api_base_url=api_base_url, auth_token=auth_token)
-    return payload
+    return _run_async(_request_json_map_async(request_items, api_base_url, auth_token))
 
 
 @st.cache_data(show_spinner=False, ttl=GET_CACHE_TTL_SLOW_SECONDS)
 def _cached_get_json_slow(path: str, timeout: float, api_base_url: str, auth_token: str):
     """Return a longer-lived cached GET response for slow-changing data."""
-    return _request_json("GET", path, timeout=timeout, api_base_url=api_base_url, auth_token=auth_token)
+    return _run_async(
+        _request_json_async("GET", path, timeout=timeout, api_base_url=api_base_url, auth_token=auth_token)
+    )
 
 
 @st.cache_data(show_spinner=False, ttl=GET_CACHE_TTL_SLOW_SECONDS)
@@ -197,10 +266,7 @@ def _cached_get_json_map_slow(
     auth_token: str,
 ) -> dict[str, object]:
     """Return several longer-lived cached GET responses."""
-    payload: dict[str, object] = {}
-    for name, path in request_items:
-        payload[name] = _request_json("GET", path, api_base_url=api_base_url, auth_token=auth_token)
-    return payload
+    return _run_async(_request_json_map_async(request_items, api_base_url, auth_token))
 
 
 def _is_slow_changing_path(path: str) -> bool:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 
-def safe_float(value) -> float | None:
+from typing import Any
+
+
+def safe_float(value: Any) -> float | None:
     """Convert an arbitrary value to ``float`` without raising conversion errors.
 
     Args:

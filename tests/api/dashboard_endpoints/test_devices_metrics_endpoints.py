@@ -481,6 +481,14 @@ def test_metrics_history_paged_supports_cursor_pagination():
         assert second_payload["meta"]["next_cursor"] is None
 
 
+def test_metrics_history_paged_rejects_deep_offset_pagination():
+    with client_context() as (client, _session_factory):
+        response = client.get("/metrics/history/paged?limit=10&offset=10", headers=API_HEADERS)
+
+    assert response.status_code == 400
+    assert "cursor" in response.json()["detail"]
+
+
 def test_metrics_daily_summary_reads_rollup_table_with_filters():
     with client_context() as (client, session_factory):
         async def scenario():
@@ -714,6 +722,23 @@ def test_latest_snapshot_paged_supports_cursor_pagination():
         assert second_payload["meta"]["has_more"] is False
         assert second_payload["meta"]["next_cursor"] is None
 
+
+def test_latest_snapshot_paged_rejects_deep_offset_pagination():
+    with client_context() as (client, _session_factory):
+        response = client.get("/metrics/latest-snapshot/paged?limit=10&offset=10", headers=API_HEADERS)
+
+    assert response.status_code == 400
+    assert "cursor" in response.json()["detail"]
+
+
+def test_latest_snapshot_uptime_map_rejects_deep_offset_pagination():
+    with client_context() as (client, _session_factory):
+        response = client.get("/metrics/latest-snapshot/uptime-map?limit=10&offset=10", headers=API_HEADERS)
+
+    assert response.status_code == 400
+    assert "Offset pagination" in response.json()["detail"]
+
+
 def test_metrics_history_context_endpoint():
     with client_context() as (client, session_factory):
         async def scenario():
@@ -815,6 +840,67 @@ def test_metrics_history_live_endpoint_returns_lightweight_sample():
         assert {item["metric_value"] for item in payload["selected_device_history"]["items"]} == {"12.00", "0.00"}
         assert payload["latest_snapshot"]["meta"]["sampled"] is False
         assert len(payload["latest_snapshot"]["items"]) == 2
+
+
+def test_metrics_history_live_accepts_expanded_selected_device_trend_limit():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [{"name": "NAS Storage", "ip_address": "192.168.1.80", "device_type": "nas"}]
+                )
+                current_time = utcnow()
+                payloads = []
+                for index in range(4):
+                    payloads.extend(
+                        [
+                            {
+                                "device_id": devices[0].id,
+                                "metric_name": "cpu_percent",
+                                "metric_value": str(30 + index),
+                                "status": "ok",
+                                "unit": "%",
+                                "checked_at": current_time - timedelta(minutes=index),
+                            },
+                            {
+                                "device_id": devices[0].id,
+                                "metric_name": "memory_percent",
+                                "metric_value": str(40 + index),
+                                "status": "ok",
+                                "unit": "%",
+                                "checked_at": current_time - timedelta(minutes=index),
+                            },
+                            {
+                                "device_id": devices[0].id,
+                                "metric_name": "disk_percent",
+                                "metric_value": str(50 + index),
+                                "status": "ok",
+                                "unit": "%",
+                                "checked_at": current_time - timedelta(minutes=index),
+                            },
+                        ]
+                    )
+                await MetricRepository(db).create_metrics(payloads)
+                return devices[0].id
+
+        device_id = run(scenario())
+        response = client.get(
+            f"/metrics/history/live?device_id={device_id}&limit=1&selected_device_limit=1"
+            "&include_selected_device_trend=true&trend_metric_names=cpu_percent"
+            "&trend_metric_names=memory_percent&trend_limit=900",
+            headers=API_HEADERS,
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        trend_items = payload["selected_device_trend"]["items"]
+        assert payload["selected_device_trend"]["meta"]["limit"] == 900
+        assert payload["selected_device_trend"]["meta"]["sampled"] is True
+        assert {item["metric_name"] for item in trend_items} == {"cpu_percent", "memory_percent"}
+        assert len([item for item in trend_items if item["metric_name"] == "cpu_percent"]) == 4
+        assert len([item for item in trend_items if item["metric_name"] == "memory_percent"]) == 4
+        assert all(item["metric_name"] != "disk_percent" for item in trend_items)
+
 
 def test_metrics_history_live_global_snapshot_summary_remains_representative_when_paged():
     with client_context() as (client, session_factory):

@@ -945,10 +945,27 @@ Test:
 python -m pytest
 ```
 
+Feedback loop harian:
+
+```bash
+python -m pytest -m unit -q
+python -m pytest -m "not slow and not mysql" -q
+# atau
+just test-fast
+make test-fast
+```
+
+Marker pytest yang tersedia:
+
+- `unit`: test cepat dan relatif isolated.
+- `integration`: test yang menyentuh API, database/session, monitor, atau service boundary.
+- `slow`: test yang masih penting, tapi kurang enak untuk loop edit/test kecil.
+- `mysql`: test yang butuh database MySQL yang sudah dimigrasi.
+
 MySQL integration test (butuh DATABASE_URL mysql yang sudah dimigrasi):
 
 ```bash
-python -m pytest tests/services/test_mysql_integration.py -q
+python -m pytest -m mysql -q
 ```
 
 Lint:

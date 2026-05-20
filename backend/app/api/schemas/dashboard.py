@@ -132,6 +132,32 @@ class MetricHistoryCursorPage(BaseModel):
     meta: CursorPageMeta
 
 
+class MetricPayloadMeta(BaseModel):
+    """Pydantic schema for sampled metric payload metadata."""
+    total: int
+    limit: int
+    offset: int
+    sampled: bool | None = None
+
+
+class MetricHistorySection(BaseModel):
+    """Pydantic schema for a metric history section inside composite payloads."""
+    items: list["MetricHistoryItem"]
+    meta: MetricPayloadMeta
+
+
+class MetricHistoryContextPayload(BaseModel):
+    """Pydantic schema for composite metric history dashboard payloads."""
+    metric_names: list[str]
+    history: MetricHistorySection
+    selected_device_history: MetricHistorySection
+    selected_device_trend: MetricHistorySection
+    latest_snapshot: MetricHistorySection
+    selected_device_snapshot: MetricHistorySection
+    latest_snapshot_status_summary: dict[str, int]
+    snapshot_uptime_map: dict[str, str]
+
+
 class MetricDailySummaryItem(BaseModel):
     """Pydantic schema for MetricDailySummaryItem payloads."""
     id: int

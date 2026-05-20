@@ -1,4 +1,4 @@
-.PHONY: setup precommit-install precommit-run lint format typecheck test ci backend scheduler dashboard docker-up docker-logs security
+.PHONY: setup precommit-install precommit-run lint format typecheck test test-fast test-unit test-integration test-slow test-mysql ci backend scheduler dashboard docker-up docker-logs security
 
 setup:
 	python -m pip install --upgrade pip
@@ -22,6 +22,21 @@ typecheck:
 
 test:
 	pytest -q
+
+test-fast:
+	pytest -q -m "not slow and not mysql"
+
+test-unit:
+	pytest -q -m unit
+
+test-integration:
+	pytest -q -m "integration and not mysql"
+
+test-slow:
+	pytest -q -m slow
+
+test-mysql:
+	pytest -q -m mysql
 
 ci: lint typecheck test
 

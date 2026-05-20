@@ -34,4 +34,7 @@ class RetentionBucketProgress(Base):
     metric_name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="")
     unit: Mapped[str] = mapped_column(String(30), nullable=False, default="")
+    source_metric_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_max_metric_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_latest_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     processed_at: Mapped[datetime] = mapped_column(DateTime, default=now, nullable=False)

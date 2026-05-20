@@ -1,12 +1,14 @@
 """Shared helpers for metric repository implementations."""
 
+from datetime import datetime
+
 from ...models.latest_metric import LatestMetric
 from ...models.metric import Metric
 
 UP_STATUSES = {"up", "ok"}
 
 
-def is_metric_newer(metric: Metric, existing_checked_at, existing_metric_id: int | None) -> bool:
+def is_metric_newer(metric: Metric, existing_checked_at: datetime | None, existing_metric_id: int | None) -> bool:
     """Return whether a metric sample is newer than the latest snapshot row."""
     if existing_checked_at is None:
         return True
@@ -22,7 +24,7 @@ def next_uptime_streak_started_at(
     existing: LatestMetric | None,
     latest_metric: Metric,
     ordered_metric_batch: list[Metric],
-):
+) -> datetime | None:
     """Return the start timestamp for the current consecutive up/ok streak."""
     status = str(latest_metric.status or "").lower()
     if status not in UP_STATUSES:

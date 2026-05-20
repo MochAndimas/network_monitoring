@@ -14,7 +14,20 @@
   "pythonVersion": "3.12",
   "venvPath": ".",
   "venv": "venv",
+  "extraPaths": [
+    "."
+  ],
   "typeCheckingMode": "standard",
+  "executionEnvironments": [
+    {
+      "root": "backend/app/repositories/metrics",
+      "typeCheckingMode": "strict"
+    },
+    {
+      "root": "shared",
+      "typeCheckingMode": "strict"
+    }
+  ],
   "reportMissingTypeStubs": "none",
   "reportAttributeAccessIssue": "error",
   "reportCallIssue": "error",

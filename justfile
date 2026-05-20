@@ -26,6 +26,21 @@ typecheck:
 test:
   pytest -q
 
+test-fast:
+  pytest -q -m "not slow and not mysql"
+
+test-unit:
+  pytest -q -m unit
+
+test-integration:
+  pytest -q -m "integration and not mysql"
+
+test-slow:
+  pytest -q -m slow
+
+test-mysql:
+  pytest -q -m mysql
+
 ci:
   just lint
   just typecheck

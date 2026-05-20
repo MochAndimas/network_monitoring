@@ -1,5 +1,7 @@
 """Latest metric snapshot query operations."""
 
+from typing import Any
+
 from sqlalchemy import and_, case, desc, func, or_, select, tuple_
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
@@ -15,7 +17,7 @@ class MetricLatestMixin(MetricRepositoryBase):
     """Latest-snapshot metric repository methods."""
 
     @staticmethod
-    def _latest_metric_sort_columns():
+    def _latest_metric_sort_columns() -> tuple[Any, Any, Any, Any, Any]:
         """Return stable sort expressions shared by latest-snapshot pagination paths."""
         internet_target_name_priority = case(
             (
@@ -62,7 +64,7 @@ class MetricLatestMixin(MetricRepositoryBase):
         )
 
     @staticmethod
-    def _latest_metrics_query(*, device_id: int | None = None):
+    def _latest_metrics_query(*, device_id: int | None = None) -> Any:
         """Return latest latest metrics query used by metric collection and history."""
         (
             device_type_priority,
@@ -107,7 +109,7 @@ class MetricLatestMixin(MetricRepositoryBase):
         device_id: int | None = None,
     ) -> list[dict]:
         """Return latest snapshot rows in API dictionary form."""
-        rows = (await self.db.execute(self._latest_metrics_query(device_id=device_id).offset(offset).limit(limit))).all()
+        rows = (await self.db.execute(self._latest_metrics_query(device_id=device_id).limit(limit))).all()
         return [self._metric_row_payload(row) for row in rows]
 
     async def list_latest_metric_rows_paged(

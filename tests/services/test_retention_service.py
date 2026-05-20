@@ -121,6 +121,45 @@ def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypa
         run(drop_all(engine))
 
 
+def test_cleanup_reprocesses_late_arriving_metrics_after_bucket_marker(monkeypatch):
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    run(create_all(engine))
+
+    monkeypatch.setattr("backend.app.services.retention_service.settings.raw_metric_retention_days", 7)
+
+    old_timestamp = utcnow() - timedelta(days=9)
+
+    try:
+        result, second_result, rollup, ping_archive, markers = run(
+            _cleanup_late_arriving_metrics(SessionLocal, old_timestamp)
+        )
+
+        assert result["rolled_up_days"] == 1
+        assert result["archived_metric_groups"] == 2
+        assert second_result["rolled_up_days"] == 1
+        assert second_result["archived_metric_groups"] == 1
+        assert rollup.total_samples == 4
+        assert rollup.ping_samples == 3
+        assert rollup.ping_numeric_samples == 3
+        assert rollup.uptime_percentage == 100.0
+        assert rollup.average_ping_ms == 20.0
+        assert rollup.max_ping_ms == 30.0
+        assert ping_archive.sample_count == 3
+        assert ping_archive.numeric_sample_count == 3
+        assert ping_archive.avg_numeric_value == 20.0
+        assert ping_archive.last_metric_value == "30.00"
+        marker_by_kind = {marker.bucket_kind: marker for marker in markers if marker.metric_name in {"", "ping"}}
+        assert marker_by_kind["rollup"].source_metric_count == 4
+        assert marker_by_kind["archive"].source_metric_count == 3
+    finally:
+        run(drop_all(engine))
+
+
 def test_latest_metric_map_uses_latest_metric_for_each_device_metric_pair():
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -295,6 +334,49 @@ async def _cleanup_yesterday_metrics(session_factory, yesterday):
         remaining_metrics = (await db.scalars(select(Metric))).all()
         markers = (await db.scalars(select(RetentionBucketProgress))).all()
         return result, second_result, rollups, remaining_metrics, markers
+
+
+async def _cleanup_late_arriving_metrics(session_factory, old_timestamp):
+    async with session_factory() as db:
+        device = (
+            await DeviceRepository(db).upsert_devices(
+                [{"name": "Backfill AP", "ip_address": "192.168.1.45", "device_type": "access_point"}]
+            )
+        )[0]
+        await MetricRepository(db).create_metrics(
+            [
+                _metric(device.id, "ping", "10.00", "up", "ms", old_timestamp),
+                _metric(device.id, "ping", "20.00", "up", "ms", old_timestamp + timedelta(minutes=1)),
+                _metric(device.id, "packet_loss", "0.00", "up", "%", old_timestamp),
+            ]
+        )
+
+        result = await cleanup_monitoring_data(db)
+        await MetricRepository(db).create_metrics(
+            [_metric(device.id, "ping", "30.00", "up", "ms", old_timestamp + timedelta(minutes=2))]
+        )
+        second_result = await cleanup_monitoring_data(db)
+
+        rollup = (
+            await db.scalars(
+                select(MetricDailyRollup).where(
+                    MetricDailyRollup.device_id == device.id,
+                    MetricDailyRollup.rollup_date == old_timestamp.date(),
+                )
+            )
+        ).one()
+        ping_archive = (
+            await db.scalars(
+                select(MetricColdArchive).where(
+                    MetricColdArchive.device_id == device.id,
+                    MetricColdArchive.archive_date == old_timestamp.date(),
+                    MetricColdArchive.metric_name == "ping",
+                    MetricColdArchive.status == "up",
+                )
+            )
+        ).one()
+        markers = (await db.scalars(select(RetentionBucketProgress))).all()
+        return result, second_result, rollup, ping_archive, markers
 
 
 async def _latest_metric_map_for_device(session_factory, now):

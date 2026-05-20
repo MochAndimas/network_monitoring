@@ -1,5 +1,8 @@
 """Metric history query operations."""
 
+from datetime import datetime
+from typing import Any
+
 from sqlalchemy import Select, and_, desc, func, or_, select
 
 from .base import MetricRepositoryBase
@@ -71,14 +74,13 @@ class MetricHistoryMixin(MetricRepositoryBase):
     async def list_recent_metric_rows(
         self,
         limit: int = 100,
-        offset: int = 0,
         device_id: int | None = None,
         metric_name: str | None = None,
         metric_names: list[str] | None = None,
         status: str | None = None,
-        checked_from=None,
-        checked_to=None,
-    ) -> list[dict]:
+        checked_from: datetime | None = None,
+        checked_to: datetime | None = None,
+    ) -> list[dict[str, Any]]:
         """Return recent metric rows in API dictionary form."""
         query = self._recent_metric_rows_query(
             device_id=device_id,
@@ -88,11 +90,7 @@ class MetricHistoryMixin(MetricRepositoryBase):
             checked_from=checked_from,
             checked_to=checked_to,
         )
-        rows = (
-            await self.db.execute(
-                query.order_by(desc(Metric.checked_at), desc(Metric.id)).offset(offset).limit(limit)
-            )
-        ).all()
+        rows = (await self.db.execute(query.order_by(desc(Metric.checked_at), desc(Metric.id)).limit(limit))).all()
         return [self._metric_row_payload(row) for row in rows]
 
     async def list_recent_metric_rows_paged(
@@ -105,9 +103,9 @@ class MetricHistoryMixin(MetricRepositoryBase):
         metric_names: list[str] | None = None,
         per_metric_limit: int | None = None,
         status: str | None = None,
-        checked_from=None,
-        checked_to=None,
-    ) -> tuple[list[dict], int]:
+        checked_from: datetime | None = None,
+        checked_to: datetime | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
         """Return paginated metric history rows and the matching total count."""
         normalized_metric_names = self._normalize_metric_names(metric_names)
         if normalized_metric_names and per_metric_limit is not None and offset == 0:
@@ -163,15 +161,15 @@ class MetricHistoryMixin(MetricRepositoryBase):
         self,
         *,
         limit: int = 100,
-        cursor_checked_at,
+        cursor_checked_at: datetime | None,
         cursor_id: int,
         device_id: int | None = None,
         metric_name: str | None = None,
         metric_names: list[str] | None = None,
         status: str | None = None,
-        checked_from=None,
-        checked_to=None,
-    ) -> tuple[list[dict], bool]:
+        checked_from: datetime | None = None,
+        checked_to: datetime | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
         """Return the next metric-history page using keyset pagination."""
         normalized_metric_names = self._normalize_metric_names(metric_names)
         query = self._recent_metric_rows_query(
@@ -205,9 +203,9 @@ class MetricHistoryMixin(MetricRepositoryBase):
         metric_names: list[str],
         per_metric_limit: int,
         status: str | None = None,
-        checked_from=None,
-        checked_to=None,
-    ) -> tuple[list[dict], int]:
+        checked_from: datetime | None = None,
+        checked_to: datetime | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
         """Return the newest rows per metric name for multi-metric trend views."""
         conditions = self._recent_metric_filter_conditions(
             device_id=device_id,
@@ -260,8 +258,8 @@ class MetricHistoryMixin(MetricRepositoryBase):
         metric_name: str | None = None,
         metric_names: list[str] | None = None,
         status: str | None = None,
-        checked_from=None,
-        checked_to=None,
+        checked_from: datetime | None = None,
+        checked_to: datetime | None = None,
     ) -> int:
         """Count raw metric history rows matching the active filters."""
         query = select(func.count()).select_from(Metric)
