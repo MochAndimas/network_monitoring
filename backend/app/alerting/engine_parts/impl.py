@@ -16,7 +16,8 @@ from ...models.alert import Alert
 from ...models.incident import Incident
 from ...models.metric import Metric
 from ...services.dashboard_overview_service import invalidate_dashboard_overview_cache
-from ...services.threshold_service import get_threshold_map
+from ...repositories.threshold_repository import ThresholdRepository
+from ...services.threshold_service import get_threshold_runtime_config, threshold_for_device
 from ..notifiers.telegram_notifier import send_telegram_alert
 from ..rules import ALERT_RULES
 from .constants import (
@@ -80,7 +81,10 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
         alert_repository=alert_repository,
         device_repository=device_repository,
     )
-    thresholds = await get_threshold_map(db, commit=commit)
+    threshold_config = await get_threshold_runtime_config(db, commit=commit)
+    thresholds = threshold_config["thresholds"]
+    threshold_overrides = threshold_config["overrides"]
+    active_maintenance_windows = await _load_active_maintenance_windows(db, devices)
     state = await _build_alert_evaluation_state(
         incident_repository=incident_repository,
         active_alerts=active_alerts_list,
@@ -91,6 +95,8 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
         devices=devices,
         latest_metrics=latest_metrics,
         thresholds=thresholds,
+        threshold_overrides=threshold_overrides,
+        active_maintenance_windows=active_maintenance_windows,
     )
     notification_policy = _telegram_notification_policy()
 
@@ -210,6 +216,8 @@ async def _expected_alert_map(
     devices: list,
     latest_metrics: dict,
     thresholds: dict,
+    threshold_overrides: list[dict],
+    active_maintenance_windows: list,
 ) -> dict[tuple[int | None, str], dict]:
     """Evaluate all device rules and return expected active alerts."""
     printer_device_ids = [device.id for device in devices if device.device_type == "printer"]
@@ -227,17 +235,27 @@ async def _expected_alert_map(
         metric_repository,
         internet_target_device_ids,
     )
+    metric_history_by_device = await _load_rolling_metric_history_by_device(
+        metric_repository,
+        [device.id for device in devices],
+        latest_metrics=latest_metrics,
+    )
 
     expected_alerts: dict[tuple[int | None, str], dict] = {}
     for device in devices:
+        if _device_in_maintenance(device, active_maintenance_windows):
+            continue
+        device_thresholds = _effective_thresholds_for_device(thresholds, threshold_overrides, device)
         evaluate_expected_alerts_for_device(
             AlertEvaluationContext(
                 device=device,
                 latest_metrics=latest_metrics,
-                thresholds=thresholds,
+                thresholds=device_thresholds,
+                threshold_overrides=threshold_overrides,
                 expected_alerts=expected_alerts,
                 printer_uptime_history_by_device=printer_uptime_history_by_device,
                 internet_service_history_by_device=internet_service_history_by_device,
+                metric_history_by_device=metric_history_by_device,
             )
         )
     return expected_alerts
@@ -862,3 +880,55 @@ async def _load_internet_service_history_by_device(
         for device_id, metrics in metric_history.items():
             history_by_device.setdefault(device_id, {})[metric_name] = metrics
     return history_by_device
+
+
+async def _load_rolling_metric_history_by_device(
+    metric_repository: MetricRepository,
+    device_ids: list[int],
+    *,
+    latest_metrics: dict,
+) -> dict[int, dict[str, list[Metric]]]:
+    """Load recent metric windows used by rolling alert rules."""
+    if not device_ids:
+        return {}
+    history_by_device: dict[int, dict[str, list[Metric]]] = {}
+    metric_names = {"ping", "packet_loss", "jitter"}
+    metric_names.update(
+        metric_name
+        for _device_id, metric_name in latest_metrics
+        if str(metric_name).startswith("interface:") and str(metric_name).endswith("_mbps")
+    )
+    for metric_name in sorted(metric_names):
+        metric_history = await metric_repository.list_recent_metrics_by_device(
+            device_ids=device_ids,
+            metric_name=metric_name,
+            per_device_limit=5,
+        )
+        for device_id, metrics in metric_history.items():
+            history_by_device.setdefault(device_id, {})[metric_name] = metrics
+    return history_by_device
+
+
+async def _load_active_maintenance_windows(db, devices: list) -> list:
+    """Load active maintenance windows that match candidate device/site scopes."""
+    device_ids = {device.id for device in devices if device.id is not None}
+    sites = {str(device.site).strip() for device in devices if str(device.site or "").strip()}
+    return await ThresholdRepository(db).active_maintenance_windows_for_devices(device_ids=device_ids, sites=sites)
+
+
+def _device_in_maintenance(device, windows: list) -> bool:
+    """Return whether a device is currently covered by a maintenance window."""
+    for window in windows:
+        if window.device_id is not None and window.device_id == device.id:
+            return True
+        if window.site and str(window.site).strip().lower() == str(device.site or "").strip().lower():
+            return True
+    return False
+
+
+def _effective_thresholds_for_device(thresholds: dict[str, float], overrides: list[dict], device) -> dict[str, float]:
+    """Return threshold map with scoped overrides applied for one device."""
+    effective = dict(thresholds)
+    for key in list(thresholds):
+        effective[key] = threshold_for_device(thresholds, overrides, device, key)
+    return effective

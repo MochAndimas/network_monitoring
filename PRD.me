@@ -330,6 +330,14 @@ Acceptance criteria:
 
 Prioritas: sedang-tinggi.
 
+Status implementasi:
+- [x] Rolling-window alert 3-of-5 untuk ping down, ping latency, packet loss, dan jitter saat history cukup tersedia.
+- [x] Maintenance window per device atau site untuk suppress alert selama window aktif.
+- [x] Threshold override scoped per device, device type, atau site dengan fallback ke threshold global.
+- [x] Baseline/anomaly sederhana untuk ping latency dan traffic interface Mikrotik.
+- [x] Filter site di Alerts dan Incidents, termasuk payload API site-aware.
+- [x] Dashboard Thresholds memiliki tab Global, Overrides, dan Maintenance untuk kontrol admin.
+
 Requirements:
 - Tambahkan rolling-window alert untuk mengurangi noise transient, misalnya "3 dari 5 sample gagal".
 - Tambahkan maintenance window per device/site agar alert bisa disuppressed terjadwal.
@@ -346,6 +354,13 @@ Acceptance criteria:
 ### Phase 4 - Scalability Dan Data Explorer
 
 Prioritas: sedang.
+
+Status implementasi:
+- [x] Dashboard Long-Term Explorer untuk cold archive dan long-term trend dari rollup/archive, bukan raw metrics besar.
+- [x] Materialized summary harian per site/device type lewat `metric_site_type_daily_summaries`.
+- [x] Retention cleanup refresh materialized summary dan compact latest snapshot untuk inactive device rows tanpa menghapus snapshot aktif terakhir.
+- [x] Index tambahan untuk lookup cold archive dan daily rollup long-term explorer.
+- [x] Performance budget endpoint `/system/performance-budgets` untuk endpoint dashboard utama.
 
 Requirements:
 - Tambahkan dashboard explorer untuk cold archive dan long-term trend.

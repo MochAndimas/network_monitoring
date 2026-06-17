@@ -11,9 +11,10 @@ from collections.abc import Callable
 from shared.device_utils import is_mikrotik_device
 from shared.number_utils import safe_float
 
+from ...services.threshold_service import threshold_for_device
 from .device_evaluators import _evaluate_mikrotik_alerts, _evaluate_nas_alerts
 from .evaluation_context import AlertEvaluationContext
-from .utils import _build_alert_payload, _metric_numeric_value, _threshold_for_device
+from .utils import _build_alert_payload, _metric_numeric_value
 
 RuleEvaluator = Callable[[AlertEvaluationContext], None]
 
@@ -29,6 +30,8 @@ def evaluate_reachability_alerts(context: AlertEvaluationContext) -> None:
     device = context.device
     ping_metric = context.latest_metrics.get((device.id, "ping"))
     if ping_metric is not None and ping_metric.status == "down":
+        if not _recent_status_values_match(context, metric_name="ping", status="down"):
+            return
         alert_type = "internet_loss" if device.device_type == "internet_target" else "device_down"
         context.expected_alerts[(device.id, alert_type)] = _build_alert_payload(
             device_id=device.id,
@@ -44,15 +47,19 @@ def evaluate_reachability_alerts(context: AlertEvaluationContext) -> None:
     if ping_value is None:
         return
 
-    warning_threshold = _threshold_for_device(context.thresholds, device.device_type, "ping_latency_warning")
-    critical_threshold = _threshold_for_device(context.thresholds, device.device_type, "ping_latency_critical")
+    warning_threshold = threshold_for_device(context.thresholds, context.threshold_overrides, device, "ping_latency_warning")
+    critical_threshold = threshold_for_device(context.thresholds, context.threshold_overrides, device, "ping_latency_critical")
     if ping_value >= critical_threshold:
+        if not _recent_numeric_values_exceed_threshold(context, metric_name="ping", threshold=critical_threshold):
+            return
         context.expected_alerts[(device.id, "high_ping_latency_critical")] = _build_alert_payload(
             device_id=device.id,
             alert_type="high_ping_latency_critical",
             message=f"{device.name} ping latency reached {ping_value:.2f}{ping_metric.unit or ''}",
         )
     elif ping_value >= warning_threshold:
+        if not _recent_numeric_values_exceed_threshold(context, metric_name="ping", threshold=warning_threshold):
+            return
         context.expected_alerts[(device.id, "high_ping_latency_warning")] = _build_alert_payload(
             device_id=device.id,
             alert_type="high_ping_latency_warning",
@@ -70,20 +77,54 @@ def evaluate_quality_alerts(context: AlertEvaluationContext) -> None:
         value = safe_float(metric.metric_value)
         if value is None:
             continue
-        warning_threshold = _threshold_for_device(context.thresholds, device.device_type, warning_key)
-        critical_threshold = _threshold_for_device(context.thresholds, device.device_type, critical_key)
+        warning_threshold = threshold_for_device(context.thresholds, context.threshold_overrides, device, warning_key)
+        critical_threshold = threshold_for_device(context.thresholds, context.threshold_overrides, device, critical_key)
         if value >= critical_threshold:
+            if not _recent_numeric_values_exceed_threshold(context, metric_name=metric_name, threshold=critical_threshold):
+                continue
             context.expected_alerts[(device.id, critical_alert)] = _build_alert_payload(
                 device_id=device.id,
                 alert_type=critical_alert,
                 message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
             )
         elif value >= warning_threshold:
+            if not _recent_numeric_values_exceed_threshold(context, metric_name=metric_name, threshold=warning_threshold):
+                continue
             context.expected_alerts[(device.id, warning_alert)] = _build_alert_payload(
                 device_id=device.id,
                 alert_type=warning_alert,
                 message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
             )
+
+
+def evaluate_baseline_anomaly_alerts(context: AlertEvaluationContext) -> None:
+    """Evaluate simple baseline anomalies for latency and Mikrotik interface traffic."""
+    device = context.device
+    ping_metric = context.latest_metrics.get((device.id, "ping"))
+    ping_value = _metric_numeric_value(ping_metric) if ping_metric is not None else None
+    ping_baseline = _recent_numeric_average(context, metric_name="ping", skip_latest=True)
+    if ping_value is not None and ping_baseline is not None and ping_baseline >= 1 and ping_value >= ping_baseline * 3:
+        context.expected_alerts[(device.id, "ping_latency_anomaly")] = _build_alert_payload(
+            device_id=device.id,
+            alert_type="ping_latency_anomaly",
+            message=f"{device.name} ping latency {ping_value:.2f}{ping_metric.unit or ''} is 3x above recent baseline",
+        )
+
+    if not is_mikrotik_device(device.device_type, device.name):
+        return
+    for (device_id, metric_name), metric in context.latest_metrics.items():
+        if device_id != device.id or not metric_name.startswith("interface:") or not metric_name.endswith("_mbps"):
+            continue
+        value = _metric_numeric_value(metric)
+        baseline = _recent_numeric_average(context, metric_name=metric_name, skip_latest=True)
+        if value is None or baseline is None or baseline < 1 or value < baseline * 3:
+            continue
+        context.expected_alerts[(device.id, "mikrotik_interface_traffic_anomaly")] = _build_alert_payload(
+            device_id=device.id,
+            alert_type="mikrotik_interface_traffic_anomaly",
+            message=f"{device.name} {metric_name} {value:.2f}{metric.unit or ''} is 3x above recent baseline",
+        )
+        break
 
 
 def evaluate_internet_service_alerts(context: AlertEvaluationContext) -> None:
@@ -156,6 +197,59 @@ def _recent_internet_service_values_exceed_threshold(
     return all(value is not None and value >= threshold for value in values)
 
 
+def _recent_numeric_values_exceed_threshold(
+    context: AlertEvaluationContext,
+    *,
+    metric_name: str,
+    threshold: float,
+    required_samples: int = 3,
+    sample_window: int = 5,
+) -> bool:
+    """Return whether recent metrics meet a 3-of-5 rolling threshold rule."""
+    device_history = context.metric_history_by_device.get(context.device.id, {})
+    recent_metrics = list(device_history.get(metric_name, []))[:sample_window]
+    if len(recent_metrics) < required_samples:
+        return True
+    values = [safe_float(metric.metric_value) for metric in recent_metrics]
+    return sum(1 for value in values if value is not None and value >= threshold) >= required_samples
+
+
+def _recent_status_values_match(
+    context: AlertEvaluationContext,
+    *,
+    metric_name: str,
+    status: str,
+    required_samples: int = 3,
+    sample_window: int = 5,
+) -> bool:
+    """Return whether recent metrics meet a 3-of-5 rolling status rule."""
+    device_history = context.metric_history_by_device.get(context.device.id, {})
+    recent_metrics = list(device_history.get(metric_name, []))[:sample_window]
+    if len(recent_metrics) < required_samples:
+        return True
+    normalized_status = str(status or "").lower()
+    return sum(1 for metric in recent_metrics if str(metric.status or "").lower() == normalized_status) >= required_samples
+
+
+def _recent_numeric_average(
+    context: AlertEvaluationContext,
+    *,
+    metric_name: str,
+    skip_latest: bool = False,
+    sample_window: int = 5,
+) -> float | None:
+    """Return a simple recent numeric baseline."""
+    device_history = context.metric_history_by_device.get(context.device.id, {})
+    recent_metrics = list(device_history.get(metric_name, []))[:sample_window]
+    if skip_latest and recent_metrics:
+        recent_metrics = recent_metrics[1:]
+    values = [safe_float(metric.metric_value) for metric in recent_metrics]
+    values = [value for value in values if value is not None]
+    if len(values) < 3:
+        return None
+    return sum(values) / len(values)
+
+
 def evaluate_resource_alerts(context: AlertEvaluationContext) -> None:
     """Evaluate host resource alerts such as CPU, RAM, and disk usage."""
     device = context.device
@@ -166,7 +260,8 @@ def evaluate_resource_alerts(context: AlertEvaluationContext) -> None:
         value = _metric_numeric_value(metric)
         if value is None:
             continue
-        if value >= context.thresholds[threshold_key]:
+        threshold = threshold_for_device(context.thresholds, context.threshold_overrides, device, threshold_key)
+        if value >= threshold:
             context.expected_alerts[(device.id, alert_type)] = _build_alert_payload(
                 device_id=device.id,
                 alert_type=alert_type,
@@ -282,6 +377,7 @@ RESOURCE_METRIC_ALERTS = (
 ALERT_RULE_EVALUATORS: tuple[RuleEvaluator, ...] = (
     evaluate_reachability_alerts,
     evaluate_quality_alerts,
+    evaluate_baseline_anomaly_alerts,
     evaluate_internet_service_alerts,
     evaluate_resource_alerts,
     evaluate_mikrotik_domain_alerts,

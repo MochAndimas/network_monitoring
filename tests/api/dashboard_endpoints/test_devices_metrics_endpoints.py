@@ -1097,3 +1097,158 @@ def test_threshold_endpoints_and_update():
         cpu_threshold = next(item for item in list_response_after.json() if item["key"] == "cpu_warning")
         assert cpu_threshold["value"] == 92
 
+
+def test_threshold_overrides_maintenance_windows_and_site_filters():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [
+                        {"name": "Core HQ", "ip_address": "10.0.0.1", "device_type": "mikrotik", "site": "HQ"},
+                        {"name": "Core Branch", "ip_address": "10.1.0.1", "device_type": "mikrotik", "site": "Branch"},
+                    ]
+                )
+                db.add_all(
+                    [
+                        Alert(
+                            device_id=devices[0].id,
+                            alert_type="internet_loss",
+                            severity="critical",
+                            message="hq down",
+                            status="active",
+                            created_at=utcnow(),
+                        ),
+                        Alert(
+                            device_id=devices[1].id,
+                            alert_type="internet_loss",
+                            severity="critical",
+                            message="branch down",
+                            status="active",
+                            created_at=utcnow(),
+                        ),
+                    ]
+                )
+                await db.commit()
+                return devices[0].id
+
+        device_id = run(scenario())
+
+        override_response = client.post(
+            "/thresholds/overrides",
+            headers=API_HEADERS,
+            json={"threshold_key": "ping_latency_warning", "value": 150, "site": "HQ", "description": "HQ override"},
+        )
+        overrides_response = client.get("/thresholds/overrides", headers=API_HEADERS)
+        maintenance_response = client.post(
+            "/thresholds/maintenance-windows",
+            headers=API_HEADERS,
+            json={
+                "name": "HQ maintenance",
+                "site": "HQ",
+                "starts_at": (utcnow() - timedelta(minutes=5)).isoformat(),
+                "ends_at": (utcnow() + timedelta(minutes=30)).isoformat(),
+                "reason": "planned work",
+            },
+        )
+        maintenance_list_response = client.get("/thresholds/maintenance-windows", headers=API_HEADERS)
+        alerts_hq_response = client.get("/alerts/active/paged?site=HQ", headers=API_HEADERS)
+        alerts_branch_response = client.get("/alerts/active/paged?site=Branch", headers=API_HEADERS)
+
+        assert override_response.status_code == 200
+        assert override_response.json()["site"] == "HQ"
+        assert overrides_response.status_code == 200
+        assert any(item["threshold_key"] == "ping_latency_warning" for item in overrides_response.json())
+
+        assert maintenance_response.status_code == 200
+        assert maintenance_response.json()["site"] == "HQ"
+        assert maintenance_list_response.status_code == 200
+        assert maintenance_list_response.json()[0]["name"] == "HQ maintenance"
+
+        assert alerts_hq_response.status_code == 200
+        assert alerts_hq_response.json()["meta"]["total"] == 1
+        assert alerts_hq_response.json()["items"][0]["site"] == "HQ"
+        assert alerts_branch_response.status_code == 200
+        assert alerts_branch_response.json()["items"][0]["site"] == "Branch"
+
+        deactivate_override_response = client.delete(
+            f"/thresholds/overrides/{override_response.json()['id']}",
+            headers=API_HEADERS,
+        )
+        deactivate_window_response = client.delete(
+            f"/thresholds/maintenance-windows/{maintenance_response.json()['id']}",
+            headers=API_HEADERS,
+        )
+
+        assert deactivate_override_response.status_code == 200
+        assert deactivate_window_response.status_code == 200
+        assert isinstance(device_id, int)
+
+
+def test_long_term_explorer_uses_rollups_and_cold_archive():
+    from backend.app.models.metric_cold_archive import MetricColdArchive
+    from backend.app.models.metric_site_type_daily_summary import MetricSiteTypeDailySummary
+
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [{"name": "Core HQ", "ip_address": "10.0.0.1", "device_type": "mikrotik", "site": "HQ"}]
+                )
+                day_value = utcnow().date() - timedelta(days=30)
+                db.add(
+                    MetricSiteTypeDailySummary(
+                        summary_date=day_value,
+                        site="HQ",
+                        device_type="mikrotik",
+                        device_count=1,
+                        total_samples=12,
+                        ping_samples=4,
+                        down_count=0,
+                        average_uptime_percentage=100.0,
+                        average_ping_ms=10.0,
+                    )
+                )
+                db.add(
+                    MetricColdArchive(
+                        device_id=devices[0].id,
+                        archive_date=day_value,
+                        archive_month=day_value.replace(day=1),
+                        metric_name="ping",
+                        status="up",
+                        unit="ms",
+                        sample_count=4,
+                        numeric_sample_count=4,
+                        min_numeric_value=8.0,
+                        max_numeric_value=12.0,
+                        avg_numeric_value=10.0,
+                        first_checked_at=utcnow() - timedelta(days=30),
+                        last_checked_at=utcnow() - timedelta(days=30),
+                        last_metric_value="10",
+                    )
+                )
+                await db.commit()
+                return day_value
+
+        day_value = run(scenario())
+        response = client.get(
+            f"/metrics/long-term-explorer?archive_from={day_value.isoformat()}&archive_to={day_value.isoformat()}&site=HQ&metric_name=ping",
+            headers=API_HEADERS,
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["trends"][0]["site"] == "HQ"
+        assert payload["trends"][0]["device_type"] == "mikrotik"
+        assert payload["archives"]["meta"]["total"] == 1
+        assert payload["archives"]["items"][0]["metric_name"] == "ping"
+
+
+def test_system_performance_budgets_endpoint():
+    with client_context() as (client, _session_factory):
+        response = client.get("/system/performance-budgets", headers=API_HEADERS)
+
+        assert response.status_code == 200
+        endpoints = {item["endpoint"] for item in response.json()["items"]}
+        assert "/metrics/long-term-explorer" in endpoints
+        assert "/metrics/history/live" in endpoints
+

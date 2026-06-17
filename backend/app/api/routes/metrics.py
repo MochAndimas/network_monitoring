@@ -12,6 +12,7 @@ from ...api.schemas import (
     MetricHistoryCursorPage,
     MetricHistoryItem,
     MetricHistoryPage,
+    MetricLongTermExplorerPayload,
 )
 from ...api.lifecycle import apply_legacy_deprecation_headers
 from ...db.session import get_db
@@ -173,6 +174,30 @@ async def get_metrics_daily_summary(
         device_id=device_id,
         rollup_from=rollup_from,
         rollup_to=rollup_to,
+    )
+
+
+@router.get("/long-term-explorer", response_model=MetricLongTermExplorerPayload)
+async def get_metrics_long_term_explorer(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    archive_from: date | None = Query(default=None),
+    archive_to: date | None = Query(default=None),
+    metric_name: str | None = Query(default=None),
+    site: str | None = Query(default=None),
+    device_type: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> MetricLongTermExplorerPayload:
+    """Return long-term trends from rollup/archive tables."""
+    return await metrics_read_service.get_metrics_long_term_explorer(
+        db,
+        archive_from=archive_from,
+        archive_to=archive_to,
+        metric_name=metric_name,
+        site=site,
+        device_type=device_type,
+        limit=limit,
+        offset=offset,
     )
 
 

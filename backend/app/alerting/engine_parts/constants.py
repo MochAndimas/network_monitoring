@@ -54,6 +54,7 @@ ALERT_PRIMARY_METRIC_BY_TYPE = {
     "internet_loss": "ping",
     "high_ping_latency_warning": "ping",
     "high_ping_latency_critical": "ping",
+    "ping_latency_anomaly": "ping",
     "high_packet_loss_warning": "packet_loss",
     "high_packet_loss_critical": "packet_loss",
     "high_jitter_warning": "jitter",
@@ -68,6 +69,7 @@ ALERT_PRIMARY_METRIC_BY_TYPE = {
     "disk_usage_high": "disk_percent",
     "mikrotik_api_failed": "mikrotik_api",
     "mikrotik_connected_clients_high": "connected_clients",
+    "mikrotik_interface_traffic_anomaly": "connected_clients",
 }
 
 __all__ = [

@@ -29,6 +29,7 @@ async def get_active_alerts_paged(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     severity: str | None = Query(default=None),
+    site: str | None = Query(default=None),
     search: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> AlertPage:
@@ -37,11 +38,14 @@ async def get_active_alerts_paged(
         limit=limit,
         offset=offset,
         severity=severity,
+        site=site,
         search=search,
     )
     scope_parts = ["active"]
     if str(severity or "").strip():
         scope_parts.append("severity")
+    if str(site or "").strip():
+        scope_parts.append("site")
     if str(search or "").strip():
         scope_parts.append("search")
     payload_scope = "+".join(scope_parts)

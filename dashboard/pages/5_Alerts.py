@@ -28,14 +28,15 @@ render_page_header(
     "Ringkasan alert aktif untuk prioritasi penanganan gangguan.",
 )
 
-filter_col1, filter_col2 = st.columns([1, 2])
+filter_col1, filter_col2, filter_col3 = st.columns([1, 1, 2])
 severity_filter = filter_col1.selectbox(
     "Tingkat Alert",
     options=["All", "Critical", "High", "Warning", "Error", "Down", "Unknown"],
     index=0,
     format_func=lambda value: "Semua" if value == "All" else str(value),
 )
-search_filter = filter_col2.text_input("Cari", placeholder="Filter berdasarkan device atau pesan")
+site_filter = filter_col2.text_input("Site", placeholder="Kosongkan untuk semua site")
+search_filter = filter_col3.text_input("Cari", placeholder="Filter berdasarkan device atau pesan")
 with st.expander("Filter Lanjutan"):
     adv_col1, adv_col2, adv_col3 = st.columns(3)
     sort_mode = adv_col1.selectbox("Urutkan", options=["Terbaru", "Tingkat Tertinggi"], index=0)
@@ -47,6 +48,7 @@ alerts_page_key = "alerts_page"
 alerts_filter_signature_key = "alerts_filter_signature"
 alerts_filter_signature = (
     str(severity_filter),
+    site_filter.strip().lower(),
     search_filter.strip().lower(),
     str(sort_mode),
     int(alerts_page_size),
@@ -63,6 +65,8 @@ def _render_alerts_body() -> None:
     query_parts = [f"limit={int(alerts_page_size)}", f"offset={alerts_offset}"]
     if severity_filter != "All":
         query_parts.append(f"severity={quote_plus(str(severity_filter).strip().lower())}")
+    if site_filter.strip():
+        query_parts.append(f"site={quote_plus(site_filter.strip())}")
     normalized_search_filter = search_filter.strip()
     if normalized_search_filter:
         query_parts.append(f"search={quote_plus(normalized_search_filter)}")
@@ -84,6 +88,7 @@ def _render_alerts_body() -> None:
             ("Refresh Otomatis", live_status_text(auto_refresh, interval_seconds)),
             ("Terakhir Diperbarui", rendered_at_label()),
             ("Filter Tingkat", severity_filter),
+            ("Filter Site", site_filter.strip() or "Semua"),
             ("Urutan", sort_mode),
             ("Cakupan Data", f"{start_row}-{end_row} / {alerts_total} alerts"),
         ]
@@ -122,6 +127,7 @@ def _render_alerts_body() -> None:
         dataframe["severity"] = "Unknown"
     dataframe["severity_priority"] = dataframe["severity"].map(status_priority)
     dataframe["device_name"] = dataframe["device_name"].fillna("-") if "device_name" in dataframe.columns else "-"
+    dataframe["site"] = dataframe["site"].fillna("-") if "site" in dataframe.columns else "-"
     dataframe["message"] = dataframe["message"].fillna("-") if "message" in dataframe.columns else "-"
 
     filtered_frame = dataframe.copy()
@@ -214,13 +220,14 @@ def _render_alerts_body() -> None:
             },
         )
 
-    detail_columns = ["created_at_wib", "device_name", "severity", "message"]
+    detail_columns = ["created_at_wib", "device_name", "site", "severity", "message"]
     if "metric_name" in filtered_frame.columns:
         detail_columns.insert(3, "metric_name")
     detail_frame = filtered_frame[detail_columns].rename(
         columns={
             "created_at_wib": "Dibuat (WIB)",
             "device_name": "Device",
+            "site": "Site",
             "severity": "Tingkat",
             "metric_name": "Metrik",
             "message": "Pesan",
@@ -239,6 +246,7 @@ def _render_alerts_body() -> None:
         column_config={
             "Dibuat (WIB)": st.column_config.TextColumn("Dibuat (WIB)", width="medium"),
             "Device": st.column_config.TextColumn("Device", width="medium"),
+            "Site": st.column_config.TextColumn("Site", width="small"),
             "Tingkat": st.column_config.TextColumn("Tingkat", width="small"),
             "Metrik": st.column_config.TextColumn("Metrik", width="small"),
             "Pesan": st.column_config.TextColumn("Pesan", width="large"),

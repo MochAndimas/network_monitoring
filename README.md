@@ -440,6 +440,10 @@ Alert aktif dikaitkan ke incident aktif per device. Incident resolved otomatis s
 
 Incident workflow mendukung acknowledgment, owner/assignee, severity override, note, manual resolve/reopen, timeline event, dan escalation list untuk incident critical/high yang belum di-ack melewati window operasional. Timeline mencatat created, acknowledged, alert changes, notification sent, resolved, reopened, dan update workflow.
 
+Monitoring intelligence fase 3 menambahkan rolling-window alert untuk mengurangi noise transient, maintenance window per device/site untuk suppress alert saat pekerjaan terjadwal, threshold override per device/device type/site, baseline anomaly sederhana untuk ping latency dan traffic interface Mikrotik, serta filter site di Alerts dan Incidents.
+
+Scalability fase 4 menambahkan Long-Term Explorer yang membaca `metric_daily_rollups`, `metric_cold_archives`, dan materialized summary `metric_site_type_daily_summaries` agar operator dapat melihat tren jangka panjang tanpa query raw metrics besar. Retention cleanup juga melakukan compact latest snapshot untuk inactive device rows dan refresh summary per site/device type.
+
 Telegram notification optional memakai:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
@@ -696,6 +700,7 @@ Semua endpoint operasional selain `/health/*` membutuhkan bearer token atau API 
 - `GET /metrics/latest-snapshot/status-summary`
 - `GET /metrics/latest-snapshot/uptime-map`
 - `GET /metrics/freshness/summary`
+- `GET /metrics/long-term-explorer`
 
 ### Alerts, Incidents, Thresholds, System
 
@@ -711,11 +716,19 @@ Semua endpoint operasional selain `/health/*` membutuhkan bearer token atau API 
 - `POST /incidents/{incident_id}/reopen`
 - `GET /thresholds`
 - `PUT /thresholds/{key}`
+- `GET /thresholds/overrides`
+- `POST /thresholds/overrides`
+- `DELETE /thresholds/overrides/{override_id}`
+- `GET /thresholds/maintenance-windows`
+- `POST /thresholds/maintenance-windows`
+- `DELETE /thresholds/maintenance-windows/{window_id}`
 - `POST /system/run-cycle`
+- `GET /system/performance-budgets`
 
 Query filter paged yang umum dipakai dashboard:
 - `/alerts/active/paged`: `severity`, `search`, `limit`, `offset`
-- `/incidents/paged`: `status`, `search`, `limit`, `offset`
+- `/alerts/active/paged`: `site`
+- `/incidents/paged`: `status`, `search`, `site`, `limit`, `offset`
 
 ### API Lifecycle (Legacy Non-Paged Endpoint)
 
@@ -756,10 +769,11 @@ Halaman:
 - `Daily Summary`: rollup uptime, ping, packet loss, jitter, dan tren harian
 - `Live Monitoring`: metric history, latest snapshot, chart, dynamic Mikrotik/printer/NAS views, dan CSV export
 - `Devices`: inventory device, filter, pagination, create/update/delete untuk admin
-- `Alerts`: active alert
+- `Alerts`: active alert dengan filter severity, site, dan search
 - `Incidents`: active/resolved incidents, workflow action, timeline, escalation, dan CSV export
-- `Thresholds`: threshold alert dan update untuk admin
+- `Thresholds`: global threshold, scoped override, dan maintenance window untuk admin
 - `System Health`: database status, scheduler jobs, operational alerts, auth counters, runtime info, freshness per collector/site, dan CSV export operasional
+- `Long-Term Explorer`: tren historis per site/device type dan cold archive detail dengan CSV export
 
 Auth dashboard:
 - login memakai `/auth/login`
@@ -823,6 +837,7 @@ Model utama:
 - `latest_metrics`
 - `metric_daily_rollups`
 - `metric_cold_archives`
+- `metric_site_type_daily_summaries`
 - `alerts`
 - `incidents`
 - `thresholds`
@@ -837,6 +852,8 @@ Model utama:
 Cleanup scheduler menjalankan:
 - rollup raw metric lama ke `metric_daily_rollups`
 - archive raw metric yang melewati cutoff ke `metric_cold_archives`
+- refresh materialized summary `metric_site_type_daily_summaries`
+- compact latest snapshot untuk inactive device rows tanpa menghapus snapshot aktif terakhir
 - delete raw metric yang melewati `RAW_METRIC_RETENTION_DAYS`
 - delete alert resolved lama
 - delete incident resolved lama

@@ -17,6 +17,8 @@ from ..models.metric_cold_archive import MetricColdArchive
 from ..models.metric_daily_rollup import MetricDailyRollup
 from ..models.retention_bucket_progress import RetentionBucketProgress
 from ..core.time import utcnow
+from ..models.device import Device
+from ..repositories.metric_repository import MetricRepository
 
 
 UP_STATUSES = {"up", "ok"}
@@ -34,6 +36,8 @@ async def cleanup_monitoring_data(db: AsyncSession, *, commit: bool = True) -> d
     deleted_metrics = await delete_expired_raw_metrics(db, commit=False)
     deleted_alerts = await delete_expired_alerts(db, commit=False)
     deleted_incidents = await delete_expired_incidents(db, commit=False)
+    compacted_latest_metrics = await compact_latest_snapshot(db, commit=False)
+    refreshed_site_type_summaries = await MetricRepository(db).refresh_site_type_daily_summaries(commit=False)
     if commit:
         await db.commit()
     else:
@@ -44,7 +48,20 @@ async def cleanup_monitoring_data(db: AsyncSession, *, commit: bool = True) -> d
         "deleted_metrics": deleted_metrics,
         "deleted_alerts": deleted_alerts,
         "deleted_incidents": deleted_incidents,
+        "compacted_latest_metrics": compacted_latest_metrics,
+        "refreshed_site_type_summaries": refreshed_site_type_summaries,
     }
+
+
+async def compact_latest_snapshot(db: AsyncSession, *, commit: bool = True) -> int:
+    """Remove stale latest-snapshot rows that no longer help dashboard reads."""
+    inactive_device_ids = select(Device.id).where(Device.is_active.is_(False))
+    inactive_result = await db.execute(delete(LatestMetric).where(LatestMetric.device_id.in_(inactive_device_ids)))
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
+    return int(getattr(inactive_result, "rowcount", 0) or 0)
 
 
 async def rollup_completed_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:

@@ -14,6 +14,7 @@ from backend.app.models.incident import Incident
 from backend.app.models.metric import Metric
 from backend.app.models.metric_cold_archive import MetricColdArchive
 from backend.app.models.metric_daily_rollup import MetricDailyRollup
+from backend.app.models.metric_site_type_daily_summary import MetricSiteTypeDailySummary
 from backend.app.models.retention_bucket_progress import RetentionBucketProgress
 from backend.app.alerting.engine import evaluate_alerts
 from backend.app.repositories.device_repository import DeviceRepository
@@ -49,6 +50,7 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
             remaining_metrics,
             remaining_alerts,
             remaining_incidents,
+            site_type_summaries,
         ) = run(
             _cleanup_old_metrics(SessionLocal, old_timestamp, recent_timestamp, very_old_timestamp)
         )
@@ -58,6 +60,7 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
         assert result["deleted_metrics"] == 5
         assert result["deleted_alerts"] == 1
         assert result["deleted_incidents"] == 1
+        assert result["refreshed_site_type_summaries"] == 2
         assert set(rollup_by_date) == {old_timestamp.date(), recent_timestamp.date()}
         assert old_rollup.total_samples == 7
         assert old_rollup.ping_samples == 3
@@ -86,6 +89,7 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
         }
         assert [alert.status for alert in remaining_alerts] == ["active"]
         assert [incident.status for incident in remaining_incidents] == ["active"]
+        assert site_type_summaries[0].device_type == "access_point"
     finally:
         run(drop_all(engine))
 
@@ -310,7 +314,17 @@ async def _cleanup_old_metrics(session_factory, old_timestamp, recent_timestamp,
         remaining_metrics = (await db.scalars(select(Metric))).all()
         remaining_alerts = (await db.scalars(select(Alert))).all()
         remaining_incidents = (await db.scalars(select(Incident))).all()
-        return result, rollup_by_date, old_rollup, cold_archives, remaining_metrics, remaining_alerts, remaining_incidents
+        site_type_summaries = (await db.scalars(select(MetricSiteTypeDailySummary))).all()
+        return (
+            result,
+            rollup_by_date,
+            old_rollup,
+            cold_archives,
+            remaining_metrics,
+            remaining_alerts,
+            remaining_incidents,
+            site_type_summaries,
+        )
 
 
 async def _cleanup_yesterday_metrics(session_factory, yesterday):

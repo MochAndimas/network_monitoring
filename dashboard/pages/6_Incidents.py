@@ -31,14 +31,15 @@ render_page_header(
     "Pelacakan insiden aktif dan selesai untuk evaluasi dampak operasional.",
 )
 
-filter_col1, filter_col2 = st.columns([1, 2])
+filter_col1, filter_col2, filter_col3 = st.columns([1, 1, 2])
 status_filter = filter_col1.selectbox(
     "Status Insiden",
     options=["All", "active", "resolved"],
     index=0,
     format_func=lambda value: "Semua" if value == "All" else normalize_status_label(str(value)),
 )
-search_filter = filter_col2.text_input("Cari", placeholder="Filter berdasarkan device atau ringkasan")
+site_filter = filter_col2.text_input("Site", placeholder="Kosongkan untuk semua site")
+search_filter = filter_col3.text_input("Cari", placeholder="Filter berdasarkan device atau ringkasan")
 with st.expander("Filter Lanjutan"):
     adv_col1, adv_col2, adv_col3 = st.columns(3)
     sort_mode = adv_col1.selectbox("Urutkan", options=["Terbaru", "Durasi Terpanjang", "Berdasarkan Status"], index=0)
@@ -49,6 +50,7 @@ incidents_page_key = "incidents_page"
 incidents_filter_signature_key = "incidents_filter_signature"
 incidents_filter_signature = (
     str(status_filter),
+    site_filter.strip().lower(),
     search_filter.strip().lower(),
     str(sort_mode),
     int(incidents_page_size),
@@ -341,6 +343,8 @@ def _render_incidents_body() -> None:
     path = f"/incidents/paged?limit={int(incidents_page_size)}&offset={incidents_offset}"
     if status_filter != "All":
         path = f"{path}&status={status_filter}"
+    if site_filter.strip():
+        path = f"{path}&site={quote_plus(site_filter.strip())}"
     normalized_search_filter = search_filter.strip()
     if normalized_search_filter:
         path = f"{path}&search={quote_plus(normalized_search_filter)}"
@@ -363,6 +367,7 @@ def _render_incidents_body() -> None:
             ("Refresh Otomatis", live_status_text(auto_refresh, interval_seconds)),
             ("Terakhir Diperbarui", rendered_at_label()),
             ("Filter Status", normalize_status_label(status_filter)),
+            ("Filter Site", site_filter.strip() or "Semua"),
             ("Urutan", sort_mode),
             ("Cakupan Data", f"{start_row}-{end_row} / {incidents_total} incidents"),
         ]
@@ -384,6 +389,7 @@ def _render_incidents_body() -> None:
 
     dataframe = pd.DataFrame(incidents)
     dataframe["device_name"] = dataframe["device_name"].fillna("-") if "device_name" in dataframe.columns else "-"
+    dataframe["site"] = dataframe["site"].fillna("-") if "site" in dataframe.columns else "-"
     dataframe["summary"] = dataframe["summary"].fillna("-") if "summary" in dataframe.columns else "-"
     dataframe["owner"] = dataframe["owner"].fillna("") if "owner" in dataframe.columns else ""
     dataframe["assignee"] = dataframe["assignee"].fillna("") if "assignee" in dataframe.columns else ""
@@ -474,6 +480,7 @@ def _render_incidents_body() -> None:
         "acknowledged_at_wib",
         "duration_label",
         "device_name",
+        "site",
         "effective_severity",
         "assignee",
         "status",
@@ -486,6 +493,7 @@ def _render_incidents_body() -> None:
             "acknowledged_at_wib": "Ack (WIB)",
             "duration_label": "Durasi",
             "device_name": "Nama Device",
+            "site": "Site",
             "effective_severity": "Severity",
             "assignee": "Assignee",
             "status": "Status",

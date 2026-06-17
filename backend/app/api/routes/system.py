@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.deps import require_ops_access
-from ...api.schemas import RunCycleResult
+from ...api.schemas import PerformanceBudgetResponse, RunCycleResult
 from ...db.session import get_db
 from ...services.audit_service import record_admin_audit_log
 from ...services.pipeline_control import MONITORING_FULL_CYCLE_LOCK_SCOPES, monitoring_pipeline_multi_guard
 from ...services.run_cycle_service import run_monitoring_cycle
+from ...services.performance_budget_service import list_performance_budgets
 
 router = APIRouter()
 
@@ -40,3 +41,9 @@ async def run_cycle(
             details=result.model_dump(),
         )
         return result
+
+
+@router.get("/performance-budgets", response_model=PerformanceBudgetResponse)
+async def get_performance_budgets() -> PerformanceBudgetResponse:
+    """Return dashboard/API endpoint performance budgets."""
+    return PerformanceBudgetResponse(items=list_performance_budgets())

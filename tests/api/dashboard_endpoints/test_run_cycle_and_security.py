@@ -563,6 +563,52 @@ def test_run_cycle_creates_alerts_and_incidents():
         assert incidents_response.json()[0]["status"] == "active"
 
 
+def test_alert_evaluation_suppresses_alerts_during_maintenance_window():
+    from backend.app.alerting.engine import evaluate_alerts
+    from backend.app.models.threshold import MaintenanceWindow
+
+    with client_context() as (_client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [{"name": "Core HQ", "ip_address": "10.0.0.1", "device_type": "internet_target", "site": "HQ"}]
+                )
+                current_time = utcnow()
+                db.add(
+                    MaintenanceWindow(
+                        name="HQ work",
+                        site="HQ",
+                        starts_at=current_time - timedelta(minutes=5),
+                        ends_at=current_time + timedelta(minutes=30),
+                        reason="planned work",
+                        is_active=True,
+                    )
+                )
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "ping",
+                            "metric_value": "timeout",
+                            "status": "down",
+                            "unit": None,
+                            "checked_at": current_time,
+                        }
+                    ],
+                    commit=False,
+                )
+                notifications = await evaluate_alerts(db)
+                alerts = await db.scalars(select(Alert))
+                incidents = await db.scalars(select(Incident))
+                return notifications, list(alerts.all()), list(incidents.all())
+
+        notifications, alerts, incidents = run(scenario())
+
+        assert notifications == []
+        assert alerts == []
+        assert incidents == []
+
+
 def test_alert_evaluation_resolves_orphan_duplicate_incidents():
     with client_context() as (_client, session_factory):
         device = run(

@@ -69,11 +69,15 @@ class IncidentRepository:
         limit: int = 100,
         offset: int = 0,
         search: str | None = None,
+        site: str | None = None,
     ) -> list[dict]:
         """Query incident rows from the database."""
-        query = select(Incident, Device.name).outerjoin(Device, Device.id == Incident.device_id)
+        query = select(Incident, Device.name, Device.site).outerjoin(Device, Device.id == Incident.device_id)
         if status:
             query = query.where(Incident.status == status)
+        normalized_site = str(site or "").strip().lower()
+        if normalized_site:
+            query = query.where(func.lower(Device.site) == normalized_site)
         normalized_search = str(search or "").strip().lower()
         if normalized_search:
             query = query.where(
@@ -88,13 +92,14 @@ class IncidentRepository:
         if limit is not None:
             query = query.limit(limit)
         rows = (await self.db.execute(query)).all()
-        incident_summaries = await self._incident_alert_summaries([incident for incident, _device_name in rows])
-        severities = await self._incident_effective_severities([incident for incident, _device_name in rows])
+        incident_summaries = await self._incident_alert_summaries([incident for incident, _device_name, _site in rows])
+        severities = await self._incident_effective_severities([incident for incident, _device_name, _site in rows])
         return [
             {
                 "id": incident.id,
                 "device_id": incident.device_id,
                 "device_name": device_name,
+                "site": site_name,
                 "status": incident.status,
                 "summary": incident_summaries.get(incident.id, incident.summary),
                 "owner": incident.owner,
@@ -109,7 +114,7 @@ class IncidentRepository:
                 "resolved_by": incident.resolved_by,
                 "updated_at": incident.updated_at,
             }
-            for incident, device_name in rows
+            for incident, device_name, site_name in rows
         ]
 
     async def list_incident_rows_paged(
@@ -119,26 +124,28 @@ class IncidentRepository:
         limit: int = 100,
         offset: int = 0,
         search: str | None = None,
+        site: str | None = None,
     ) -> tuple[list[dict], int]:
         """Query incident rows paged from the database."""
-        rows = await self.list_incident_rows(status=status, limit=limit, offset=offset, search=search)
+        rows = await self.list_incident_rows(status=status, limit=limit, offset=offset, search=search, site=site)
         if offset == 0 and len(rows) < limit:
             return rows, len(rows)
-        return rows, await self.count_incident_rows(status=status, search=search)
+        return rows, await self.count_incident_rows(status=status, search=search, site=site)
 
     async def get_incident_row(self, incident_id: int) -> dict:
         """Return one incident row with derived summary and severity."""
-        query = select(Incident, Device.name).outerjoin(Device, Device.id == Incident.device_id).where(Incident.id == incident_id)
+        query = select(Incident, Device.name, Device.site).outerjoin(Device, Device.id == Incident.device_id).where(Incident.id == incident_id)
         row = (await self.db.execute(query)).first()
         if row is None:
             raise IncidentNotFoundError(f"Incident {incident_id} not found")
-        incident, device_name = row
+        incident, device_name, site_name = row
         summaries = await self._incident_alert_summaries([incident])
         severities = await self._incident_effective_severities([incident])
         return {
             "id": incident.id,
             "device_id": incident.device_id,
             "device_name": device_name,
+            "site": site_name,
             "status": incident.status,
             "summary": summaries.get(incident.id, incident.summary),
             "owner": incident.owner,
@@ -154,14 +161,19 @@ class IncidentRepository:
             "updated_at": incident.updated_at,
         }
 
-    async def count_incident_rows(self, *, status: str | None = None, search: str | None = None) -> int:
+    async def count_incident_rows(self, *, status: str | None = None, search: str | None = None, site: str | None = None) -> int:
         """Query incident rows from the database."""
         query = select(func.count()).select_from(Incident)
         if status:
             query = query.where(Incident.status == status)
+        normalized_site = str(site or "").strip().lower()
+        if normalized_site:
+            query = query.join(Device, Device.id == Incident.device_id, isouter=True).where(func.lower(Device.site) == normalized_site)
         normalized_search = str(search or "").strip().lower()
         if normalized_search:
-            query = query.join(Device, Device.id == Incident.device_id, isouter=True).where(
+            if not normalized_site:
+                query = query.join(Device, Device.id == Incident.device_id, isouter=True)
+            query = query.where(
                 or_(
                     func.lower(Incident.summary).like(f"%{normalized_search}%"),
                     func.lower(Device.name).like(f"%{normalized_search}%"),

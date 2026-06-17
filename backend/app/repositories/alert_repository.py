@@ -39,11 +39,12 @@ class AlertRepository:
         limit: int | None = None,
         offset: int = 0,
         severity: str | None = None,
+        site: str | None = None,
         search: str | None = None,
     ) -> list[dict]:
         """Query active alert rows from the database."""
         query = (
-            select(Alert, Device.name)
+            select(Alert, Device.name, Device.site)
             .outerjoin(Device, Device.id == Alert.device_id)
             .where(Alert.status == "active")
             .order_by(desc(Alert.created_at), desc(Alert.id))
@@ -51,6 +52,9 @@ class AlertRepository:
         normalized_severity = str(severity or "").strip().lower()
         if normalized_severity:
             query = query.where(func.lower(Alert.severity) == normalized_severity)
+        normalized_site = str(site or "").strip().lower()
+        if normalized_site:
+            query = query.where(func.lower(Device.site) == normalized_site)
         normalized_search = str(search or "").strip().lower()
         if normalized_search:
             query = query.where(
@@ -69,6 +73,7 @@ class AlertRepository:
                 "id": alert.id,
                 "device_id": alert.device_id,
                 "device_name": device_name,
+                "site": row_site,
                 "alert_type": alert.alert_type,
                 "severity": alert.severity,
                 "message": alert.message,
@@ -76,7 +81,7 @@ class AlertRepository:
                 "created_at": alert.created_at,
                 "resolved_at": alert.resolved_at,
             }
-            for alert, device_name in rows
+            for alert, device_name, row_site in rows
         ]
 
     async def list_active_alert_rows_paged(
@@ -85,6 +90,7 @@ class AlertRepository:
         limit: int = 100,
         offset: int = 0,
         severity: str | None = None,
+        site: str | None = None,
         search: str | None = None,
     ) -> tuple[list[dict], int]:
         """Query active alert rows paged from the database."""
@@ -92,11 +98,12 @@ class AlertRepository:
             limit=limit,
             offset=offset,
             severity=severity,
+            site=site,
             search=search,
         )
         if offset == 0 and len(rows) < limit:
             return rows, len(rows)
-        total = await self.count_active_alerts(severity=severity, search=search)
+        total = await self.count_active_alerts(severity=severity, site=site, search=search)
         return rows, total
 
     async def summarize_active_alert_severity_counts(self) -> dict[str, int]:
@@ -114,6 +121,7 @@ class AlertRepository:
         self,
         *,
         severity: str | None = None,
+        site: str | None = None,
         search: str | None = None,
     ) -> int:
         """Query active alerts from the database."""
@@ -121,9 +129,15 @@ class AlertRepository:
         normalized_severity = str(severity or "").strip().lower()
         if normalized_severity:
             query = query.where(func.lower(Alert.severity) == normalized_severity)
+        normalized_site = str(site or "").strip().lower()
+        if normalized_site:
+            query = query.join(Device, Device.id == Alert.device_id, isouter=True).where(func.lower(Device.site) == normalized_site)
         normalized_search = str(search or "").strip().lower()
+        needs_device_join = bool(normalized_search) and not normalized_site
         if normalized_search:
-            query = query.join(Device, Device.id == Alert.device_id, isouter=True).where(
+            if needs_device_join:
+                query = query.join(Device, Device.id == Alert.device_id, isouter=True)
+            query = query.where(
                 or_(
                     func.lower(Alert.message).like(f"%{normalized_search}%"),
                     func.lower(Device.name).like(f"%{normalized_search}%"),

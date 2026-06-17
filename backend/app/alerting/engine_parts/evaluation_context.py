@@ -18,9 +18,11 @@ class AlertEvaluationContext:
     device: Device
     latest_metrics: Mapping[tuple[int, str], Metric]
     thresholds: dict[str, float]
+    threshold_overrides: list[dict]
     expected_alerts: dict[tuple[int | None, str], dict]
     printer_uptime_history_by_device: Mapping[int, list[Metric]]
     internet_service_history_by_device: Mapping[int, MetricHistoryByName]
+    metric_history_by_device: Mapping[int, MetricHistoryByName]
 
 
 __all__ = ["AlertEvaluationContext", "MetricHistoryByName"]

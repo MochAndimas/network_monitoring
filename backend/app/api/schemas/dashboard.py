@@ -184,6 +184,60 @@ class MetricDailySummaryPage(BaseModel):
     meta: PageMeta
 
 
+class MetricSiteTypeTrendItem(BaseModel):
+    """Long-term trend row grouped by site and device type."""
+
+    summary_date: date
+    site: str
+    device_type: str
+    device_count: int
+    total_samples: int
+    ping_samples: int
+    down_count: int
+    average_uptime_percentage: float | None = None
+    average_ping_ms: float | None = None
+    average_packet_loss_percent: float | None = None
+    average_jitter_ms: float | None = None
+    max_jitter_ms: float | None = None
+
+
+class MetricColdArchiveItem(BaseModel):
+    """Cold archive explorer row."""
+
+    id: int
+    device_id: int
+    device_name: str
+    device_type: str | None = None
+    site: str | None = None
+    archive_date: date
+    archive_month: date
+    metric_name: str
+    status: str
+    unit: str
+    sample_count: int
+    numeric_sample_count: int
+    min_numeric_value: float | None = None
+    max_numeric_value: float | None = None
+    avg_numeric_value: float | None = None
+    first_checked_at: datetime
+    last_checked_at: datetime
+    last_metric_value: str
+
+
+class MetricColdArchivePage(BaseModel):
+    """Cold archive paged response."""
+
+    items: list["MetricColdArchiveItem"]
+    meta: PageMeta
+
+
+class MetricLongTermExplorerPayload(BaseModel):
+    """Combined long-term explorer payload."""
+
+    trends: list["MetricSiteTypeTrendItem"]
+    archives: MetricColdArchivePage
+
+
 class MetricFreshnessItem(BaseModel):
     """Pydantic schema for collector/site freshness summary rows."""
     collector: str
@@ -211,6 +265,7 @@ class AlertItem(BaseModel):
     id: int
     device_id: int | None = None
     device_name: str | None = None
+    site: str | None = None
     alert_type: str
     severity: str
     message: str
@@ -230,6 +285,7 @@ class IncidentItem(BaseModel):
     id: int
     device_id: int | None = None
     device_name: str | None = None
+    site: str | None = None
     status: str
     summary: str
     owner: str | None = None
@@ -300,6 +356,21 @@ class RunCycleResult(BaseModel):
     incidents_resolved: int
 
 
+class PerformanceBudgetItem(BaseModel):
+    """Dashboard/API endpoint performance budget."""
+
+    endpoint: str
+    max_p95_ms: float
+    max_payload_rows: int | None = None
+    notes: str | None = None
+
+
+class PerformanceBudgetResponse(BaseModel):
+    """Performance budgets for dashboard/API endpoints."""
+
+    items: list["PerformanceBudgetItem"]
+
+
 class ThresholdItem(BaseModel):
     """Pydantic schema for ThresholdItem payloads."""
     id: int
@@ -311,6 +382,59 @@ class ThresholdItem(BaseModel):
 class ThresholdUpdate(BaseModel):
     """Pydantic schema for ThresholdUpdate payloads."""
     value: float
+
+
+class ThresholdOverrideItem(BaseModel):
+    """Scoped threshold override response."""
+
+    id: int
+    threshold_key: str
+    value: float
+    device_id: int | None = None
+    device_type: str | None = None
+    site: str | None = None
+    description: str | None = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ThresholdOverrideCreate(BaseModel):
+    """Create payload for a scoped threshold override."""
+
+    threshold_key: str
+    value: float
+    device_id: int | None = None
+    device_type: str | None = None
+    site: str | None = None
+    description: str | None = None
+
+
+class MaintenanceWindowItem(BaseModel):
+    """Maintenance window response."""
+
+    id: int
+    name: str
+    device_id: int | None = None
+    site: str | None = None
+    starts_at: datetime
+    ends_at: datetime
+    reason: str | None = None
+    is_active: bool
+    created_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class MaintenanceWindowCreate(BaseModel):
+    """Create payload for alert suppression windows."""
+
+    name: str
+    device_id: int | None = None
+    site: str | None = None
+    starts_at: datetime
+    ends_at: datetime
+    reason: str | None = None
 
 
 class DeviceTypeOption(BaseModel):
