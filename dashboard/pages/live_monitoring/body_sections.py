@@ -5,6 +5,11 @@ from typing import Any, cast
 
 import streamlit as st
 
+try:
+    from components.ui import render_section_header_with_download
+except ModuleNotFoundError:  # pragma: no cover - supports imports outside Streamlit's app root
+    from dashboard.components.ui import render_section_header_with_download
+
 from dashboard.pages.live_monitoring.helpers import (
     PRINTER_METRIC_NAMES,
     _default_mikrotik_trend_metrics,
@@ -77,10 +82,6 @@ def render_history_overview_sections(
         st.caption(f"Pengecekan terakhir pada {format_wib_timestamp(summary_latest_timestamp)} WIB.")
 
     with snapshot_container:
-        st.markdown("### Snapshot Terbaru")
-        st.caption(
-            f"Menampilkan {len(latest_per_series)} dari total {snapshot_meta.get('total', len(latest_per_series))} metrik terakhir."
-        )
         snapshot_view = latest_per_series[
             ["device_name", "metric_label", "display_value", "uptime", "status", "checked_at_wib"]
         ].rename(
@@ -94,6 +95,15 @@ def render_history_overview_sections(
             }
         )
         snapshot_view["Status"] = snapshot_view["Status"].map(_status_label_for_display)
+        render_section_header_with_download(
+            "Snapshot Terbaru",
+            snapshot_view,
+            file_name="live_monitoring_snapshot.csv",
+            key="download_live_monitoring_snapshot",
+        )
+        st.caption(
+            f"Menampilkan {len(latest_per_series)} dari total {snapshot_meta.get('total', len(latest_per_series))} metrik terakhir."
+        )
         st.dataframe(
             snapshot_view,
             width="stretch",
@@ -202,7 +212,6 @@ def render_history_overview_sections(
 
         anomaly_frame = _recent_anomaly_frame(insight_base_frame)
         if not anomaly_frame.empty:
-            st.markdown("#### Anomali Terbaru")
             anomaly_view = anomaly_frame[
                 ["checked_at_wib", "device_name", "metric_label", "display_value", "status"]
             ].rename(
@@ -215,6 +224,13 @@ def render_history_overview_sections(
                 }
             )
             anomaly_view["Status"] = anomaly_view["Status"].map(_status_label_for_display)
+            render_section_header_with_download(
+                "Anomali Terbaru",
+                anomaly_view,
+                file_name="live_monitoring_anomalies.csv",
+                key="download_live_monitoring_anomalies",
+                level=4,
+            )
             st.dataframe(
                 anomaly_view,
                 width="stretch",
@@ -348,8 +364,14 @@ def render_device_detail_sections(
     if not rendered_metric_frames:
         if selected_metric != "All Metrics" and not selected_metric_frame.empty:
             st.info("Metrik ini tidak punya nilai numerik. Menampilkan timeline status dan nilai terbaru.")
-            st.markdown("#### Timeline Nilai Non-Numerik")
             non_numeric_timeline = _non_numeric_metric_timeline(selected_metric_frame)
+            render_section_header_with_download(
+                "Timeline Nilai Non-Numerik",
+                non_numeric_timeline,
+                file_name="live_monitoring_timeline.csv",
+                key="download_live_monitoring_timeline",
+                level=4,
+            )
             st.dataframe(
                 non_numeric_timeline,
                 width="stretch",
@@ -417,7 +439,6 @@ def render_device_detail_sections(
                 target_column=chart_columns[col_index],
             )
 
-    st.markdown("### Riwayat Detail")
     if selected_device_id is not None and selected_device_type == "printer":
         raw_history_frame = device_history_frame_desc if not device_history_frame.empty else dataframe_desc
     elif selected_is_mikrotik and selected_metric == "All Metrics":
@@ -428,6 +449,12 @@ def render_device_detail_sections(
     if "Status" in raw_view.columns:
         raw_view["Status"] = raw_view["Status"].map(_status_label_for_display)
     paged_raw_view = _paginate_frame(raw_view, key_prefix="history_raw", page_size=10)
+    render_section_header_with_download(
+        "Riwayat Detail",
+        raw_view,
+        file_name="live_monitoring_history.csv",
+        key="download_live_monitoring_history",
+    )
     st.dataframe(
         paged_raw_view,
         width="stretch",

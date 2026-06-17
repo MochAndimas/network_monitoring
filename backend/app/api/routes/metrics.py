@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.schemas import (
     MetricDailySummaryPage,
+    MetricFreshnessSummary,
     MetricHistoryContextPayload,
     MetricHistoryCursorPage,
     MetricHistoryItem,
@@ -209,3 +210,17 @@ async def get_latest_snapshot_uptime_map(
 ) -> dict[str, str]:
     """Return latest-snapshot uptime map."""
     return await metrics_read_service.get_latest_snapshot_uptime_map(db, limit=limit, offset=offset)
+
+
+@router.get("/freshness/summary", response_model=MetricFreshnessSummary)
+async def get_metric_freshness_summary(
+    stale_after_minutes: int = Query(default=5, ge=1, le=1440),
+    active_only: bool = Query(default=True),
+    db: AsyncSession = Depends(get_db),
+) -> MetricFreshnessSummary:
+    """Return collector/site freshness summary from latest metric snapshots."""
+    return await metrics_read_service.get_metric_freshness_summary(
+        db,
+        stale_after_minutes=stale_after_minutes,
+        active_only=active_only,
+    )

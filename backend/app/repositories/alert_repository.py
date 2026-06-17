@@ -1,5 +1,7 @@
 """Database query helpers for alert repository data."""
 
+from datetime import datetime
+
 from sqlalchemy import Select, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -157,3 +159,23 @@ class AlertRepository:
             await self.db.commit()
             await self.db.refresh(alert)
         return alert
+
+    async def has_recent_telegram_notified_alert(
+        self,
+        *,
+        device_id: int | None,
+        alert_type: str,
+        since: datetime,
+    ) -> bool:
+        """Return whether a matching alert row was recently notified to Telegram."""
+        query = (
+            select(func.count())
+            .select_from(Alert)
+            .where(
+                Alert.device_id == device_id,
+                Alert.alert_type == alert_type,
+                Alert.telegram_notified_at.is_not(None),
+                Alert.telegram_notified_at >= since,
+            )
+        )
+        return int(await self.db.scalar(query) or 0) > 0

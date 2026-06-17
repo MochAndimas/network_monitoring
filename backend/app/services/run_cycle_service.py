@@ -25,14 +25,19 @@ MonitorRunner = Callable[[AsyncSession], Awaitable[list[dict]]]
 async def run_monitoring_cycle(db: AsyncSession) -> dict:
     """Run collectors, persist metrics, and evaluate alerts in one transaction."""
     started_at = perf_counter()
-    metrics = await collect_monitoring_metrics()
+    runner_results = await collect_monitoring_metrics_by_runner()
 
     async with db.begin():
-        persisted = await persist_metrics(db, metrics, commit=False)
+        metrics_collected = 0
+        for runner_metrics in runner_results:
+            if not runner_metrics:
+                continue
+            persisted = await persist_metrics(db, runner_metrics, commit=False)
+            metrics_collected += len(persisted)
         alert_events = await evaluate_alerts(db, commit=False)
 
     result = {
-        "metrics_collected": len(persisted),
+        "metrics_collected": metrics_collected,
         "alerts_created": sum(1 for event in alert_events if event["action"] == "created"),
         "alerts_resolved": sum(1 for event in alert_events if event["action"] == "resolved"),
         "incidents_created": sum(1 for event in alert_events if event.get("incident_action") == "created"),
@@ -52,8 +57,13 @@ async def run_monitoring_cycle(db: AsyncSession) -> dict:
 
 async def collect_monitoring_metrics() -> list[dict]:
     """Collect metrics from all configured monitor runners concurrently."""
-    runner_results = await asyncio.gather(*[_collect_runner_metrics(runner) for runner in _monitor_runners()])
+    runner_results = await collect_monitoring_metrics_by_runner()
     return [metric for metrics in runner_results for metric in metrics]
+
+
+async def collect_monitoring_metrics_by_runner() -> list[list[dict]]:
+    """Collect metrics grouped by monitor runner to avoid large flatten buffers."""
+    return await asyncio.gather(*[_collect_runner_metrics(runner) for runner in _monitor_runners()])
 
 
 async def _collect_runner_metrics(runner: MonitorRunner) -> list[dict]:

@@ -10,7 +10,11 @@ def _render_printer_history_section(
 ) -> None:
     """Render printer-specific status and consumable history views."""
     if printer_history_frame.empty:
-        st.info("Belum ada metrik printer SNMP. Periksa koneksi SNMP printer dan jalankan monitoring cycle.")
+        st.info(
+            "Belum ada metrik printer SNMP. Pastikan device bertipe `printer`, "
+            "`PRINTER_SNMP_COMMUNITIES` berisi IP printer, SNMP v2c aktif, UDP 161 terbuka, "
+            "lalu jalankan monitoring cycle."
+        )
         return
 
     latest_map = _latest_metric_snapshot_map(printer_history_frame)

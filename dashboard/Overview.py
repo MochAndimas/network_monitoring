@@ -9,7 +9,15 @@ from components.api import get_json, has_pending_action, post_json
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
-from components.ui import normalize_status_label, render_kpi_cards, render_meta_row, render_page_header, status_priority
+from components.ui import (
+    freshness_label,
+    normalize_status_label,
+    render_kpi_cards,
+    render_meta_row,
+    render_page_header,
+    render_section_header_with_download,
+    status_priority,
+)
 
 
 def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
@@ -20,8 +28,10 @@ def _prepare_devices_frame(devices: list[dict]) -> pd.DataFrame:
     if "latest_checked_at" in dataframe.columns:
         dataframe["latest_checked_at"] = to_wib_timestamp(dataframe["latest_checked_at"])
         dataframe["latest_checked_at_wib"] = dataframe["latest_checked_at"].apply(format_wib_timestamp)
+        dataframe["freshness"] = dataframe["latest_checked_at"].map(freshness_label)
     else:
         dataframe["latest_checked_at_wib"] = "-"
+        dataframe["freshness"] = "No data"
     dataframe["site"] = dataframe["site"].fillna("-")
     dataframe["latest_status"] = dataframe["latest_status"].fillna("unknown")
     dataframe["latest_status_label"] = dataframe["latest_status"].map(normalize_status_label)
@@ -57,6 +67,7 @@ def _prepare_snapshot_frame(snapshot_payload: dict) -> pd.DataFrame:
         return dataframe
     dataframe["checked_at"] = to_wib_timestamp(dataframe["checked_at"])
     dataframe["checked_at_wib"] = dataframe["checked_at"].apply(format_wib_timestamp)
+    dataframe["freshness"] = dataframe["checked_at"].map(freshness_label)
     unit_series = dataframe["unit"].fillna("").astype(str)
     dataframe["value"] = dataframe["metric_value"].astype(str) + unit_series.map(lambda unit: f" {unit}" if unit else "")
     dataframe["status"] = dataframe["status"].map(normalize_status_label)
@@ -152,16 +163,17 @@ def _render_overview_body() -> None:
     ops_left, ops_right = st.columns([2, 1])
 
     with ops_left:
-        st.markdown("### Device Perlu Perhatian")
         if devices_frame.empty:
+            st.markdown("### Device Perlu Perhatian")
             st.info("Belum ada data device. Tambahkan device di halaman Devices untuk mulai monitoring.")
         else:
             filtered_devices = devices_frame[devices_frame["latest_status"].isin(["down", "warning", "error"])].copy()
             if filtered_devices.empty:
+                st.markdown("### Device Perlu Perhatian")
                 st.success("Tidak ada device bermasalah pada snapshot terbaru.")
             else:
                 problem_view = filtered_devices[
-                    ["name", "ip_address", "device_type", "site", "latest_status_label", "latest_checked_at_wib"]
+                    ["name", "ip_address", "device_type", "site", "latest_status_label", "freshness", "latest_checked_at_wib"]
                 ].rename(
                     columns={
                         "name": "Device",
@@ -169,8 +181,15 @@ def _render_overview_body() -> None:
                         "device_type": "Type",
                         "site": "Site",
                         "latest_status_label": "Status",
+                        "freshness": "Freshness",
                         "latest_checked_at_wib": "Pemeriksaan Terakhir (WIB)",
                     }
+                )
+                render_section_header_with_download(
+                    "Device Perlu Perhatian",
+                    problem_view,
+                    file_name="overview_problem_devices.csv",
+                    key="download_overview_problem_devices",
                 )
                 st.dataframe(
                     problem_view,
@@ -182,6 +201,7 @@ def _render_overview_body() -> None:
                         "Type": st.column_config.TextColumn("Type", width="small"),
                         "Site": st.column_config.TextColumn("Site", width="small"),
                         "Status": st.column_config.TextColumn("Status", width="small"),
+                        "Freshness": st.column_config.TextColumn("Freshness", width="medium"),
                         "Pemeriksaan Terakhir (WIB)": st.column_config.TextColumn("Pemeriksaan Terakhir (WIB)", width="medium"),
                     },
                 )
@@ -268,12 +288,12 @@ def _render_overview_body() -> None:
                 },
             )
 
-    st.markdown("### Snapshot Metric Terbaru")
     if history_frame.empty:
+        st.markdown("### Snapshot Metric Terbaru")
         st.info("Belum ada snapshot metrik. Jalankan monitoring cycle untuk menghasilkan data awal.")
     else:
         metric_view = history_frame[
-            ["checked_at_wib", "device_name", "metric_name", "value", "status"]
+            ["checked_at_wib", "device_name", "metric_name", "value", "status", "freshness"]
         ].rename(
             columns={
                 "checked_at_wib": "Checked At (WIB)",
@@ -281,7 +301,14 @@ def _render_overview_body() -> None:
                 "metric_name": "Metrik",
                 "value": "Nilai",
                 "status": "Status",
+                "freshness": "Freshness",
             }
+        )
+        render_section_header_with_download(
+            "Snapshot Metric Terbaru",
+            metric_view,
+            file_name="overview_latest_metrics.csv",
+            key="download_overview_latest_metrics",
         )
         st.dataframe(
             metric_view.head(12),
@@ -293,6 +320,7 @@ def _render_overview_body() -> None:
                 "Metrik": st.column_config.TextColumn("Metrik", width="medium"),
                 "Nilai": st.column_config.TextColumn("Nilai", width="small"),
                 "Status": st.column_config.TextColumn("Status", width="small"),
+                "Freshness": st.column_config.TextColumn("Freshness", width="medium"),
             },
         )
 

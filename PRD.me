@@ -1,0 +1,396 @@
+# Product Requirements Document - Network Monitoring
+
+## 1. Ringkasan Produk
+
+Network Monitoring adalah aplikasi internal untuk membantu tim IT/ops memantau kesehatan jaringan kantor, koneksi internet, router Mikrotik, server, NAS, printer, dan device infrastruktur lain secara periodik. Produk memisahkan backend API, scheduler worker, database, dan dashboard agar proses monitoring tetap berjalan walaupun dashboard atau API sedang mengalami beban tinggi.
+
+Produk saat ini sudah mencakup:
+- Inventory device dan status terbaru.
+- Collector metric untuk internet target, device umum, server resource, Mikrotik RouterOS, printer SNMP, dan NAS SNMP.
+- Penyimpanan raw metric, latest snapshot, daily rollup, dan cold archive.
+- Alert engine berbasis threshold dan status metric.
+- Incident otomatis per device saat alert aktif muncul.
+- Notifikasi Telegram opsional dengan grace period, cooldown, dan dedupe.
+- Dashboard Streamlit untuk overview, live monitoring, daily summary, devices, alerts, incidents, dan thresholds.
+- Auth user berbasis role, session revocation, audit log admin, API key scoped, security headers, dan production config validation.
+- Observability endpoint, scheduler job health, benchmark/smoke scripts, CI quality gate, dan runbook operasional.
+
+## 2. Tujuan
+
+1. Memberikan visibilitas cepat atas kondisi jaringan internal.
+2. Mengurangi waktu deteksi gangguan internet, device down, overload resource, masalah printer/NAS, dan gangguan Mikrotik.
+3. Menyediakan sumber data historis untuk troubleshooting dan evaluasi kualitas jaringan.
+4. Menjaga operasional monitoring tetap aman untuk deployment internal production-like.
+5. Menjadi fondasi observability yang bisa berkembang ke frontend dedicated, escalation workflow, dan integrasi monitoring yang lebih luas.
+
+## 3. Target Pengguna
+
+- IT operator: memantau dashboard harian, melihat alert/incident, dan menjalankan manual cycle bila dibutuhkan.
+- IT admin: mengelola device, threshold, user, session, dan konfigurasi operasional.
+- Engineering/maintainer: mengembangkan collector, API, retention, dashboard, CI, dan deployment.
+- Management/ops lead: membaca summary uptime, incident trend, dan laporan kesehatan jaringan.
+
+## 4. Masalah Yang Diselesaikan
+
+Tim ops membutuhkan satu tempat untuk mengetahui:
+- Apakah internet utama, DNS, HTTP check, dan public IP normal.
+- Device mana yang down, warning, atau belum punya data.
+- Apakah server, NAS, printer, dan Mikrotik menunjukkan tanda masalah.
+- Alert aktif apa yang membutuhkan tindakan.
+- Incident mana yang masih berjalan atau sudah selesai.
+- Bagaimana tren uptime, ping, packet loss, dan jitter secara harian.
+- Apakah scheduler dan backend monitoring sendiri sehat.
+
+## 5. Scope Produk Saat Ini
+
+### 5.1 Backend API
+
+Backend menggunakan FastAPI dan menjadi kontrak utama dashboard, script ops, serta integrasi internal.
+
+Endpoint utama:
+- Health: `/health`, `/health/live`, `/health/ready`, `/health/dependencies`.
+- Auth: login, restore, current user, session list, logout, change password, admin user/session/audit management.
+- Dashboard: summary, overview panels, problem devices, overview data.
+- Devices: type metadata, status summary, options, paged list, create, update, delete.
+- Metrics: names, history, history context/live, daily summary, latest snapshot, status summary, uptime map.
+- Alerts: active alerts dan paged active alerts.
+- Incidents: list dan paged incidents.
+- Thresholds: list dan update threshold.
+- System: manual monitoring cycle.
+- Observability: summary dan Prometheus-style metrics.
+
+### 5.2 Dashboard Streamlit
+
+Dashboard adalah frontend internal ops dengan auth user-facing. API key tidak dipakai sebagai fallback dashboard.
+
+Halaman:
+- Overview: KPI global, problem devices, alert severity distribution, latest alerts, active incidents, latest metric snapshot, dan tombol manual monitoring cycle untuk admin.
+- Live Monitoring: filter device/metric/time range, snapshot, trend, raw history, dynamic Mikrotik view, printer view, NAS view, dan auto-refresh.
+- Daily Summary: rollup harian untuk uptime, ping, packet loss, jitter, dan tabel detail.
+- Devices: inventory, filter status/type/search, create/update/delete device untuk admin.
+- Alerts: daftar alert aktif dengan filter.
+- Incidents: daftar incident aktif/resolved dengan detail.
+- Thresholds: daftar dan update threshold untuk admin.
+
+### 5.3 Scheduler Dan Monitoring Pipeline
+
+Scheduler berjalan terpisah dari backend API dengan APScheduler.
+
+Job yang tersedia:
+- `internet_checks`
+- `device_checks`
+- `server_checks`
+- `mikrotik_checks`
+- `alert_evaluation`
+- `retention_cleanup`
+
+Pipeline memakai MySQL named lock agar write metric, alert evaluation, cleanup, dan manual run-cycle tidak saling bertabrakan. Collector dapat berjalan concurrent, sedangkan persist metric dan alert mutation tetap dikontrol lock scope.
+
+### 5.4 Collector
+
+Device type valid:
+- `internet_target`
+- `mikrotik`
+- `server`
+- `nas`
+- `nvr`
+- `switch`
+- `access_point`
+- `voip`
+- `printer`
+
+Collector dan metric utama:
+- Internet target: ping, packet loss, jitter, DNS resolution time, HTTP response time, public IP.
+- Device umum: ping, packet loss, jitter sesuai type.
+- Server: ping, CPU, memory, disk, boot time.
+- Mikrotik: ping, packet loss, jitter, API status, CPU, memory, disk, interfaces running, DHCP leases, connected clients, interface traffic, firewall traffic, queue traffic.
+- Printer SNMP: uptime, status, error state, ink, paper, total pages.
+- NAS SNMP: uptime, CPU, memory, disk percent, system/power/fan status, volume/RAID/disk status, volume capacity, disk temperature.
+
+### 5.5 Alert Dan Incident
+
+Alert engine membaca latest metric, threshold, active alert, active incident, dan device aktif.
+
+Rule yang didukung:
+- Device/internet down.
+- Ping latency warning/critical.
+- Packet loss warning/critical.
+- Jitter warning/critical.
+- DNS failed/slow.
+- HTTP failed/slow.
+- Public IP changed.
+- CPU/RAM/disk tinggi.
+- Mikrotik API failed.
+- Mikrotik connected clients tinggi.
+- Mikrotik interface traffic tinggi.
+- Mikrotik firewall spike.
+- Printer reboot/status/error/paper/ink issue.
+- NAS system/power/fan/volume/RAID/disk status problem.
+- NAS system/disk temperature high.
+
+Incident dibuat otomatis saat alert pertama untuk device muncul, dan resolved otomatis saat seluruh alert aktif untuk device tersebut clear.
+
+### 5.6 Data Lifecycle
+
+Database utama MySQL dengan SQLAlchemy async dan Alembic.
+
+Model/domain utama:
+- devices
+- metrics
+- latest_metrics
+- metric_daily_rollups
+- metric_cold_archives
+- thresholds
+- alerts
+- incidents
+- users
+- auth_sessions
+- auth_login_attempts
+- admin_audit_logs
+- scheduler_job_statuses
+- retention_bucket_progress
+
+Retention:
+- Raw metric dipertahankan sesuai `RAW_METRIC_RETENTION_DAYS`.
+- Data lama diringkas ke `metric_daily_rollups`.
+- Data expired juga diagregasi ke `metric_cold_archives`.
+- Alert/incident resolved dibersihkan sesuai retention.
+- Auth session dan login attempt lama ikut dibersihkan.
+
+### 5.7 Auth, Authorization, Dan Security
+
+Fitur saat ini:
+- User role `admin` dan `viewer`.
+- Password hash PBKDF2 SHA-256 dengan secret/pepper.
+- JWT access token dan refresh/session state di database.
+- Session `jti` untuk revocation.
+- Session cookie untuk dashboard auth bridge.
+- Login attempt tracking dan rate limit.
+- Password policy minimal length, uppercase, lowercase, digit, dan symbol.
+- API key internal legacy dan API key scoped via `INTERNAL_API_KEYS`.
+- Scope API: `read`, `write`, `ops`.
+- Admin audit log untuk device/user/session mutation.
+- Production fail-fast untuk auth/security config longgar.
+- TrustedHost, CORS, security headers, dan docs API dimatikan di production.
+
+### 5.8 Observability Dan Operasional
+
+Fitur operasional:
+- Health checks live/ready/dependencies.
+- Observability summary.
+- Prometheus text metrics.
+- Request logging dengan request ID.
+- Slow request threshold.
+- Scheduler job status dan consecutive failures.
+- Docker Compose untuk MySQL, backend, scheduler, dashboard, dan migration job.
+- Scripts untuk bootstrap demo, seed data, manual cycle, SNMP test, backfill, benchmark, concurrency smoke, observability smoke, dan non-functional report.
+- Runbook backup/restore, DR drill, incident response, SLO actionability, dan checklist harian.
+- CI menjalankan lint, type check, tests, migration smoke, MySQL integration, benchmark, smoke tests, Docker build, dependency audit, SAST, dan secret scan.
+
+## 6. Non-Goals Saat Ini
+
+- Public multi-tenant monitoring platform.
+- Realtime frontend dengan WebSocket/SSE penuh.
+- Distributed collector agent per site.
+- Auto-discovery network scan.
+- Full NMS replacement dengan topology map, config backup, dan NetFlow analysis.
+- Long-term BI/reporting suite di luar daily rollup dasar.
+- Notifikasi selain Telegram untuk fase saat ini.
+- Support NAS selain Synology untuk fase saat ini.
+
+## 7. Functional Requirements Existing
+
+### 7.1 Device Inventory
+
+- User dapat melihat daftar device dengan filter search, active status, type, dan latest status.
+- Admin dapat menambah device baru.
+- Admin dapat mengubah data device.
+- Admin dapat menghapus device dengan konfirmasi eksplisit.
+- Device inactive tetap ada di inventory tetapi tidak ikut collector active-only.
+- Device type harus divalidasi sesuai daftar type yang didukung.
+
+### 7.2 Monitoring Execution
+
+- Scheduler harus menjalankan collector sesuai interval konfigurasi.
+- Admin dapat menjalankan manual monitoring cycle dari dashboard atau API.
+- Manual cycle harus mengumpulkan metric dari semua runner utama, persist metric, evaluate alert, dan mengembalikan jumlah metric/alert/incident yang berubah.
+- Monitoring pipeline harus mencegah overlap lintas process/container.
+
+### 7.3 Metric Storage And Query
+
+- Setiap metric tersimpan sebagai raw metric.
+- Setiap persist metric harus meng-update latest snapshot per device/metric.
+- Dashboard harus bisa membaca history paged, context payload, latest snapshot, status summary, uptime map, dan daily summary.
+- Query besar harus memakai pagination atau cursor.
+
+### 7.4 Alert And Incident
+
+- Alert dibuat saat latest metric memenuhi rule.
+- Alert resolved saat kondisi tidak lagi memenuhi rule.
+- Incident dibuat otomatis per device saat alert pertama muncul.
+- Incident resolved saat tidak ada alert aktif untuk device tersebut.
+- Threshold default tersedia dan dapat di-update admin.
+- Telegram notification harus opsional dan menghormati grace period, cooldown, dedupe, severity policy, dan suppression policy.
+
+### 7.5 Dashboard Auth
+
+- User harus login sebelum memakai dashboard.
+- Session harus bisa dipulihkan via refresh/session cookie.
+- Viewer hanya dapat melihat data.
+- Admin dapat menjalankan action write/ops seperti manual cycle, device management, dan threshold update.
+
+### 7.6 Production Hardening
+
+- Backend harus fail-fast jika production config tidak aman.
+- API docs harus disabled di production.
+- Health endpoint tetap tersedia tanpa auth untuk orchestration.
+- Endpoint operasional selain health harus membutuhkan bearer token atau API key valid.
+
+## 8. Non-Functional Requirements Existing
+
+- API dan scheduler harus aman dijalankan sebagai service terpisah.
+- MySQL migration harus eksplisit via Alembic.
+- Dashboard harus tetap responsif dengan cache dan server-side pagination.
+- Raw metric growth harus dikendalikan retention, rollup, dan archive.
+- CI harus menjaga lint, type safety bertahap, tests, migration, performance smoke, dan security scan.
+- Deployment lokal production-like harus tersedia lewat Docker Compose.
+
+## 9. Gap Dan Risiko Saat Ini
+
+1. README belum sepenuhnya sinkron dengan kode terbaru untuk NAS dan beberapa endpoint seperti `/metrics/history/live`.
+2. Dashboard masih Streamlit, cocok untuk internal kecil tetapi akan sulit jika user concurrent dan UX semakin kompleks.
+3. Belum ada auto-discovery device, bulk import/export inventory, atau template device onboarding.
+4. Tidak ada explicit acknowledgment/escalation workflow untuk incident.
+5. Alert rule masih berbasis latest snapshot dan threshold sederhana; belum ada rule windowed/anomaly detection.
+6. Telegram adalah satu-satunya notifier eksternal dan memang menjadi channel notifikasi resmi untuk fase saat ini.
+7. Tidak ada role granular selain admin/viewer.
+8. Tidak ada topology/dependency model; untuk fase saat ini root-cause antara internet, gateway, switch, AP, dan endpoint tetap dilakukan manual.
+9. Retention sudah kuat, tetapi cold archive belum terlihat sebagai fitur eksplorasi dashboard penuh.
+10. Secrets sudah didukung via file-backed secret, tetapi belum ada panduan integrasi secret manager spesifik.
+
+## 10. Improvement Roadmap
+
+### Phase 1 - Dokumentasi, UX Ops, Dan Konsistensi Produk
+
+Prioritas: tinggi.
+
+Status implementasi:
+- [x] Sinkronisasi README dan `.env.example` untuk NAS Synology, `NAS_SNMP_COMMUNITIES`, `/metrics/history/live`, Daily Summary, System Health, multi-site, dan target archive 1 tahun.
+- [x] Halaman `System Health` di dashboard untuk database status, scheduler jobs, operational alerts, auth counters, runtime info, freshness, dan CSV export operasional.
+- [x] Empty/error state actionable untuk Printer SNMP, Synology NAS SNMP, dan Mikrotik API/dynamic metrics.
+- [x] Export CSV untuk Overview problem devices/latest metrics, Devices, Alerts, Incidents, Daily Summary, Live Monitoring snapshot/anomaly/timeline/history, dan System Health.
+- [x] Penempatan tombol download CSV distandarkan di atas tabel, satu row dengan title section, dan berada di sisi kanan.
+- [x] Tabel detail Incidents memakai pagination lokal 10 row per halaman agar tidak membuat halaman terlalu panjang.
+- [x] Import CSV device inventory dengan dry-run validation di dashboard Devices.
+- [x] Last Data Freshness di Overview, Devices, dan System Health scheduler jobs.
+- [x] Last Data Freshness per collector/site sebagai agregasi backend lewat `/metrics/freshness/summary` dan tabel System Health.
+
+Requirements:
+- Sinkronkan README dengan fitur NAS, Daily Summary, `/metrics/history/live`, dan env `NAS_SNMP_COMMUNITIES`.
+- Tambahkan halaman atau panel "System Health" di dashboard untuk scheduler job status, DB readiness, API latency, dan observability summary.
+- Tambahkan empty/error state yang lebih actionable untuk collector credential missing, SNMP unavailable, dan Mikrotik API failed.
+- Tambahkan export CSV untuk Devices, Alerts, Incidents, Daily Summary, dan Metric History.
+- Tambahkan import CSV device inventory dengan dry-run validation.
+- Tambahkan dashboard "Last Data Freshness" per device dan per collector.
+
+Acceptance criteria:
+- Dokumentasi device type dan collector sama dengan kode.
+- Admin bisa melihat status scheduler tanpa memanggil API manual.
+- Operator bisa export data troubleshooting dari dashboard.
+- Import device menolak IP/type invalid sebelum write.
+
+### Phase 2 - Incident Workflow Dan Notifikasi
+
+Prioritas: tinggi.
+
+Requirements:
+- Tambahkan incident acknowledgment.
+- Tambahkan field owner/assignee, severity override, note, dan timeline event.
+- Tambahkan manual resolve/reopen incident untuk admin.
+- Tambahkan escalation policy sederhana berdasarkan severity dan durasi.
+- Pertahankan Telegram sebagai satu-satunya notification channel.
+- Tambahkan konfigurasi Telegram per severity/site/device type bila dibutuhkan.
+
+Acceptance criteria:
+- Incident aktif dapat di-ack oleh admin.
+- Timeline incident menampilkan created, acknowledged, alert changes, notification sent, resolved.
+- Critical alert yang tidak di-ack dalam window tertentu masuk daftar escalation.
+- Telegram behavior saat ini tetap kompatibel.
+
+### Phase 3 - Monitoring Intelligence
+
+Prioritas: sedang-tinggi.
+
+Requirements:
+- Tambahkan rolling-window alert untuk mengurangi noise transient, misalnya "3 dari 5 sample gagal".
+- Tambahkan maintenance window per device/site agar alert bisa disuppressed terjadwal.
+- Tambahkan threshold override per device, device type, dan site.
+- Tambahkan baseline/anomaly sederhana untuk latency dan traffic Mikrotik.
+- Perkuat filter site dan grouping incident untuk deployment multi-site.
+
+Acceptance criteria:
+- Admin bisa membuat maintenance window dan alert tidak dikirim selama window aktif.
+- Alert rule dapat membaca window history, bukan hanya latest metric.
+- Threshold global tetap menjadi fallback bila override tidak ada.
+- Incident dan alert dapat difilter atau dikelompokkan per site.
+
+### Phase 4 - Scalability Dan Data Explorer
+
+Prioritas: sedang.
+
+Requirements:
+- Tambahkan dashboard explorer untuk cold archive dan long-term trend.
+- Tambahkan materialized summary tambahan per site/device type.
+- Tambahkan background job untuk compact/optimize latest snapshot dan stale metric cleanup.
+- Evaluasi indexing tambahan berdasarkan query production aktual.
+- Tambahkan load/performance budget per endpoint dashboard.
+
+Acceptance criteria:
+- Operator dapat melihat trend lebih panjang dari raw retention tanpa query raw metrics besar.
+- Endpoint dashboard utama tetap memenuhi p95 target yang disepakati.
+- Query slow/outlier tercatat di observability dan punya runbook triage.
+
+### Phase 5 - Frontend Evolution
+
+Prioritas: rendah-sedang, karena dashboard saat ini ditujukan untuk tim kecil.
+
+Requirements:
+- Evaluasi migrasi dashboard dari Streamlit ke frontend dedicated bila user aktif meningkat atau workflow makin stateful.
+- Pertahankan FastAPI sebagai backend kontrak.
+- Desain ulang navigation, filtering, realtime refresh, dan role-based screens.
+- Tambahkan incident board dan richer drill-down bila workflow operasional sudah membutuhkan.
+
+Acceptance criteria:
+- Ada decision record kapan Streamlit tetap cukup dan kapan migrasi dimulai.
+- API contract sudah siap untuk frontend baru tanpa memindahkan business logic ke UI.
+
+## 11. Success Metrics
+
+Produk dianggap berhasil bila:
+- Gangguan kritis terdeteksi dalam target freshness <= 5 menit untuk device utama.
+- Scheduler success rate harian >= 99%.
+- API availability bulanan >= 99.5%.
+- Operator dapat menemukan device bermasalah dari Overview dalam <= 1 menit.
+- Admin dapat onboard device baru dan melihat metric pertama tanpa edit database manual.
+- Alert noise berkurang setelah rolling-window/maintenance-window diterapkan.
+- Restore database dapat dibuktikan lewat DR drill dengan RTO <= 120 menit.
+
+## 12. Product Decisions
+
+1. Deployment target adalah multi-site.
+2. NAS support difokuskan untuk Synology saja.
+3. Notification channel untuk fase saat ini cukup Telegram.
+4. Incident acknowledgment untuk fase saat ini hanya boleh dilakukan admin.
+5. Target retention long-term archive adalah 1 tahun.
+6. Topology map belum dibutuhkan untuk fase saat ini.
+7. Dashboard untuk fase saat ini dipakai oleh tim kecil, sehingga Streamlit masih sesuai sebagai frontend internal ops.
+
+## 13. Implementation Notes
+
+- Perubahan schema harus lewat Alembic, bukan `create_all()` production.
+- Semua endpoint write/ops harus tetap memakai authorization dependency yang sesuai.
+- Fitur baru yang menyentuh alert/incident harus menjaga compatibility active alert dan incident lifecycle saat ini.
+- Collector baru harus menghasilkan payload metric konsisten: `device_id`, `metric_name`, `metric_value`, `metric_value_numeric`, `status`, `unit`, `checked_at`.
+- Query dashboard baru harus memakai pagination/cursor bila payload bisa besar.
+- Dokumentasi env di `.env.example`, README, Docker Compose, dan config harus dijaga sinkron.
+- Test minimal untuk fitur baru harus mencakup service behavior, API contract, dan dashboard helper bila ada logic signifikan.

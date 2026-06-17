@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from ...core.config import settings
@@ -21,7 +22,8 @@ from ..rules import ALERT_RULES
 from .constants import (
     ALERT_DYNAMIC_METRIC_NAME_PATTERNS,
     ALERT_EXACT_METRIC_NAMES,
-    TELEGRAM_NOTIFICATION_DEDUPE_TTL,
+    ALERT_PRIMARY_METRIC_BY_TYPE,
+    TELEGRAM_NOTIFICATION_DEDUPE_TTL,  # noqa: F401 - re-exported by backend.app.alerting.engine
     TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE,
 )
 from .device_evaluators import _evaluate_mikrotik_alerts as _evaluate_mikrotik_alerts
@@ -36,7 +38,34 @@ from .utils import (
 )
 
 
+# Backward-compat shim for tests that still reference this symbol.
+# Telegram dedupe is now stateless and batch-scoped.
 _recent_telegram_notification_keys: dict[tuple, datetime] = {}
+_DEFAULT_REALTIME_SEVERITIES = {"critical", "high", "warning"}
+
+
+@dataclass
+class AlertEvaluationState:
+    """Mutable state that moves through alert-evaluation phases."""
+
+    alerts: dict[tuple[int | None, str], Alert]
+    alerts_count_by_device: dict[int | None, int]
+    incidents_by_device: dict[int | None, list[Incident]]
+    notifications: list[dict]
+    telegram_events: list[dict]
+    has_pending_writes: bool
+
+
+@dataclass(frozen=True)
+class TelegramNotificationPolicy:
+    """Normalized Telegram alerting policy used by notification selection."""
+
+    realtime_severities: set[str]
+    summary_severities: set[str]
+    alert_grace_period_seconds: int
+    summary_interval_seconds: int
+    notification_cooldown_seconds: int
+    resolved_correlation_window_seconds: int
 
 
 async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
@@ -45,10 +74,69 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
     incident_repository = IncidentRepository(db)
     metric_repository = MetricRepository(db)
     device_repository = DeviceRepository(db)
+
+    latest_metrics, active_alerts_list, devices, device_by_id, device_type_by_id = await _load_alert_evaluation_inputs(
+        metric_repository=metric_repository,
+        alert_repository=alert_repository,
+        device_repository=device_repository,
+    )
+    thresholds = await get_threshold_map(db, commit=commit)
+    state = await _build_alert_evaluation_state(
+        incident_repository=incident_repository,
+        active_alerts=active_alerts_list,
+        candidate_device_ids={device.id for device in devices},
+    )
+    expected_alerts = await _expected_alert_map(
+        metric_repository=metric_repository,
+        devices=devices,
+        latest_metrics=latest_metrics,
+        thresholds=thresholds,
+    )
+    notification_policy = _telegram_notification_policy()
+
+    await _apply_created_alerts(state, expected_alerts, alert_repository, incident_repository)
+    await _apply_resolved_alerts(
+        state,
+        expected_alerts,
+        alert_repository,
+        incident_repository,
+        device_by_id=device_by_id,
+        device_type_by_id=device_type_by_id,
+        notification_policy=notification_policy,
+    )
+    await _resolve_orphans(state, incident_repository)
+    await _flush_alert_state_changes(db, state, commit=commit)
+
+    state.telegram_events.extend(
+        _pending_active_telegram_events(
+            state.alerts.values(),
+            device_by_id=device_by_id,
+            device_type_by_id=device_type_by_id,
+            latest_metrics=latest_metrics,
+            policy=notification_policy,
+        )
+    )
+    await _send_telegram_events(
+        db,
+        alert_repository,
+        _filter_recent_telegram_events(state.telegram_events),
+        commit=commit,
+    )
+    return state.notifications
+
+
+async def _load_alert_evaluation_inputs(
+    *,
+    metric_repository: MetricRepository,
+    alert_repository: AlertRepository,
+    device_repository: DeviceRepository,
+) -> tuple[dict, list[Alert], list, dict[int, object], dict[int, str]]:
+    """Load bounded metric/device/alert snapshots required for one evaluation cycle."""
     latest_metrics = await metric_repository.latest_metric_map_for_alert_evaluation(
         exact_metric_names=ALERT_EXACT_METRIC_NAMES,
         dynamic_metric_name_patterns=ALERT_DYNAMIC_METRIC_NAME_PATTERNS,
     )
+    latest_metrics = _drop_stale_dynamic_alert_metrics(latest_metrics)
     active_alerts_list = await alert_repository.list_active_alerts_by_types(set(ALERT_RULES))
     active_alert_device_ids = {alert.device_id for alert in active_alerts_list if alert.device_id is not None}
     latest_metric_device_ids = {device_id for device_id, _metric_name in latest_metrics}
@@ -56,20 +144,74 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
     devices = await device_repository.list_devices_by_ids(candidate_device_ids, active_only=True)
     device_by_id = {device.id: device for device in devices}
     device_type_by_id = {device.id: device.device_type for device in devices}
-    notifications: list[dict] = []
-    telegram_events: list[dict] = []
-    thresholds = await get_threshold_map(db, commit=commit)
-    active_alerts = {(alert.device_id, alert.alert_type): alert for alert in active_alerts_list}
-    active_alert_count_by_device: dict[int | None, int] = {}
-    for alert in active_alerts.values():
-        active_alert_count_by_device[alert.device_id] = active_alert_count_by_device.get(alert.device_id, 0) + 1
+    return latest_metrics, active_alerts_list, devices, device_by_id, device_type_by_id
+
+
+def _drop_stale_dynamic_alert_metrics(latest_metrics: dict[tuple[int, str], Metric]) -> dict[tuple[int, str], Metric]:
+    """Remove stale dynamic metric snapshots so renamed/removed objects do not keep alerts active."""
+    if not latest_metrics:
+        return latest_metrics
+
+    current_time = utcnow()
+    stale_after_seconds = _alert_metric_stale_after_seconds()
+    filtered_metrics = {}
+    for key, metric in latest_metrics.items():
+        _device_id, metric_name = key
+        if _is_dynamic_alert_metric_name(metric_name) and _metric_is_stale(
+            metric,
+            current_time=current_time,
+            stale_after_seconds=stale_after_seconds,
+        ):
+            continue
+        filtered_metrics[key] = metric
+    return filtered_metrics
+
+
+def _is_dynamic_alert_metric_name(metric_name: str) -> bool:
+    """Return whether a metric name belongs to an alert dynamic-object pattern."""
+    metric_name = str(metric_name or "")
+    for pattern in ALERT_DYNAMIC_METRIC_NAME_PATTERNS:
+        prefix, suffix = pattern.split("%", 1)
+        if metric_name.startswith(prefix) and metric_name.endswith(suffix):
+            return True
+    return False
+
+
+async def _build_alert_evaluation_state(
+    *,
+    incident_repository: IncidentRepository,
+    active_alerts: list[Alert],
+    candidate_device_ids: set[int],
+) -> AlertEvaluationState:
+    """Build mutable evaluation state from active alerts and incidents."""
+    alerts = {(alert.device_id, alert.alert_type): alert for alert in active_alerts}
+    alerts_count_by_device: dict[int | None, int] = {}
+    for alert in alerts.values():
+        alerts_count_by_device[alert.device_id] = alerts_count_by_device.get(alert.device_id, 0) + 1
+
     active_incident_device_ids: set[int | None] = set(candidate_device_ids)
-    active_incident_device_ids.update(
-        device_id for device_id in active_alert_count_by_device if device_id is not None
-    )
-    active_incidents_by_device = _group_incidents_by_device(
+    active_incident_device_ids.update(device_id for device_id in alerts_count_by_device if device_id is not None)
+    incidents_by_device = _group_incidents_by_device(
         await incident_repository.list_active_incidents_by_device_ids(active_incident_device_ids)
     )
+    return AlertEvaluationState(
+        alerts=alerts,
+        alerts_count_by_device=alerts_count_by_device,
+        incidents_by_device=incidents_by_device,
+        notifications=[],
+        telegram_events=[],
+        has_pending_writes=False,
+    )
+
+
+async def _expected_alert_map(
+    *,
+    metric_repository: MetricRepository,
+    devices: list,
+    latest_metrics: dict,
+    thresholds: dict,
+) -> dict[tuple[int | None, str], dict]:
+    """Evaluate all device rules and return expected active alerts."""
     printer_device_ids = [device.id for device in devices if device.device_type == "printer"]
     printer_uptime_history_by_device = (
         await metric_repository.list_recent_metrics_by_device(
@@ -85,10 +227,8 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
         metric_repository,
         internet_target_device_ids,
     )
-    has_pending_writes = False
 
     expected_alerts: dict[tuple[int | None, str], dict] = {}
-
     for device in devices:
         evaluate_expected_alerts_for_device(
             AlertEvaluationContext(
@@ -100,45 +240,67 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
                 internet_service_history_by_device=internet_service_history_by_device,
             )
         )
+    return expected_alerts
 
+
+async def _apply_created_alerts(
+    state: AlertEvaluationState,
+    expected_alerts: dict[tuple[int | None, str], dict],
+    alert_repository: AlertRepository,
+    incident_repository: IncidentRepository,
+) -> None:
+    """Create alert rows for newly-triggered conditions."""
     for key, payload in expected_alerts.items():
-        if key in active_alerts:
+        if key in state.alerts:
             continue
         created_alert = await alert_repository.create_alert(payload, commit=False)
-        active_alerts[key] = created_alert
-        active_alert_count_by_device[created_alert.device_id] = active_alert_count_by_device.get(created_alert.device_id, 0) + 1
+        state.alerts[key] = created_alert
+        state.alerts_count_by_device[created_alert.device_id] = state.alerts_count_by_device.get(created_alert.device_id, 0) + 1
         incident_action = await _ensure_incident_for_alert(
             incident_repository,
-            active_incidents_by_device,
+            state.incidents_by_device,
             created_alert.device_id,
             created_alert.message,
         )
-        has_pending_writes = True
-        notification = {
-            "action": "created",
-            "alert_type": created_alert.alert_type,
-            "device_id": created_alert.device_id,
-            "message": created_alert.message,
-            "incident_action": incident_action,
-        }
-        notifications.append(notification)
+        state.has_pending_writes = True
+        state.notifications.append(
+            {
+                "action": "created",
+                "alert_type": created_alert.alert_type,
+                "device_id": created_alert.device_id,
+                "message": created_alert.message,
+                "incident_action": incident_action,
+            }
+        )
 
+
+async def _apply_resolved_alerts(
+    state: AlertEvaluationState,
+    expected_alerts: dict[tuple[int | None, str], dict],
+    alert_repository: AlertRepository,
+    incident_repository: IncidentRepository,
+    *,
+    device_by_id: dict[int, object],
+    device_type_by_id: dict[int, str],
+    notification_policy: TelegramNotificationPolicy,
+) -> None:
+    """Resolve active alerts no longer expected from the latest metrics."""
     resolved_at = utcnow()
-    for key, alert in list(active_alerts.items()):
+    for key, alert in list(state.alerts.items()):
         if key in expected_alerts:
             continue
         await alert_repository.resolve_alert(alert, resolved_at, commit=False)
         incident_action = await _resolve_incident_if_cleared(
             incident_repository,
-            active_incidents_by_device,
-            active_alert_count_by_device,
+            state.incidents_by_device,
+            state.alerts_count_by_device,
             alert.device_id,
             resolved_at,
         )
-        has_pending_writes = True
-        active_alerts.pop(key, None)
+        state.has_pending_writes = True
+        state.alerts.pop(key, None)
         resolved_alert_device_type = device_type_by_id.get(alert.device_id) if alert.device_id is not None else None
-        notifications.append(
+        state.notifications.append(
             {
                 "action": "resolved",
                 "alert_type": alert.alert_type,
@@ -147,8 +309,16 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
                 "incident_action": incident_action,
             }
         )
-        if _should_send_telegram_resolved_alert(alert, resolved_at, resolved_alert_device_type):
-            telegram_events.append(
+        should_send_resolved = _should_send_telegram_resolved_alert(alert, resolved_at, resolved_alert_device_type)
+        if not should_send_resolved:
+            should_send_resolved = await _resolved_alert_recently_notified(
+                alert_repository,
+                alert=alert,
+                resolved_at=resolved_at,
+                policy=notification_policy,
+            )
+        if should_send_resolved:
+            state.telegram_events.append(
                 {
                     "action": "resolved",
                     "alert_id": alert.id,
@@ -161,37 +331,29 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
                 }
             )
 
+
+async def _resolve_orphans(state: AlertEvaluationState, incident_repository: IncidentRepository) -> None:
+    """Resolve orphan incidents that no longer have active alerts."""
     orphan_incident_actions = await _resolve_orphan_incidents(
         incident_repository,
-        active_incidents_by_device,
-        active_alert_count_by_device,
-        resolved_at,
+        state.incidents_by_device,
+        state.alerts_count_by_device,
+        utcnow(),
     )
     if orphan_incident_actions:
-        has_pending_writes = True
-        notifications.extend(orphan_incident_actions)
+        state.has_pending_writes = True
+        state.notifications.extend(orphan_incident_actions)
 
-    if has_pending_writes:
-        if commit:
-            await db.commit()
-        else:
-            await db.flush()
-        invalidate_dashboard_overview_cache()
-    telegram_events.extend(
-        _pending_active_telegram_events(
-            active_alerts.values(),
-            device_by_id=device_by_id,
-            device_type_by_id=device_type_by_id,
-        )
-    )
-    await _send_telegram_events(
-        db,
-        alert_repository,
-        _filter_recent_telegram_events(telegram_events),
-        commit=commit,
-    )
 
-    return notifications
+async def _flush_alert_state_changes(db, state: AlertEvaluationState, *, commit: bool) -> None:
+    """Persist pending alert/incident changes and invalidate dashboard cache."""
+    if not state.has_pending_writes:
+        return
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
+    invalidate_dashboard_overview_cache()
 
 
 def _should_send_telegram_alert(alert_type: str, device_type: str | None) -> bool:
@@ -206,29 +368,147 @@ def _should_send_telegram_resolved_alert(alert, resolved_at, device_type: str | 
     return alert.telegram_notified_at is not None
 
 
-def _alert_reached_telegram_grace_period(started_at: datetime | None, current_time: datetime | None) -> bool:
+async def _resolved_alert_recently_notified(
+    alert_repository: AlertRepository,
+    *,
+    alert,
+    resolved_at: datetime,
+    policy: TelegramNotificationPolicy,
+) -> bool:
+    """Return whether a sibling alert was recently notified for the same device and alert type."""
+    # Covers short-lived duplicate rows created during flapping so RESOLVED
+    # remains visible when ACTIVE for the same logical issue was already sent.
+    lookback_seconds = max(int(policy.resolved_correlation_window_seconds or 0), 0)
+    return await alert_repository.has_recent_telegram_notified_alert(
+        device_id=alert.device_id,
+        alert_type=alert.alert_type,
+        since=resolved_at - timedelta(seconds=lookback_seconds),
+    )
+
+
+def _alert_reached_telegram_grace_period(
+    started_at: datetime | None,
+    current_time: datetime | None,
+    *,
+    grace_period_seconds: int | None = None,
+) -> bool:
     """Return whether an alert has stayed active long enough for Telegram."""
     if started_at is None or current_time is None:
         return False
-    grace_period = timedelta(seconds=max(int(settings.telegram.alert_grace_period_seconds or 0), 0))
+    grace_seconds = (
+        max(int(grace_period_seconds), 0)
+        if grace_period_seconds is not None
+        else max(int(settings.telegram.alert_grace_period_seconds or 0), 0)
+    )
+    grace_period = timedelta(seconds=grace_seconds)
     return started_at <= current_time - grace_period
 
 
-def _pending_active_telegram_events(alerts, *, device_by_id: dict, device_type_by_id: dict) -> list[dict]:
-    """Return active alerts that have aged past the Telegram grace period."""
+def _parse_severity_csv(raw_value: str, *, fallback: set[str] | None = None) -> set[str]:
+    """Parse comma-separated severity names into a normalized set."""
+    values = {item.strip().lower() for item in str(raw_value or "").split(",") if item.strip()}
+    return values or set(fallback or set())
+
+
+def _telegram_notification_cooldown(*, cooldown_seconds: int | None = None) -> timedelta:
+    """Return minimum time between repeated sends for one active alert row."""
+    seconds = (
+        max(int(cooldown_seconds), 0)
+        if cooldown_seconds is not None
+        else max(int(settings.telegram.notification_cooldown_seconds or 0), 0)
+    )
+    return timedelta(seconds=seconds)
+
+
+def _telegram_notification_policy() -> TelegramNotificationPolicy:
+    """Build one normalized Telegram policy snapshot from runtime settings."""
+    return TelegramNotificationPolicy(
+        realtime_severities=_parse_severity_csv(
+            settings.telegram.realtime_severities,
+            fallback=_DEFAULT_REALTIME_SEVERITIES,
+        ),
+        summary_severities=_parse_severity_csv(settings.telegram.summary_severities),
+        alert_grace_period_seconds=max(int(settings.telegram.alert_grace_period_seconds or 0), 0),
+        summary_interval_seconds=max(int(settings.telegram.summary_interval_seconds or 0), 0),
+        notification_cooldown_seconds=max(int(settings.telegram.notification_cooldown_seconds or 0), 0),
+        resolved_correlation_window_seconds=max(int(settings.telegram.resolved_correlation_window_seconds or 0), 0),
+    )
+
+
+def _alert_reached_telegram_cooldown(
+    last_notified_at: datetime | None,
+    current_time: datetime | None,
+    *,
+    cooldown_seconds: int | None = None,
+) -> bool:
+    """Return whether cooldown has elapsed since the last Telegram send."""
+    if last_notified_at is None or current_time is None:
+        return True
+    return last_notified_at <= current_time - _telegram_notification_cooldown(cooldown_seconds=cooldown_seconds)
+
+
+def _alert_reached_summary_interval(
+    started_at: datetime | None,
+    current_time: datetime | None,
+    *,
+    summary_interval_seconds: int | None = None,
+) -> bool:
+    """Return whether an alert has aged long enough to be sent as summary."""
+    if started_at is None or current_time is None:
+        return False
+    interval_seconds = (
+        max(int(summary_interval_seconds), 0)
+        if summary_interval_seconds is not None
+        else max(int(settings.telegram.summary_interval_seconds or 0), 0)
+    )
+    if interval_seconds <= 0:
+        return False
+    return started_at <= current_time - timedelta(seconds=interval_seconds)
+
+
+def _pending_active_telegram_events(
+    alerts,
+    *,
+    device_by_id: dict,
+    device_type_by_id: dict,
+    latest_metrics: dict[tuple[int, str], Metric] | None = None,
+    policy: TelegramNotificationPolicy | None = None,
+) -> list[dict]:
+    """Return active alerts ready for Telegram based on realtime and summary rules."""
+    policy = policy or _telegram_notification_policy()
     current_time = utcnow()
     events: list[dict] = []
     for alert in alerts:
         device_type = device_type_by_id.get(alert.device_id) if alert.device_id is not None else None
-        if alert.telegram_notified_at is not None:
-            continue
         if not _should_send_telegram_alert(alert.alert_type, device_type):
             continue
-        if not _alert_reached_telegram_grace_period(alert.created_at, current_time):
+        if _active_alert_metric_is_stale(alert, latest_metrics, current_time=current_time):
             continue
+        alert_severity = str(alert.severity or "unknown").lower()
+        should_send_realtime = (
+            alert_severity in policy.realtime_severities
+            and _alert_reached_telegram_grace_period(
+                alert.created_at,
+                current_time,
+                grace_period_seconds=policy.alert_grace_period_seconds,
+            )
+            and alert.telegram_notified_at is None
+        )
+        should_send_summary = (
+            alert_severity in policy.summary_severities
+            and _alert_reached_summary_interval(
+                alert.created_at,
+                current_time,
+                summary_interval_seconds=policy.summary_interval_seconds,
+            )
+            and alert.telegram_notified_at is None
+        )
+        if not should_send_realtime and not should_send_summary:
+            continue
+        action = "summary_active" if should_send_summary and not should_send_realtime else "active"
         events.append(
             {
-                "action": "active",
+                "action": action,
                 "alert": alert,
                 "alert_id": alert.id,
                 "alert_type": alert.alert_type,
@@ -240,25 +520,58 @@ def _pending_active_telegram_events(alerts, *, device_by_id: dict, device_type_b
     return events
 
 
+def _active_alert_metric_is_stale(
+    alert,
+    latest_metrics: dict[tuple[int, str], Metric] | None,
+    *,
+    current_time: datetime,
+) -> bool:
+    """Avoid Telegram ACTIVE noise for alerts backed only by stale latest metrics."""
+    if latest_metrics is None or alert.device_id is None:
+        return False
+
+    metric_name = ALERT_PRIMARY_METRIC_BY_TYPE.get(str(alert.alert_type or ""))
+    if not metric_name:
+        return False
+
+    metric = latest_metrics.get((alert.device_id, metric_name))
+    if metric is None:
+        return True
+
+    return _metric_is_stale(
+        metric,
+        current_time=current_time,
+        stale_after_seconds=_alert_metric_stale_after_seconds(),
+    )
+
+
+def _metric_is_stale(metric, *, current_time: datetime, stale_after_seconds: int) -> bool:
+    """Return whether a metric snapshot is older than the alert freshness window."""
+    checked_at = getattr(metric, "checked_at", None)
+    if checked_at is None:
+        return True
+    return checked_at <= current_time - timedelta(seconds=stale_after_seconds)
+
+
+def _alert_metric_stale_after_seconds() -> int:
+    """Return alert freshness window based on scheduler cadence."""
+    return max(
+        int(settings.scheduler.interval_device_seconds) * max(int(settings.scheduler.job_stale_factor), 1),
+        60,
+    )
+
+
 def _filter_recent_telegram_events(events: list[dict]) -> list[dict]:
-    """Suppress duplicate Telegram events for the same alert state change."""
+    """Suppress duplicate Telegram events within a single send batch."""
     if not events:
         return []
-    current_time = utcnow()
-    expired_keys = [
-        key
-        for key, last_seen_at in _recent_telegram_notification_keys.items()
-        if last_seen_at <= current_time - TELEGRAM_NOTIFICATION_DEDUPE_TTL
-    ]
-    for key in expired_keys:
-        _recent_telegram_notification_keys.pop(key, None)
-
+    seen_keys: set[tuple] = set()
     filtered_events: list[dict] = []
     for event in events:
         notification_key = _telegram_notification_key(event)
-        if notification_key in _recent_telegram_notification_keys:
+        if notification_key in seen_keys:
             continue
-        _recent_telegram_notification_keys[notification_key] = current_time
+        seen_keys.add(notification_key)
         filtered_events.append(event)
     return filtered_events
 
@@ -291,7 +604,7 @@ def _group_telegram_events(events: list[dict]) -> dict[tuple[int | None, str], l
 
 def _order_telegram_events(events: list[dict]) -> list[dict]:
     """Keep active notifications ahead of resolved notifications in the same send batch."""
-    action_rank = {"active": 0, "created": 0, "resolved": 1}
+    action_rank = {"active": 0, "summary_active": 1, "created": 1, "resolved": 2}
     return sorted(events, key=lambda event: action_rank.get(str(event.get("action") or "active").lower(), 0))
 
 
@@ -313,7 +626,7 @@ async def _send_telegram_events(db, alert_repository: AlertRepository, events: l
         if isinstance(result, Exception):
             continue
         for event in group:
-            if str(event.get("action") or "active").lower() != "active":
+            if str(event.get("action") or "active").lower() not in {"active", "summary_active"}:
                 continue
             alert = event.get("alert")
             if alert is None:
@@ -332,7 +645,8 @@ async def _refresh_telegram_events(db, events: list[dict]) -> list[dict]:
     """Re-read active events before sending so stale ACTIVE messages do not outlive resolved alerts."""
     refreshed_events: list[dict] = []
     for event in events:
-        if str(event.get("action") or "active").lower() != "active":
+        action = str(event.get("action") or "active").lower()
+        if action not in {"active", "summary_active"}:
             refreshed_events.append(event)
             continue
 
@@ -358,8 +672,9 @@ def _build_telegram_message(events: list[dict]) -> str:
     first_event = events[0]
     action = str(first_event.get("action") or "").lower()
     is_resolved = str(action or "").lower() == "resolved"
-    title = "ALERT RESOLVED" if is_resolved else "ALERT ACTIVE"
-    status = "RESOLVED" if is_resolved else "ACTIVE"
+    is_summary = str(action or "").lower() == "summary_active"
+    title = "ALERT RESOLVED" if is_resolved else ("ALERT SUMMARY" if is_summary else "ALERT ACTIVE")
+    status = "RESOLVED" if is_resolved else ("SUMMARY" if is_summary else "ACTIVE")
     severity = _highest_severity(str(event.get("severity") or "unknown") for event in events)
     device = first_event.get("device")
     device_name = getattr(device, "name", None) or "-"

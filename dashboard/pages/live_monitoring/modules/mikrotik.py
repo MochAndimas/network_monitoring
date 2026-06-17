@@ -105,7 +105,11 @@ def _firewall_view(dataframe: pd.DataFrame) -> pd.DataFrame:
 def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> None:
     """Render Mikrotik-specific interface and firewall history views."""
     if mikrotik_history_frame.empty:
-        st.info("Belum ada metrik Mikrotik API. Pastikan device aktif dan monitoring cycle berjalan.")
+        st.info(
+            "Belum ada metrik Mikrotik API. Pastikan device bertipe `mikrotik`, "
+            "`MIKROTIK_HOST`, `MIKROTIK_USERNAME`, dan `MIKROTIK_PASSWORD` benar, "
+            "service RouterOS API aktif, firewall mengizinkan scheduler, lalu jalankan monitoring cycle."
+        )
         return
 
     latest_map = _latest_metric_snapshot_map(mikrotik_history_frame)
@@ -130,7 +134,10 @@ def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> No
 
     st.markdown("### Interface Traffic")
     if interface_frame.empty:
-        st.info("Belum ada data interface traffic. Coba perluas rentang waktu atau cek status API Mikrotik.")
+        st.info(
+            "Belum ada data interface traffic. Coba perluas rentang waktu, cek `MIKROTIK_DYNAMIC_SECTIONS`, "
+            "dan pastikan interface tidak tersaring oleh allowlist."
+        )
     else:
         chart_frame = interface_frame.copy()
         chart_frame["RX Mbps"] = pd.to_numeric(chart_frame["RX Mbps"], errors="coerce").fillna(0)
@@ -176,7 +183,10 @@ def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> No
 
     st.markdown("### Firewall / NAT Counters")
     if firewall_frame.empty:
-        st.info("Belum ada counter firewall/NAT. Pastikan metrik firewall diambil pada siklus monitoring.")
+        st.info(
+            "Belum ada counter firewall/NAT. Pastikan `MIKROTIK_DYNAMIC_SECTIONS` memuat `firewall` "
+            "dan firewall section ada di allowlist."
+        )
     else:
         st.dataframe(
             firewall_frame,

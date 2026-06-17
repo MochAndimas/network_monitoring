@@ -12,7 +12,14 @@ from components.api import get_json, paged_items, paged_meta
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
-from components.ui import normalize_status_label, render_kpi_cards, render_meta_row, render_page_header, status_priority
+from components.ui import (
+    normalize_status_label,
+    render_csv_download,
+    render_kpi_cards,
+    render_meta_row,
+    render_page_header,
+    status_priority,
+)
 
 st.set_page_config(page_title="Incidents", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
@@ -139,6 +146,54 @@ def _render_detail_table(dataframe: pd.DataFrame) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def _render_detail_table_controls(
+    dataframe: pd.DataFrame,
+    *,
+    title: str,
+    page_size: int = 10,
+) -> pd.DataFrame:
+    """Return one page of incident detail rows for a compact table display."""
+    if dataframe.empty:
+        return dataframe
+    page_size = max(int(page_size), 1)
+    total_rows = int(len(dataframe))
+    total_pages = max((total_rows - 1) // page_size + 1, 1)
+    page_key = "incidents_detail_table_page"
+    current_page = min(max(int(st.session_state.get(page_key, 1) or 1), 1), total_pages)
+    if st.session_state.get(page_key) != current_page:
+        st.session_state[page_key] = current_page
+
+    title_col, control_col, caption_col, download_col = st.columns([2, 1, 3, 1])
+    title_col.markdown(f"### {title}")
+    if total_rows > page_size:
+        current_page = int(
+            control_col.number_input(
+                "Halaman Detail",
+                min_value=1,
+                max_value=total_pages,
+                value=current_page,
+                step=1,
+                key=page_key,
+            )
+        )
+        start_row = (current_page - 1) * page_size + 1
+        end_row = min(current_page * page_size, total_rows)
+        caption_col.caption(f"Menampilkan detail {start_row}-{end_row} dari {total_rows} baris terpilih.")
+    else:
+        caption_col.caption(f"Menampilkan semua {total_rows} baris terpilih.")
+
+    with download_col:
+        render_csv_download(
+            "Download CSV",
+            dataframe,
+            file_name="incidents.csv",
+            key="download_incidents",
+        )
+
+    start_index = (current_page - 1) * page_size
+    return dataframe.iloc[start_index : start_index + page_size]
 
 
 def _render_incidents_body() -> None:
@@ -323,8 +378,8 @@ def _render_incidents_body() -> None:
             "summary": "Ringkasan",
         }
     )
-    st.markdown("### Detail Insiden")
-    _render_detail_table(detail_frame.head(int(max_rows)))
+    capped_detail_frame = detail_frame.head(int(max_rows))
+    _render_detail_table(_render_detail_table_controls(capped_detail_frame, title="Detail Insiden", page_size=10))
     st.markdown("")
     st.caption("Tip: gunakan urutan Durasi Terpanjang untuk meninjau insiden dengan dampak waktu terbesar.")
 

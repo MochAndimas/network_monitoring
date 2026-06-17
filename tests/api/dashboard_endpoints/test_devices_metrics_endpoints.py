@@ -739,6 +739,70 @@ def test_latest_snapshot_uptime_map_rejects_deep_offset_pagination():
     assert "Offset pagination" in response.json()["detail"]
 
 
+def test_metric_freshness_summary_groups_by_collector_and_site():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [
+                        {
+                            "name": "ISP A",
+                            "ip_address": "8.8.8.8",
+                            "device_type": "internet_target",
+                            "site": "HQ",
+                        },
+                        {
+                            "name": "AP Lobby",
+                            "ip_address": "192.168.1.40",
+                            "device_type": "access_point",
+                            "site": "HQ",
+                        },
+                        {
+                            "name": "Server Branch",
+                            "ip_address": "192.168.2.10",
+                            "device_type": "server",
+                            "site": "Branch",
+                        },
+                    ]
+                )
+                current_time = utcnow()
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": devices[0].id,
+                            "metric_name": "ping",
+                            "metric_value": "10.00",
+                            "status": "up",
+                            "unit": "ms",
+                            "checked_at": current_time,
+                        },
+                        {
+                            "device_id": devices[1].id,
+                            "metric_name": "ping",
+                            "metric_value": "99.00",
+                            "status": "warning",
+                            "unit": "ms",
+                            "checked_at": current_time - timedelta(minutes=20),
+                        },
+                    ]
+                )
+
+        run(scenario())
+
+        response = client.get("/metrics/freshness/summary?stale_after_minutes=5", headers=API_HEADERS)
+
+        assert response.status_code == 200
+        payload = response.json()
+        rows = {(item["collector"], item["site"]): item for item in payload["items"]}
+        assert payload["stale_after_minutes"] == 5
+        assert rows[("internet_checks", "HQ")]["freshness_status"] == "fresh"
+        assert rows[("internet_checks", "HQ")]["fresh_devices"] == 1
+        assert rows[("device_checks", "HQ")]["freshness_status"] == "stale"
+        assert rows[("device_checks", "HQ")]["stale_devices"] == 1
+        assert rows[("server_checks", "Branch")]["freshness_status"] == "no_data"
+        assert rows[("server_checks", "Branch")]["no_data_devices"] == 1
+
+
 def test_metrics_history_context_endpoint():
     with client_context() as (client, session_factory):
         async def scenario():

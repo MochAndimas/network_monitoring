@@ -184,6 +184,28 @@ class MetricDailySummaryPage(BaseModel):
     meta: PageMeta
 
 
+class MetricFreshnessItem(BaseModel):
+    """Pydantic schema for collector/site freshness summary rows."""
+    collector: str
+    site: str
+    total_devices: int
+    devices_with_data: int
+    fresh_devices: int
+    stale_devices: int
+    no_data_devices: int
+    freshness_status: str
+    latest_checked_at: datetime | None = None
+    oldest_checked_at: datetime | None = None
+
+
+class MetricFreshnessSummary(BaseModel):
+    """Pydantic schema for metric freshness summary payloads."""
+    generated_at: datetime
+    stale_after_minutes: int
+    active_only: bool
+    items: list["MetricFreshnessItem"]
+
+
 class AlertItem(BaseModel):
     """Pydantic schema for AlertItem payloads."""
     id: int

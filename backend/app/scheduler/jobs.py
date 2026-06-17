@@ -128,11 +128,13 @@ async def _persist_runner(runner, db, *, lock_scope: str) -> None:
     metrics = await runner(db)
     async with monitoring_pipeline_guard(wait=True, scope=f"metrics:{lock_scope}"):
         await persist_metrics(db, metrics, commit=False)
+        await db.commit()
     # Re-evaluate alerts immediately after fresh metrics land so alerting
     # doesn't get starved by the separate scheduler tick. Alert/incident state
     # is global, so this section intentionally keeps a shared lock.
     async with monitoring_pipeline_guard(wait=True, scope="alerts"):
         await evaluate_alerts(db, commit=False)
+        await db.commit()
 
 
 async def _run_alert_job_inner(db) -> None:
@@ -142,6 +144,7 @@ async def _run_alert_job_inner(db) -> None:
             logger.info("Skipping alert evaluation because another monitoring pipeline run is active")
             return
         await evaluate_alerts(db, commit=False)
+        await db.commit()
 
 
 async def _run_cleanup_job_inner(db) -> None:
@@ -152,6 +155,7 @@ async def _run_cleanup_job_inner(db) -> None:
             return
         await cleanup_monitoring_data(db, commit=False)
         await cleanup_auth_data(db, commit=False)
+        await db.commit()
 
 
 async def _run_scheduler_job(job_name: str, operation) -> None:
@@ -161,9 +165,9 @@ async def _run_scheduler_job(job_name: str, operation) -> None:
         with job_logging_context(job_name):
             await mark_scheduler_job_started(db, job_name=job_name)
             try:
-                async with db.begin():
-                    await operation(db)
+                await operation(db)
             except Exception as exc:
+                await db.rollback()
                 duration_ms = (perf_counter() - started_at) * 1000
                 await mark_scheduler_job_failed(db, job_name=job_name, duration_ms=duration_ms, error=str(exc))
                 logger.exception("scheduler_job_failed job_name=%s duration_ms=%.2f", job_name, duration_ms)

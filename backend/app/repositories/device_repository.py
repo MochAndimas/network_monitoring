@@ -386,6 +386,77 @@ class DeviceRepository:
         rows = (await self.db.execute(query)).all()
         return {str(status or "unknown"): int(device_count) for status, device_count in rows}
 
+    async def summarize_freshness_by_collector_site(
+        self,
+        *,
+        stale_cutoff,
+        active_only: bool = True,
+    ) -> list[dict]:
+        """Summarize latest metric freshness grouped by collector and site."""
+        collector_name = case(
+            (Device.device_type == "internet_target", "internet_checks"),
+            (Device.device_type == "server", "server_checks"),
+            (Device.device_type == "mikrotik", "mikrotik_checks"),
+            else_="device_checks",
+        ).label("collector")
+        site_name = func.coalesce(func.nullif(Device.site, ""), "Unassigned").label("site")
+        latest_by_device = (
+            select(
+                LatestMetric.device_id.label("device_id"),
+                func.max(LatestMetric.checked_at).label("latest_checked_at"),
+            )
+            .group_by(LatestMetric.device_id)
+            .subquery()
+        )
+        latest_checked_at = latest_by_device.c.latest_checked_at
+        query = (
+            select(
+                collector_name,
+                site_name,
+                func.count(Device.id).label("total_devices"),
+                func.sum(case((latest_checked_at.is_not(None), 1), else_=0)).label("devices_with_data"),
+                func.sum(case((latest_checked_at >= stale_cutoff, 1), else_=0)).label("fresh_devices"),
+                func.sum(
+                    case(
+                        (
+                            and_(
+                                latest_checked_at.is_not(None),
+                                latest_checked_at < stale_cutoff,
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("stale_devices"),
+                func.sum(case((latest_checked_at.is_(None), 1), else_=0)).label("no_data_devices"),
+                func.max(latest_checked_at).label("latest_checked_at"),
+                func.min(latest_checked_at).label("oldest_checked_at"),
+            )
+            .select_from(Device)
+            .outerjoin(latest_by_device, Device.id == latest_by_device.c.device_id)
+        )
+        if active_only:
+            query = query.where(Device.is_active.is_(True))
+        rows = (
+            await self.db.execute(
+                query.group_by(collector_name, site_name).order_by(collector_name.asc(), site_name.asc())
+            )
+        ).all()
+        return [
+            {
+                "collector": row.collector,
+                "site": row.site,
+                "total_devices": int(row.total_devices or 0),
+                "devices_with_data": int(row.devices_with_data or 0),
+                "fresh_devices": int(row.fresh_devices or 0),
+                "stale_devices": int(row.stale_devices or 0),
+                "no_data_devices": int(row.no_data_devices or 0),
+                "latest_checked_at": row.latest_checked_at,
+                "oldest_checked_at": row.oldest_checked_at,
+            }
+            for row in rows
+        ]
+
     async def latest_device_check_at(self, *, active_only: bool = False) -> object | None:
         """Return latest latest device check at used by device inventory and status."""
         latest_ping_metrics = self._latest_ping_metrics_subquery()

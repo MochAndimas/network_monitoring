@@ -12,6 +12,8 @@ from ..api.schemas import (
     CursorPageMeta,
     MetricDailySummaryItem,
     MetricDailySummaryPage,
+    MetricFreshnessItem,
+    MetricFreshnessSummary,
     MetricHistoryContextPayload,
     MetricHistoryCursorPage,
     MetricHistoryItem,
@@ -21,6 +23,7 @@ from ..api.schemas import (
     PageMeta,
 )
 from ..core.time import now
+from ..repositories.device_repository import DeviceRepository
 from ..repositories.metric_repository import MetricRepository
 from .observability_service import record_api_payload_request, record_api_payload_section
 
@@ -507,6 +510,58 @@ async def get_latest_snapshot_uptime_map(db: AsyncSession, *, limit: int, offset
             detail="Offset pagination is not supported for latest snapshot uptime maps",
         )
     return await MetricRepository(db).latest_snapshot_uptime_map(limit=limit, offset=offset)
+
+
+async def get_metric_freshness_summary(
+    db: AsyncSession,
+    *,
+    stale_after_minutes: int,
+    active_only: bool,
+) -> MetricFreshnessSummary:
+    """Return collector/site data freshness based on latest metric snapshots."""
+    generated_at = now()
+    stale_cutoff = generated_at - timedelta(minutes=stale_after_minutes)
+    rows = await DeviceRepository(db).summarize_freshness_by_collector_site(
+        stale_cutoff=stale_cutoff,
+        active_only=active_only,
+    )
+    items = [
+        MetricFreshnessItem(
+            **row,
+            freshness_status=_freshness_status(row),
+        )
+        for row in rows
+    ]
+    record_api_payload_request(endpoint="/metrics/freshness/summary", scope="active" if active_only else "all")
+    record_api_payload_section(
+        endpoint="/metrics/freshness/summary",
+        scope="active" if active_only else "all",
+        section="items",
+        rows=len(items),
+        total_rows=len(items),
+        sampled=False,
+    )
+    return MetricFreshnessSummary(
+        generated_at=generated_at,
+        stale_after_minutes=stale_after_minutes,
+        active_only=active_only,
+        items=items,
+    )
+
+
+def _freshness_status(row: dict) -> str:
+    """Return rollup freshness status for one collector/site bucket."""
+    total_devices = int(row.get("total_devices") or 0)
+    no_data_devices = int(row.get("no_data_devices") or 0)
+    stale_devices = int(row.get("stale_devices") or 0)
+    fresh_devices = int(row.get("fresh_devices") or 0)
+    if total_devices <= 0 or no_data_devices >= total_devices:
+        return "no_data"
+    if stale_devices or no_data_devices:
+        return "stale"
+    if fresh_devices >= total_devices:
+        return "fresh"
+    return "unknown"
 
 
 async def _selected_device_history(

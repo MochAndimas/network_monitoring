@@ -1,5 +1,6 @@
 """Streamlit dashboard helpers for 4 Devices."""
 
+from ipaddress import ip_address
 from urllib.parse import urlencode
 from typing import Any
 
@@ -9,7 +10,13 @@ import streamlit as st
 from components.auth import is_admin, require_dashboard_login
 from components.api import delete_json, get_json, get_json_map, has_pending_action, paged_items, paged_meta, post_json, put_json
 from components.sidebar import collapse_sidebar_on_page_load
-from components.ui import normalize_status_label, render_kpi_cards, render_page_header
+from components.ui import (
+    freshness_label,
+    normalize_status_label,
+    render_kpi_cards,
+    render_page_header,
+    render_section_header_with_download,
+)
 
 st.set_page_config(page_title="Devices", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
@@ -59,6 +66,65 @@ def _prepare_manage_frame(rows: list[dict]) -> pd.DataFrame:
         + ")"
     )
     return dataframe
+
+
+def _parse_bool(value: object) -> bool:
+    """Parse a CSV boolean-ish value for device import."""
+    normalized = str(value if value is not None else "").strip().lower()
+    if normalized in {"", "1", "true", "yes", "y", "aktif", "active"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "nonaktif", "inactive"}:
+        return False
+    raise ValueError("is_active harus true/false atau kosong")
+
+
+def _validate_device_import_frame(
+    dataframe: pd.DataFrame,
+    valid_types: set[str],
+    existing_ips: set[str],
+) -> tuple[pd.DataFrame, list[dict]]:
+    """Validate device import CSV rows without writing to the backend."""
+    required_columns = {"name", "ip_address", "device_type"}
+    normalized_columns = {str(column).strip().lower(): column for column in dataframe.columns}
+    missing_columns = sorted(required_columns - set(normalized_columns))
+    if missing_columns:
+        return pd.DataFrame(), [{"row": 0, "error": f"Kolom wajib hilang: {', '.join(missing_columns)}"}]
+
+    rows: list[dict] = []
+    errors: list[dict] = []
+    seen_ips: set[str] = set()
+    for row_index, source_row in dataframe.iterrows():
+        row_number = int(row_index) + 2
+        payload: dict[str, Any] = {}
+        for field_name in ("name", "ip_address", "device_type", "site", "description", "is_active"):
+            source_column = normalized_columns.get(field_name)
+            raw_value = source_row[source_column] if source_column in dataframe.columns else None
+            payload[field_name] = None if pd.isna(raw_value) else str(raw_value).strip()
+        row_errors = []
+        if not payload["name"]:
+            row_errors.append("name kosong")
+        try:
+            ip_address(str(payload["ip_address"] or ""))
+        except ValueError:
+            row_errors.append("ip_address tidak valid")
+        if payload["ip_address"] in seen_ips:
+            row_errors.append("ip_address duplikat di file")
+        if payload["ip_address"] in existing_ips:
+            row_errors.append("ip_address sudah ada di inventory")
+        seen_ips.add(str(payload["ip_address"] or ""))
+        if payload["device_type"] not in valid_types:
+            row_errors.append("device_type tidak didukung")
+        try:
+            payload["is_active"] = _parse_bool(payload.get("is_active"))
+        except ValueError as exc:
+            row_errors.append(str(exc))
+        payload["site"] = payload["site"] or None
+        payload["description"] = payload["description"] or None
+        if row_errors:
+            errors.append({"row": row_number, "error": "; ".join(row_errors)})
+            continue
+        rows.append(payload)
+    return pd.DataFrame(rows), errors
 
 
 @st.dialog("Ubah Device")
@@ -168,6 +234,7 @@ with inventory_tab:
         dataframe["status_label"] = dataframe["latest_status"].map(normalize_status_label)
         dataframe["type_label"] = dataframe["device_type"].astype(str).map(_device_type_label)
         dataframe["active_label"] = dataframe["is_active"].map(lambda value: "Aktif" if bool(value) else "Nonaktif")
+        dataframe["freshness"] = dataframe["latest_checked_at"].map(freshness_label) if "latest_checked_at" in dataframe.columns else "No data"
 
         render_kpi_cards(
             [
@@ -183,7 +250,7 @@ with inventory_tab:
             f"{inventory_meta.get('offset', 0) + len(dataframe)} dari {inventory_meta.get('total', len(dataframe))} device."
         )
         inventory_view = dataframe[
-            ["name", "ip_address", "type_label", "site", "status_label", "active_label"]
+            ["name", "ip_address", "type_label", "site", "status_label", "freshness", "active_label"]
         ].rename(
             columns={
                 "name": "Nama Device",
@@ -191,8 +258,15 @@ with inventory_tab:
                 "type_label": "Tipe",
                 "site": "Lokasi",
                 "status_label": "Status Terakhir",
+                "freshness": "Freshness",
                 "active_label": "Status Aktif",
             }
+        )
+        render_section_header_with_download(
+            "Tabel Inventory",
+            inventory_view,
+            file_name="devices_inventory.csv",
+            key="download_devices_inventory",
         )
         st.dataframe(
             inventory_view,
@@ -204,6 +278,7 @@ with inventory_tab:
                 "Tipe": st.column_config.TextColumn("Tipe", width="small"),
                 "Lokasi": st.column_config.TextColumn("Lokasi", width="small"),
                 "Status Terakhir": st.column_config.TextColumn("Status Terakhir", width="small"),
+                "Freshness": st.column_config.TextColumn("Freshness", width="medium"),
                 "Status Aktif": st.column_config.TextColumn("Status Aktif", width="small"),
             },
         )
@@ -249,6 +324,74 @@ with manage_tab:
                     _clear_cached_gets()
                     st.success(f"Device `{result['name']}` berhasil ditambahkan.")
                     st.rerun()
+
+            st.markdown("### Import CSV")
+            with st.expander("Dry-run Import Device"):
+                st.caption("Kolom wajib: name, ip_address, device_type. Kolom opsional: site, description, is_active.")
+                uploaded_file = st.file_uploader("File CSV Device", type=["csv"], key="device_import_csv")
+                if uploaded_file is not None:
+                    try:
+                        import_source_frame = pd.read_csv(uploaded_file)
+                    except Exception as exc:
+                        st.error(f"CSV tidak bisa dibaca: {exc}")
+                    else:
+                        valid_import_frame, import_errors = _validate_device_import_frame(
+                            import_source_frame,
+                            set(type_label_by_value),
+                            {str(device.get("ip_address") or "").strip() for device in devices},
+                        )
+                        if import_errors:
+                            error_frame = pd.DataFrame(import_errors)
+                            st.error("Dry-run gagal. Perbaiki baris berikut sebelum import.")
+                            st.dataframe(
+                                error_frame.rename(columns={"row": "Baris", "error": "Error"}),
+                                width="stretch",
+                                hide_index=True,
+                            )
+                        else:
+                            st.success(f"Dry-run valid: {len(valid_import_frame)} device siap di-import.")
+                            st.dataframe(
+                                valid_import_frame,
+                                width="stretch",
+                                hide_index=True,
+                                column_config={
+                                    "name": st.column_config.TextColumn("name", width="medium"),
+                                    "ip_address": st.column_config.TextColumn("ip_address", width="small"),
+                                    "device_type": st.column_config.TextColumn("device_type", width="small"),
+                                    "site": st.column_config.TextColumn("site", width="small"),
+                                    "description": st.column_config.TextColumn("description", width="large"),
+                                    "is_active": st.column_config.CheckboxColumn("is_active", width="small"),
+                                },
+                            )
+                            if st.button(
+                                "Import Device Valid",
+                                type="primary",
+                                width="stretch",
+                                disabled=valid_import_frame.empty,
+                            ):
+                                created_count = 0
+                                failed_rows = []
+                                for row_index, row in valid_import_frame.iterrows():
+                                    payload = row.to_dict()
+                                    result = post_json(
+                                        "/devices",
+                                        payload,
+                                        None,
+                                        action_key=f"import_device_{row_index}",
+                                    )
+                                    if result:
+                                        created_count += 1
+                                    else:
+                                        failed_rows.append(int(row_index) + 1)
+                                _clear_cached_gets()
+                                if failed_rows:
+                                    st.warning(
+                                        f"Import selesai sebagian: {created_count} berhasil, "
+                                        f"{len(failed_rows)} gagal."
+                                    )
+                                else:
+                                    st.success(f"Import selesai: {created_count} device berhasil ditambahkan.")
+                                st.rerun()
 
         with manage_column:
             st.subheader("Kelola Device")
@@ -314,6 +457,12 @@ with manage_tab:
                             "site": "Lokasi",
                             "active_label": "Status Aktif",
                         }
+                    )
+                    render_section_header_with_download(
+                        "Tabel Kelola Device",
+                        view_frame,
+                        file_name="devices_manage.csv",
+                        key="download_devices_manage",
                     )
                     st.dataframe(
                         view_frame,

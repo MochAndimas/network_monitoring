@@ -14,7 +14,7 @@ from components.auth import require_dashboard_login
 from components.api import get_json, get_json_map, paged_items, paged_meta
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
-from components.ui import render_kpi_cards, render_meta_row, render_page_header
+from components.ui import render_kpi_cards, render_meta_row, render_page_header, render_section_header_with_download
 
 
 st.set_page_config(page_title="Daily Summary", layout="wide", initial_sidebar_state="collapsed")
@@ -247,7 +247,6 @@ with chart_col2:
     )
     st.altair_chart(ping_chart, width="stretch")
 
-st.markdown("### Detail Rollup")
 detail_columns = [
     "Tanggal",
     "Device",
@@ -264,6 +263,12 @@ detail_columns = [
     "Max Jitter",
     "Terakhir Update",
 ]
+render_section_header_with_download(
+    "Detail Rollup",
+    summary_frame[detail_columns],
+    file_name="daily_summary.csv",
+    key="download_daily_summary",
+)
 st.dataframe(
     summary_frame[detail_columns],
     width="stretch",

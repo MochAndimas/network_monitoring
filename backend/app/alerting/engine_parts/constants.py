@@ -49,10 +49,31 @@ ALERT_DYNAMIC_METRIC_NAME_PATTERNS = (
     "nas_disk:%:status",
     "nas_disk:%:temperature_c",
 )
+ALERT_PRIMARY_METRIC_BY_TYPE = {
+    "device_down": "ping",
+    "internet_loss": "ping",
+    "high_ping_latency_warning": "ping",
+    "high_ping_latency_critical": "ping",
+    "high_packet_loss_warning": "packet_loss",
+    "high_packet_loss_critical": "packet_loss",
+    "high_jitter_warning": "jitter",
+    "high_jitter_critical": "jitter",
+    "dns_resolution_failed": "dns_resolution_time",
+    "slow_dns_resolution": "dns_resolution_time",
+    "http_check_failed": "http_response_time",
+    "slow_http_response": "http_response_time",
+    "public_ip_changed": "public_ip",
+    "cpu_usage_high": "cpu_percent",
+    "memory_usage_high": "memory_percent",
+    "disk_usage_high": "disk_percent",
+    "mikrotik_api_failed": "mikrotik_api",
+    "mikrotik_connected_clients_high": "connected_clients",
+}
 
 __all__ = [
     "ALERT_DYNAMIC_METRIC_NAME_PATTERNS",
     "ALERT_EXACT_METRIC_NAMES",
+    "ALERT_PRIMARY_METRIC_BY_TYPE",
     "TELEGRAM_NOTIFICATION_DEDUPE_TTL",
     "TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE",
 ]

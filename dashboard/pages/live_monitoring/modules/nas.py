@@ -18,7 +18,11 @@ from .rendering import _format_celsius, _render_stat_card, _status_label_for_dis
 def _render_nas_history_section(nas_history_frame: pd.DataFrame) -> None:
     """Render NAS health metrics as stable cards and compact status tables."""
     if nas_history_frame.empty:
-        st.info("Belum ada metrik NAS SNMP. Periksa koneksi SNMP NAS dan jalankan monitoring cycle.")
+        st.info(
+            "Belum ada metrik NAS SNMP. Pastikan device bertipe `nas`, NAS target adalah Synology, "
+            "`NAS_SNMP_COMMUNITIES` berisi IP NAS, SNMP v2c aktif, UDP 161 terbuka, "
+            "lalu jalankan monitoring cycle."
+        )
         return
 
     latest_map = _latest_metric_snapshot_map(nas_history_frame)
@@ -65,7 +69,7 @@ def _render_nas_history_section(nas_history_frame: pd.DataFrame) -> None:
 
     st.markdown("#### Kapasitas Volume")
     if volume_capacity_frame.empty:
-        st.info("Belum ada detail kapasitas volume NAS.")
+        st.info("Belum ada detail kapasitas volume NAS. Cek permission SNMP Synology dan OID storage/RAID.")
     else:
         st.dataframe(
             volume_capacity_frame,
@@ -88,13 +92,13 @@ def _render_nas_history_section(nas_history_frame: pd.DataFrame) -> None:
         if status_rows:
             st.dataframe(pd.DataFrame(status_rows), width="stretch", hide_index=True)
         else:
-            st.info("Belum ada status hardware NAS.")
+            st.info("Belum ada status hardware NAS. Cek SNMP Synology MIB untuk system, power, fan, RAID, dan disk.")
     with temp_col:
         st.markdown("#### Temperatur Disk")
         if temperature_rows:
             st.dataframe(pd.DataFrame(temperature_rows), width="stretch", hide_index=True)
         else:
-            st.info("Belum ada temperatur disk NAS.")
+            st.info("Belum ada temperatur disk NAS. Pastikan disk temperature tersedia lewat SNMP Synology.")
 
 
 __all__ = ["_render_nas_history_section"]

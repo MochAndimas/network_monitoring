@@ -246,6 +246,7 @@ DNS, HTTP, dan public IP memakai satu anchor internet target. Pemilihan anchor m
 ### Device Umum
 
 Device type:
+- `nas`
 - `nvr`
 - `switch`
 - `access_point`
@@ -254,8 +255,8 @@ Device type:
 
 Metric:
 - `ping`
-- `packet_loss` dan `jitter` untuk `access_point`, `voip`, dan `printer`
-- ping sederhana untuk `nvr` dan `switch`
+- `packet_loss` dan `jitter` untuk `access_point`, `nas`, `switch`, `voip`, dan `printer`
+- ping sederhana untuk `nvr`
 
 ### Printer SNMP
 
@@ -275,6 +276,38 @@ Format `PRINTER_SNMP_COMMUNITIES` bisa JSON map:
 
 ```env
 PRINTER_SNMP_COMMUNITIES={"192.168.88.38":"community-printer-1","192.168.88.145":"community-printer-2"}
+```
+
+Atau format baris `ip=community` yang dipisah newline/koma.
+
+### Synology NAS SNMP
+
+Device type: `nas`
+
+NAS support saat ini difokuskan untuk Synology. Selain ping quality, NAS dapat mengumpulkan SNMP v2c jika `NAS_SNMP_COMMUNITIES` diisi.
+
+Metric:
+- `nas_uptime_seconds`
+- `cpu_percent`
+- `memory_percent`
+- `disk_percent`
+- `nas_system_status`
+- `nas_power_status`
+- `nas_fan:<name>:status`
+- `nas_system_temperature_c`
+- `nas_volume:<name>:status`
+- `nas_volume:<name>:total_bytes`
+- `nas_volume:<name>:used_bytes`
+- `nas_volume:<name>:free_bytes`
+- `nas_volume:<name>:used_percent`
+- `nas_raid:<name>:status`
+- `nas_disk:<name>:status`
+- `nas_disk:<name>:temperature_c`
+
+Format `NAS_SNMP_COMMUNITIES` bisa JSON map:
+
+```env
+NAS_SNMP_COMMUNITIES={"192.168.88.20":"community-nas-1"}
 ```
 
 Atau format baris `ip=community` yang dipisah newline/koma.
@@ -346,6 +379,7 @@ Device type yang valid:
 - `internet_target`
 - `mikrotik`
 - `server`
+- `nas`
 - `nvr`
 - `switch`
 - `access_point`
@@ -361,6 +395,8 @@ Device memiliki field utama:
 - `is_active`
 
 Device inactive tetap ada di inventory, tapi tidak ikut collector bila query memakai `active_only=True`.
+
+Target deployment produk adalah multi-site. Field `site` dipakai sebagai metadata utama untuk memisahkan lokasi kantor/cabang, filter operasional, export CSV, dan improvement grouping incident/alert berikutnya.
 
 ## Alert, Incident, Dan Threshold
 
@@ -536,6 +572,7 @@ Docs API (`/docs`, `/redoc`, `/openapi.json`) mati otomatis di production.
 | `DISK_WARNING_THRESHOLD` | Default threshold disk |
 | `SERVER_RESOURCE_DEVICE_IP` | IP device `server` yang menerima metrik resource lokal |
 | `PRINTER_SNMP_COMMUNITIES` | Map IP printer ke SNMP community |
+| `NAS_SNMP_COMMUNITIES` | Map IP Synology NAS ke SNMP community |
 
 ### Scheduler Dan Retention
 
@@ -578,6 +615,7 @@ Settings juga mendukung secret dari file:
 - `INTERNAL_API_KEY_FILE`
 - `AUTH_PASSWORD_SECRET_FILE`
 - `PRINTER_SNMP_COMMUNITIES_FILE`
+- `NAS_SNMP_COMMUNITIES_FILE`
 - `BOOTSTRAP_ADMIN_PASSWORD_FILE`
 - `AUTH_JWT_SECRET_FILE`
 
@@ -651,9 +689,11 @@ Semua endpoint operasional selain `/health/*` membutuhkan bearer token atau API 
 - `GET /metrics/history`
 - `GET /metrics/history/paged`
 - `GET /metrics/history/context`
+- `GET /metrics/history/live`
 - `GET /metrics/latest-snapshot/paged`
 - `GET /metrics/latest-snapshot/status-summary`
 - `GET /metrics/latest-snapshot/uptime-map`
+- `GET /metrics/freshness/summary`
 
 ### Alerts, Incidents, Thresholds, System
 
@@ -705,11 +745,13 @@ Dashboard Streamlit ada di `dashboard/`.
 
 Halaman:
 - `Overview`: summary, KPI, problem devices, active alert, active incident, latest snapshot
+- `Daily Summary`: rollup uptime, ping, packet loss, jitter, dan tren harian
+- `Live Monitoring`: metric history, latest snapshot, chart, dynamic Mikrotik/printer/NAS views, dan CSV export
 - `Devices`: inventory device, filter, pagination, create/update/delete untuk admin
 - `Alerts`: active alert
-- `History`: metric history, latest snapshot, chart, dynamic Mikrotik/printer views
 - `Incidents`: active/resolved incidents
 - `Thresholds`: threshold alert dan update untuk admin
+- `System Health`: database status, scheduler jobs, operational alerts, auth counters, runtime info, freshness per collector/site, dan CSV export operasional
 
 Auth dashboard:
 - login memakai `/auth/login`
@@ -800,6 +842,8 @@ Baseline default retention raw metric adalah `7` hari di:
 - `docker-compose.yml` (backend + scheduler)
 
 Jika ingin lebih pendek/panjang, override eksplisit `RAW_METRIC_RETENTION_DAYS` di `.env` agar keputusan retention tercatat.
+
+Target product decision untuk long-term archive adalah mempertahankan ringkasan historis sampai `1` tahun. Raw metric tidak perlu disimpan selama itu; gunakan daily rollup dan cold archive untuk analisis jangka panjang.
 
 ## Scripts
 

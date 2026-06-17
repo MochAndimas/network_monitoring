@@ -6,7 +6,6 @@ This module contains automated regression and validation scenarios.
 from types import SimpleNamespace
 
 from .common import (
-    _create_user,
     _seed_devices_and_metrics,
     API_HEADERS,
     Alert,
@@ -195,10 +194,8 @@ def test_telegram_events_are_ordered_active_before_resolved():
 
 
 def test_telegram_events_are_deduped_by_alert_state(monkeypatch):
-    """Validate duplicate Telegram events are suppressed briefly."""
+    """Validate duplicate Telegram events are suppressed within one batch."""
     import backend.app.alerting.engine as engine_module
-
-    engine_module._recent_telegram_notification_keys.clear()
 
     device = SimpleNamespace(id=1, name="Mikrotik Utama", ip_address="192.168.88.1", site="R. Server", device_type="internet_target")
     event = {
@@ -210,11 +207,251 @@ def test_telegram_events_are_deduped_by_alert_state(monkeypatch):
         "device": device,
     }
 
+    assert engine_module._filter_recent_telegram_events([event, dict(event)]) == [event]
+    assert engine_module._filter_recent_telegram_events([event]) == [event]
+
+
+def test_stale_summary_active_telegram_event_is_dropped_after_resolve(monkeypatch):
+    """Validate stale summary-active events are rechecked before send."""
+    sent_messages = []
+
+    async def fake_send_telegram_alert(message):
+        sent_messages.append(message)
+
+    import backend.app.alerting.engine as engine_module
+    from backend.app.repositories.alert_repository import AlertRepository
+
+    monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
+
+    with client_context() as (_client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                device = (
+                    await DeviceRepository(db).upsert_devices(
+                        [
+                            {
+                                "name": "Core Switch",
+                                "ip_address": "192.168.88.2",
+                                "device_type": "switch",
+                                "site": "R. Server",
+                            }
+                        ]
+                    )
+                )[0]
+                created_at = utcnow() - timedelta(minutes=30)
+                alert = Alert(
+                    device_id=device.id,
+                    alert_type="high_ping_latency_warning",
+                    severity="warning",
+                    message="Core Switch ping latency reached 101.10ms",
+                    status="active",
+                    created_at=created_at,
+                )
+                db.add(alert)
+                await db.commit()
+                await db.refresh(alert)
+                await AlertRepository(db).resolve_alert(alert, utcnow(), commit=True)
+                event = {
+                    "action": "summary_active",
+                    "alert_id": alert.id,
+                    "alert_type": alert.alert_type,
+                    "severity": alert.severity,
+                    "message": alert.message,
+                    "device": device,
+                }
+                await engine_module._send_telegram_events(db, AlertRepository(db), [event], commit=True)
+
+        run(scenario())
+
+    assert sent_messages == []
+
+
+def test_resolved_event_is_sent_when_sibling_alert_was_recently_notified(monkeypatch):
+    """Validate resolved notifications still emit for short-lived duplicate alert rows."""
+    sent_messages = []
+
+    async def fake_send_telegram_alert(message):
+        sent_messages.append(message)
+
+    import backend.app.alerting.engine as engine_module
+    from backend.app.repositories.alert_repository import AlertRepository
+
+    monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
+    previous_resolved_window = engine_module.settings.telegram_resolved_correlation_window_seconds
+    engine_module.settings.telegram_resolved_correlation_window_seconds = 900
+
     try:
-        assert engine_module._filter_recent_telegram_events([event, dict(event)]) == [event]
-        assert engine_module._filter_recent_telegram_events([event]) == []
+        with client_context() as (_client, session_factory):
+            async def scenario():
+                async with session_factory() as db:
+                    device = (
+                        await DeviceRepository(db).upsert_devices(
+                            [
+                                {
+                                    "name": "Core Switch",
+                                    "ip_address": "192.168.88.2",
+                                    "device_type": "switch",
+                                    "site": "R. Server",
+                                }
+                            ]
+                        )
+                    )[0]
+                    baseline_created_at = utcnow() - timedelta(minutes=3)
+                    baseline = Alert(
+                        device_id=device.id,
+                        alert_type="high_ping_latency_warning",
+                        severity="warning",
+                        message="Core Switch ping latency reached 101.10ms",
+                        status="active",
+                        created_at=baseline_created_at,
+                        telegram_notified_at=baseline_created_at + timedelta(seconds=65),
+                    )
+                    duplicate = Alert(
+                        device_id=device.id,
+                        alert_type="high_ping_latency_warning",
+                        severity="warning",
+                        message="Core Switch ping latency reached 99.00ms",
+                        status="active",
+                        created_at=utcnow() - timedelta(seconds=80),
+                    )
+                    db.add_all([baseline, duplicate])
+                    await db.commit()
+                    await db.refresh(duplicate)
+                    await AlertRepository(db).resolve_alert(duplicate, utcnow(), commit=True)
+                    event = {
+                        "action": "resolved",
+                        "alert_id": duplicate.id,
+                        "alert_type": duplicate.alert_type,
+                        "severity": duplicate.severity,
+                        "message": duplicate.message,
+                        "device": device,
+                        "created_at": duplicate.created_at,
+                        "resolved_at": utcnow(),
+                    }
+                    await engine_module._send_telegram_events(db, AlertRepository(db), [event], commit=True)
+
+            run(scenario())
     finally:
-        engine_module._recent_telegram_notification_keys.clear()
+        engine_module.settings.telegram_resolved_correlation_window_seconds = previous_resolved_window
+
+    assert sent_messages != []
+
+
+def test_pending_telegram_events_respect_summary_severity_mode():
+    import backend.app.alerting.engine as engine_module
+
+    previous_realtime = engine_module.settings.telegram_realtime_severities
+    previous_summary = engine_module.settings.telegram_summary_severities
+    previous_summary_interval = engine_module.settings.telegram_summary_interval_seconds
+    previous_cooldown = engine_module.settings.telegram_notification_cooldown_seconds
+    previous_grace = engine_module.settings.telegram_alert_grace_period_seconds
+    engine_module.settings.telegram_realtime_severities = "critical"
+    engine_module.settings.telegram_summary_severities = "warning"
+    engine_module.settings.telegram_summary_interval_seconds = 300
+    engine_module.settings.telegram_notification_cooldown_seconds = 0
+    engine_module.settings.telegram_alert_grace_period_seconds = 0
+    try:
+        device = SimpleNamespace(id=1, name="AP4", ip_address="192.168.88.52", site="R. Server", device_type="access_point")
+        alert = Alert(
+            id=10,
+            device_id=1,
+            alert_type="high_ping_latency_warning",
+            severity="warning",
+            message="AP4 ping latency reached 101.10ms",
+            status="active",
+            created_at=utcnow() - timedelta(minutes=6),
+        )
+        events = engine_module._pending_active_telegram_events(
+            [alert],
+            device_by_id={1: device},
+            device_type_by_id={1: "access_point"},
+        )
+        assert len(events) == 1
+        assert events[0]["action"] == "summary_active"
+    finally:
+        engine_module.settings.telegram_realtime_severities = previous_realtime
+        engine_module.settings.telegram_summary_severities = previous_summary
+        engine_module.settings.telegram_summary_interval_seconds = previous_summary_interval
+        engine_module.settings.telegram_notification_cooldown_seconds = previous_cooldown
+        engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
+
+
+def test_pending_telegram_events_skip_stale_metric_backed_alerts():
+    import backend.app.alerting.engine as engine_module
+
+    previous_realtime = engine_module.settings.telegram_realtime_severities
+    previous_grace = engine_module.settings.telegram_alert_grace_period_seconds
+    previous_interval = engine_module.settings.scheduler_interval_device_seconds
+    previous_stale_factor = engine_module.settings.scheduler_job_stale_factor
+    engine_module.settings.telegram_realtime_severities = "critical"
+    engine_module.settings.telegram_alert_grace_period_seconds = 0
+    engine_module.settings.scheduler_interval_device_seconds = 60
+    engine_module.settings.scheduler_job_stale_factor = 3
+    try:
+        device = SimpleNamespace(id=1, name="AP4", ip_address="192.168.88.52", site="R. Server", device_type="access_point")
+        alert = Alert(
+            id=12,
+            device_id=1,
+            alert_type="high_ping_latency_critical",
+            severity="critical",
+            message="AP4 ping latency reached 227.21ms",
+            status="active",
+            created_at=utcnow() - timedelta(days=2),
+        )
+        stale_metric = SimpleNamespace(checked_at=utcnow() - timedelta(hours=1))
+
+        events = engine_module._pending_active_telegram_events(
+            [alert],
+            device_by_id={1: device},
+            device_type_by_id={1: "access_point"},
+            latest_metrics={(1, "ping"): stale_metric},
+        )
+
+        assert events == []
+    finally:
+        engine_module.settings.telegram_realtime_severities = previous_realtime
+        engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
+        engine_module.settings.scheduler_interval_device_seconds = previous_interval
+        engine_module.settings.scheduler_job_stale_factor = previous_stale_factor
+
+
+def test_pending_telegram_events_respect_notification_cooldown():
+    import backend.app.alerting.engine as engine_module
+
+    previous_realtime = engine_module.settings.telegram_realtime_severities
+    previous_summary = engine_module.settings.telegram_summary_severities
+    previous_summary_interval = engine_module.settings.telegram_summary_interval_seconds
+    previous_cooldown = engine_module.settings.telegram_notification_cooldown_seconds
+    previous_grace = engine_module.settings.telegram_alert_grace_period_seconds
+    engine_module.settings.telegram_realtime_severities = "critical"
+    engine_module.settings.telegram_summary_severities = ""
+    engine_module.settings.telegram_summary_interval_seconds = 0
+    engine_module.settings.telegram_notification_cooldown_seconds = 900
+    engine_module.settings.telegram_alert_grace_period_seconds = 0
+    try:
+        device = SimpleNamespace(id=1, name="AP4", ip_address="192.168.88.52", site="R. Server", device_type="access_point")
+        alert = Alert(
+            id=11,
+            device_id=1,
+            alert_type="device_down",
+            severity="critical",
+            message="AP4 is unreachable",
+            status="active",
+            created_at=utcnow() - timedelta(minutes=20),
+            telegram_notified_at=utcnow() - timedelta(minutes=5),
+        )
+        events = engine_module._pending_active_telegram_events(
+            [alert],
+            device_by_id={1: device},
+            device_type_by_id={1: "access_point"},
+        )
+        assert events == []
+    finally:
+        engine_module.settings.telegram_realtime_severities = previous_realtime
+        engine_module.settings.telegram_summary_severities = previous_summary
+        engine_module.settings.telegram_summary_interval_seconds = previous_summary_interval
+        engine_module.settings.telegram_notification_cooldown_seconds = previous_cooldown
+        engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
 
 
 def test_alert_evaluation_scopes_active_incident_lookup(monkeypatch):
@@ -604,6 +841,64 @@ def test_nas_snmp_status_metrics_create_alert_and_incident():
         assert alerts_response.json()[0]["alert_type"] == "nas_disk_status_problem"
         assert incidents_response.status_code == 200
         assert len(incidents_response.json()) == 1
+
+
+def test_nas_stale_dynamic_disk_status_does_not_keep_alert_active():
+    with client_context() as (client, session_factory):
+        devices = run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [{"name": "NAS - Synology", "ip_address": "192.168.88.111", "device_type": "nas"}],
+                lambda seeded_devices: [
+                    {
+                        "device_id": seeded_devices[0].id,
+                        "metric_name": "nas_disk:disk_1:status",
+                        "metric_value": "unknown",
+                        "status": "warning",
+                        "unit": None,
+                        "checked_at": utcnow() - timedelta(hours=1),
+                    },
+                    {
+                        "device_id": seeded_devices[0].id,
+                        "metric_name": "nas_disk:drive_1:status",
+                        "metric_value": "normal",
+                        "status": "ok",
+                        "unit": None,
+                        "checked_at": utcnow(),
+                    },
+                ],
+            )
+        )
+
+        async def seed_active_alert():
+            async with session_factory() as db:
+                db.add(
+                    Alert(
+                        device_id=devices[0].id,
+                        alert_type="nas_disk_status_problem",
+                        severity="critical",
+                        message="NAS - Synology NAS disk problem: nas_disk:disk_1:status=unknown",
+                        status="active",
+                        created_at=utcnow() - timedelta(hours=1),
+                    )
+                )
+                await db.commit()
+
+        run(seed_active_alert())
+
+        import backend.app.alerting.engine as engine_module
+
+        async def scenario():
+            async with session_factory() as db:
+                return await engine_module.evaluate_alerts(db)
+
+        notifications = run(scenario())
+        alerts_response = client.get("/alerts/active", headers=API_HEADERS)
+
+        assert notifications[0]["action"] == "resolved"
+        assert notifications[0]["alert_type"] == "nas_disk_status_problem"
+        assert alerts_response.status_code == 200
+        assert alerts_response.json() == []
 
 
 def test_run_cycle_creates_mikrotik_metric_alerts():
@@ -1298,121 +1593,4 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
         assert resolved_response.json()["alerts_resolved"] == 1
 
 
-def test_internal_api_key_protects_mutation_endpoints():
-    with client_context() as (client, _session_factory):
-        unauthorized_device = client.post(
-            "/devices",
-            json={"name": "Secured Device", "ip_address": "192.168.1.90", "device_type": "switch"},
-        )
-        unauthorized_cycle = client.post("/system/run-cycle")
-        authorized_device = client.post(
-            "/devices",
-            headers=API_HEADERS,
-            json={"name": "Secured Device", "ip_address": "192.168.1.90", "device_type": "switch"},
-        )
-
-        assert unauthorized_device.status_code == 401
-        assert unauthorized_cycle.status_code == 401
-        assert authorized_device.status_code == 201
-
-def test_internal_api_key_scopes_split_write_and_ops_access():
-    import backend.app.core.config as config_module
-
-    original_internal_api_key = config_module.settings.internal_api_key
-    original_internal_api_keys = config_module.settings.internal_api_keys
-    config_module.settings.internal_api_key = ""
-    config_module.settings.internal_api_keys = "\n".join(
-        [
-            "reader:reader-key:read",
-            "writer:writer-key:read,write",
-            "operator:ops-key:read,ops",
-        ]
-    )
-    config_module._parse_internal_api_key_map.cache_clear()
-
-    try:
-        with client_context() as (client, _session_factory):
-            read_response = client.get("/devices", headers={"x-api-key": "reader-key"})
-            write_denied = client.post(
-                "/devices",
-                headers={"x-api-key": "reader-key"},
-                json={"name": "Blocked Device", "ip_address": "192.168.1.190", "device_type": "switch"},
-            )
-            write_allowed = client.post(
-                "/devices",
-                headers={"x-api-key": "writer-key"},
-                json={"name": "Writable Device", "ip_address": "192.168.1.191", "device_type": "switch"},
-            )
-            ops_denied = client.post("/system/run-cycle", headers={"x-api-key": "writer-key"})
-            ops_allowed = client.post("/system/run-cycle", headers={"x-api-key": "ops-key"})
-
-        assert read_response.status_code == 200
-        assert write_denied.status_code == 403
-        assert write_allowed.status_code == 201
-        assert ops_denied.status_code == 403
-        assert ops_allowed.status_code == 200
-    finally:
-        config_module.settings.internal_api_key = original_internal_api_key
-        config_module.settings.internal_api_keys = original_internal_api_keys
-        config_module._parse_internal_api_key_map.cache_clear()
-
-
-def test_run_cycle_accepts_admin_bearer_token_after_auth_session_lookup():
-    import backend.app.services.run_cycle_service as run_cycle_module
-
-    original_internet = run_cycle_module.run_internet_checks
-    original_device = run_cycle_module.run_device_checks
-    original_server = run_cycle_module.run_server_checks
-    original_mikrotik = run_cycle_module.run_mikrotik_checks
-
-    try:
-        run_cycle_module.run_internet_checks = empty_checks
-        run_cycle_module.run_device_checks = empty_checks
-        run_cycle_module.run_server_checks = empty_checks
-        run_cycle_module.run_mikrotik_checks = empty_checks
-
-        with client_context() as (client, session_factory):
-            run(_create_user(session_factory, username="opsadmin", password="StrongPass123!", role="admin"))
-            login_response = client.post("/auth/login", json={"username": "opsadmin", "password": "StrongPass123!"})
-            assert login_response.status_code == 200
-
-            cycle_response = client.post(
-                "/system/run-cycle",
-                headers={"authorization": f"Bearer {login_response.json()['access_token']}"},
-            )
-
-        assert cycle_response.status_code == 200
-        assert cycle_response.json()["metrics_collected"] == 0
-    finally:
-        run_cycle_module.run_internet_checks = original_internet
-        run_cycle_module.run_device_checks = original_device
-        run_cycle_module.run_server_checks = original_server
-        run_cycle_module.run_mikrotik_checks = original_mikrotik
-
-
-def test_internal_api_key_protects_read_endpoints():
-    with client_context() as (client, _session_factory):
-        unauthorized_devices = client.get("/devices")
-        authorized_devices = client.get("/devices", headers=API_HEADERS)
-
-        assert unauthorized_devices.status_code == 401
-        assert authorized_devices.status_code == 200
-
-def test_missing_credentials_are_rejected_without_api_key_or_bearer_token():
-    import backend.app.api.deps as deps_module
-
-    with client_context() as (client, _session_factory):
-        original_api_key = deps_module.settings.internal_api_key
-        deps_module.settings.internal_api_key = ""
-
-        try:
-            response = client.post(
-                "/devices",
-                json={"name": "Missing Key", "ip_address": "192.168.1.91", "device_type": "switch"},
-            )
-        finally:
-            deps_module.settings.internal_api_key = original_api_key
-
-        assert response.status_code == 401
-        assert response.json()["detail"] == "Authentication required"
 

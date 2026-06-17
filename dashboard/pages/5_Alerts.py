@@ -11,7 +11,14 @@ from components.api import get_json, paged_items, paged_meta
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
-from components.ui import normalize_status_label, render_kpi_cards, render_meta_row, render_page_header, status_priority
+from components.ui import (
+    normalize_status_label,
+    render_kpi_cards,
+    render_meta_row,
+    render_page_header,
+    render_section_header_with_download,
+    status_priority,
+)
 
 st.set_page_config(page_title="Alerts", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
@@ -207,7 +214,6 @@ def _render_alerts_body() -> None:
             },
         )
 
-    st.markdown("### Detail Alert Aktif")
     detail_columns = ["created_at_wib", "device_name", "severity", "message"]
     if "metric_name" in filtered_frame.columns:
         detail_columns.insert(3, "metric_name")
@@ -219,6 +225,12 @@ def _render_alerts_body() -> None:
             "metric_name": "Metrik",
             "message": "Pesan",
         }
+    )
+    render_section_header_with_download(
+        "Detail Alert Aktif",
+        detail_frame,
+        file_name="active_alerts.csv",
+        key="download_active_alerts",
     )
     st.dataframe(
         detail_frame.head(int(max_rows)),

@@ -37,6 +37,11 @@ class TelegramSettings:
     bot_token: str
     chat_id: str
     alert_grace_period_seconds: int
+    realtime_severities: str
+    summary_severities: str
+    summary_interval_seconds: int
+    notification_cooldown_seconds: int
+    resolved_correlation_window_seconds: int
 
 
 @dataclass(frozen=True)

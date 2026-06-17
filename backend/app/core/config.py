@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     telegram_alert_grace_period_seconds: int = 60
+    telegram_realtime_severities: str = "critical,high,warning"
+    telegram_summary_severities: str = ""
+    telegram_summary_interval_seconds: int = 0
+    telegram_notification_cooldown_seconds: int = 300
+    telegram_resolved_correlation_window_seconds: int = 900
     mikrotik_host: str = ""
     mikrotik_port: int = 8728
     mikrotik_username: str = ""
@@ -217,6 +222,11 @@ class Settings(BaseSettings):
             bot_token=self.telegram_bot_token,
             chat_id=self.telegram_chat_id,
             alert_grace_period_seconds=self.telegram_alert_grace_period_seconds,
+            realtime_severities=self.telegram_realtime_severities,
+            summary_severities=self.telegram_summary_severities,
+            summary_interval_seconds=self.telegram_summary_interval_seconds,
+            notification_cooldown_seconds=self.telegram_notification_cooldown_seconds,
+            resolved_correlation_window_seconds=self.telegram_resolved_correlation_window_seconds,
         )
 
     @property
