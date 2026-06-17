@@ -232,14 +232,63 @@ class IncidentItem(BaseModel):
     device_name: str | None = None
     status: str
     summary: str
+    owner: str | None = None
+    assignee: str | None = None
+    severity_override: str | None = None
+    effective_severity: str | None = None
+    note: str | None = None
+    acknowledged_at: datetime | None = None
+    acknowledged_by: str | None = None
     started_at: datetime
     ended_at: datetime | None = None
+    resolved_by: str | None = None
+    updated_at: datetime | None = None
 
 
 class IncidentPage(BaseModel):
     """Pydantic schema for IncidentPage payloads."""
     items: list["IncidentItem"]
     meta: PageMeta
+
+
+class IncidentWorkflowUpdate(BaseModel):
+    """Request payload for mutable incident workflow fields."""
+
+    owner: str | None = None
+    assignee: str | None = None
+    severity_override: str | None = None
+    note: str | None = None
+
+
+class IncidentActionRequest(BaseModel):
+    """Request payload for incident workflow actions."""
+
+    note: str | None = None
+    assignee: str | None = None
+
+
+class IncidentTimelineItem(BaseModel):
+    """Pydantic schema for incident timeline payloads."""
+
+    id: int
+    incident_id: int
+    event_type: str
+    actor: str | None = None
+    message: str
+    metadata: dict
+    created_at: datetime
+
+
+class IncidentTimelineResponse(BaseModel):
+    """Pydantic schema for one incident timeline response."""
+
+    items: list["IncidentTimelineItem"]
+
+
+class IncidentEscalationResponse(BaseModel):
+    """Pydantic schema for incident escalation list."""
+
+    items: list["IncidentItem"]
 
 
 class RunCycleResult(BaseModel):

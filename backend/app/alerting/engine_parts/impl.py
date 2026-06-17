@@ -262,6 +262,14 @@ async def _apply_created_alerts(
             created_alert.device_id,
             created_alert.message,
         )
+        await incident_repository.add_alert_timeline_event(
+            device_id=created_alert.device_id,
+            alert_type=created_alert.alert_type,
+            message=created_alert.message,
+            action="created",
+            event_at=created_alert.created_at,
+            commit=False,
+        )
         state.has_pending_writes = True
         state.notifications.append(
             {
@@ -296,6 +304,14 @@ async def _apply_resolved_alerts(
             state.alerts_count_by_device,
             alert.device_id,
             resolved_at,
+        )
+        await incident_repository.add_alert_timeline_event(
+            device_id=alert.device_id,
+            alert_type=alert.alert_type,
+            message=alert.message,
+            action="resolved",
+            event_at=resolved_at,
+            commit=False,
         )
         state.has_pending_writes = True
         state.alerts.pop(key, None)
@@ -610,6 +626,7 @@ def _order_telegram_events(events: list[dict]) -> list[dict]:
 
 async def _send_telegram_events(db, alert_repository: AlertRepository, events: list[dict], *, commit: bool) -> None:
     """Send Telegram events and mark active alerts that were successfully delivered."""
+    incident_repository = IncidentRepository(db)
     events = _order_telegram_events(await _refresh_telegram_events(db, events))
     grouped_events = _group_telegram_events(events)
     if not grouped_events:
@@ -622,19 +639,28 @@ async def _send_telegram_events(db, alert_repository: AlertRepository, events: l
     )
     notified_at = utcnow()
     has_marked_alerts = False
+    has_notification_events = False
     for group, result in zip(grouped_items, results, strict=True):
         if isinstance(result, Exception):
             continue
         for event in group:
-            if str(event.get("action") or "active").lower() not in {"active", "summary_active"}:
-                continue
             alert = event.get("alert")
             if alert is None:
+                continue
+            await incident_repository.add_notification_timeline_event_for_alert(
+                alert=alert,
+                action=str(event.get("action") or "active"),
+                channel="telegram",
+                notified_at=notified_at,
+                commit=False,
+            )
+            has_notification_events = True
+            if str(event.get("action") or "active").lower() not in {"active", "summary_active"}:
                 continue
             await alert_repository.mark_telegram_notified(alert, notified_at, commit=False)
             has_marked_alerts = True
 
-    if has_marked_alerts:
+    if has_marked_alerts or has_notification_events:
         if commit:
             await db.commit()
         else:

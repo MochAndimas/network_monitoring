@@ -438,6 +438,8 @@ Alert rule utama:
 
 Alert aktif dikaitkan ke incident aktif per device. Incident resolved otomatis setelah semua alert aktif untuk device tersebut clear.
 
+Incident workflow mendukung acknowledgment, owner/assignee, severity override, note, manual resolve/reopen, timeline event, dan escalation list untuk incident critical/high yang belum di-ack melewati window operasional. Timeline mencatat created, acknowledged, alert changes, notification sent, resolved, reopened, dan update workflow.
+
 Telegram notification optional memakai:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
@@ -701,6 +703,12 @@ Semua endpoint operasional selain `/health/*` membutuhkan bearer token atau API 
 - `GET /alerts/active/paged`
 - `GET /incidents`
 - `GET /incidents/paged`
+- `GET /incidents/escalations`
+- `GET /incidents/{incident_id}/timeline`
+- `PUT /incidents/{incident_id}/workflow`
+- `POST /incidents/{incident_id}/ack`
+- `POST /incidents/{incident_id}/resolve`
+- `POST /incidents/{incident_id}/reopen`
 - `GET /thresholds`
 - `PUT /thresholds/{key}`
 - `POST /system/run-cycle`
@@ -749,7 +757,7 @@ Halaman:
 - `Live Monitoring`: metric history, latest snapshot, chart, dynamic Mikrotik/printer/NAS views, dan CSV export
 - `Devices`: inventory device, filter, pagination, create/update/delete untuk admin
 - `Alerts`: active alert
-- `Incidents`: active/resolved incidents
+- `Incidents`: active/resolved incidents, workflow action, timeline, escalation, dan CSV export
 - `Thresholds`: threshold alert dan update untuk admin
 - `System Health`: database status, scheduler jobs, operational alerts, auth counters, runtime info, freshness per collector/site, dan CSV export operasional
 

@@ -215,6 +215,95 @@ def test_alerts_and_incidents_paged_endpoints_include_meta_and_keep_legacy_contr
             "2 alert: high_cpu: cpu high; disk_space: disk almost full"
         )
 
+
+def test_incident_workflow_actions_timeline_and_escalations():
+    with client_context() as (client, session_factory):
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [{"name": "Core Router", "ip_address": "192.168.1.1", "device_type": "mikrotik"}]
+                )
+                current_time = utcnow()
+                db.add(
+                    Alert(
+                        device_id=devices[0].id,
+                        alert_type="router_down",
+                        severity="critical",
+                        message="router unreachable",
+                        status="active",
+                        created_at=current_time - timedelta(minutes=30),
+                    )
+                )
+                incident = Incident(
+                    device_id=devices[0].id,
+                    status="active",
+                    summary="router unreachable",
+                    started_at=current_time - timedelta(minutes=30),
+                )
+                db.add(incident)
+                await db.commit()
+                return incident.id
+
+        incident_id = run(scenario())
+
+        escalation_response = client.get("/incidents/escalations?critical_after_minutes=15", headers=API_HEADERS)
+        update_response = client.put(
+            f"/incidents/{incident_id}/workflow",
+            headers=API_HEADERS,
+            json={
+                "owner": "ops",
+                "assignee": "andi",
+                "severity_override": "high",
+                "note": "Investigasi gateway core",
+            },
+        )
+        ack_response = client.post(
+            f"/incidents/{incident_id}/ack",
+            headers=API_HEADERS,
+            json={"note": "Sedang dicek", "assignee": "andi"},
+        )
+        escalation_after_ack_response = client.get("/incidents/escalations?critical_after_minutes=15", headers=API_HEADERS)
+        resolve_response = client.post(
+            f"/incidents/{incident_id}/resolve",
+            headers=API_HEADERS,
+            json={"note": "Link backup aktif"},
+        )
+        reopen_response = client.post(
+            f"/incidents/{incident_id}/reopen",
+            headers=API_HEADERS,
+            json={"note": "Issue muncul lagi"},
+        )
+        timeline_response = client.get(f"/incidents/{incident_id}/timeline", headers=API_HEADERS)
+
+        assert escalation_response.status_code == 200
+        assert escalation_response.json()["items"][0]["id"] == incident_id
+        assert escalation_response.json()["items"][0]["effective_severity"] == "critical"
+
+        assert update_response.status_code == 200
+        assert update_response.json()["owner"] == "ops"
+        assert update_response.json()["assignee"] == "andi"
+        assert update_response.json()["effective_severity"] == "high"
+        assert update_response.json()["note"] == "Investigasi gateway core"
+
+        assert ack_response.status_code == 200
+        assert ack_response.json()["acknowledged_at"] is not None
+        assert ack_response.json()["acknowledged_by"] == "api_key:legacy-default"
+
+        assert escalation_after_ack_response.status_code == 200
+        assert escalation_after_ack_response.json()["items"] == []
+
+        assert resolve_response.status_code == 200
+        assert resolve_response.json()["status"] == "resolved"
+        assert resolve_response.json()["resolved_by"] == "api_key:legacy-default"
+
+        assert reopen_response.status_code == 200
+        assert reopen_response.json()["status"] == "active"
+        assert reopen_response.json()["ended_at"] is None
+
+        assert timeline_response.status_code == 200
+        timeline_types = [item["event_type"] for item in timeline_response.json()["items"]]
+        assert timeline_types == ["updated", "acknowledged", "resolved", "reopened"]
+
 def test_dashboard_summary_uses_mikrotik_api_health_without_ping():
     with client_context() as (client, session_factory):
         async def scenario():

@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth import require_dashboard_login
-from components.api import get_json, paged_items, paged_meta
+from components.api import get_json, paged_items, paged_meta, post_json, put_json
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
@@ -20,6 +20,8 @@ from components.ui import (
     render_page_header,
     status_priority,
 )
+
+SEVERITY_OPTIONS = ["", "critical", "high", "warning", "info"]
 
 st.set_page_config(page_title="Incidents", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
@@ -196,6 +198,144 @@ def _render_detail_table_controls(
     return dataframe.iloc[start_index : start_index + page_size]
 
 
+def _incident_option_label(row: pd.Series) -> str:
+    """Return a compact incident selector label."""
+    status = str(row.get("status") or "-")
+    device = str(row.get("device_name") or "-")
+    severity = str(row.get("effective_severity") or "-")
+    started = str(row.get("started_at_wib") or "-")
+    return f"#{int(row['id'])} | {status} | {severity} | {device} | {started}"
+
+
+def _render_timeline(incident_id: int) -> None:
+    """Render one incident timeline."""
+    timeline_payload = get_json(f"/incidents/{incident_id}/timeline", {"items": []})
+    timeline_items = timeline_payload.get("items", []) if isinstance(timeline_payload, dict) else []
+    st.markdown("### Timeline")
+    if not timeline_items:
+        st.info("Timeline belum punya event.")
+        return
+    timeline_frame = pd.DataFrame(timeline_items)
+    timeline_frame["created_at"] = to_wib_timestamp(timeline_frame["created_at"])
+    timeline_frame["Waktu (WIB)"] = timeline_frame["created_at"].apply(format_wib_timestamp)
+    timeline_frame["Event"] = timeline_frame["event_type"].astype(str).str.replace("_", " ").str.title()
+    timeline_frame["Actor"] = timeline_frame["actor"].fillna("-")
+    timeline_frame["Pesan"] = timeline_frame["message"].fillna("-")
+    st.dataframe(
+        timeline_frame[["Waktu (WIB)", "Event", "Actor", "Pesan"]],
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Waktu (WIB)": st.column_config.TextColumn("Waktu (WIB)", width="medium"),
+            "Event": st.column_config.TextColumn("Event", width="small"),
+            "Actor": st.column_config.TextColumn("Actor", width="small"),
+            "Pesan": st.column_config.TextColumn("Pesan", width="large"),
+        },
+    )
+
+
+def _render_escalations() -> None:
+    """Render active incident escalations."""
+    escalation_payload = get_json("/incidents/escalations", {"items": []})
+    escalation_items = escalation_payload.get("items", []) if isinstance(escalation_payload, dict) else []
+    st.markdown("### Escalation")
+    if not escalation_items:
+        st.success("Tidak ada critical/high incident yang melewati window escalation.")
+        return
+    escalation_frame = pd.DataFrame(escalation_items)
+    escalation_frame["started_at"] = to_wib_timestamp(escalation_frame["started_at"])
+    escalation_frame["Mulai (WIB)"] = escalation_frame["started_at"].apply(format_wib_timestamp)
+    escalation_frame["Severity"] = escalation_frame["effective_severity"].fillna("-").astype(str).str.title()
+    escalation_frame["Device"] = escalation_frame["device_name"].fillna("-")
+    escalation_frame["Assignee"] = escalation_frame["assignee"].fillna("-")
+    escalation_frame["Ringkasan"] = escalation_frame["summary"].fillna("-")
+    st.dataframe(
+        escalation_frame[["Mulai (WIB)", "Severity", "Device", "Assignee", "Ringkasan"]],
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Mulai (WIB)": st.column_config.TextColumn("Mulai (WIB)", width="medium"),
+            "Severity": st.column_config.TextColumn("Severity", width="small"),
+            "Device": st.column_config.TextColumn("Device", width="medium"),
+            "Assignee": st.column_config.TextColumn("Assignee", width="medium"),
+            "Ringkasan": st.column_config.TextColumn("Ringkasan", width="large"),
+        },
+    )
+
+
+def _render_workflow_panel(dataframe: pd.DataFrame) -> None:
+    """Render incident workflow actions and timeline."""
+    if dataframe.empty or "id" not in dataframe.columns:
+        return
+    st.markdown("### Workflow Insiden")
+    options = dataframe.sort_values(["raw_status", "started_at"], ascending=[True, False])["id"].tolist()
+    selected_id = st.selectbox(
+        "Pilih Incident",
+        options=options,
+        format_func=lambda incident_id: _incident_option_label(dataframe.loc[dataframe["id"] == incident_id].iloc[0]),
+        key="incident_workflow_selected_id",
+    )
+    selected = dataframe.loc[dataframe["id"] == selected_id].iloc[0]
+    workflow_col, action_col = st.columns([2, 1])
+    with workflow_col:
+        owner = st.text_input("Owner", value=str(selected.get("owner") or ""), key=f"incident_owner_{selected_id}")
+        assignee = st.text_input("Assignee", value=str(selected.get("assignee") or ""), key=f"incident_assignee_{selected_id}")
+        current_severity = str(selected.get("severity_override") or "")
+        severity_index = SEVERITY_OPTIONS.index(current_severity) if current_severity in SEVERITY_OPTIONS else 0
+        severity_override = st.selectbox(
+            "Severity Override",
+            options=SEVERITY_OPTIONS,
+            index=severity_index,
+            format_func=lambda value: "Ikuti alert" if not value else value.title(),
+            key=f"incident_severity_{selected_id}",
+        )
+        note = st.text_area("Note", value=str(selected.get("note") or ""), key=f"incident_note_{selected_id}", height=120)
+        if st.button("Simpan Workflow", key=f"incident_save_{selected_id}", type="primary"):
+            put_json(
+                f"/incidents/{selected_id}/workflow",
+                {"owner": owner, "assignee": assignee, "severity_override": severity_override or None, "note": note},
+                {},
+                action_key=f"incident_workflow_{selected_id}",
+            )
+            st.cache_data.clear()
+            st.rerun()
+    with action_col:
+        st.caption(f"Status: {selected.get('status') or '-'}")
+        st.caption(f"Ack: {selected.get('acknowledged_by') or '-'}")
+        action_note = st.text_area("Action Note", key=f"incident_action_note_{selected_id}", height=100)
+        if pd.isna(selected.get("acknowledged_at")) or not selected.get("acknowledged_at"):
+            if st.button("Acknowledge", key=f"incident_ack_{selected_id}"):
+                post_json(
+                    f"/incidents/{selected_id}/ack",
+                    {"note": action_note, "assignee": assignee},
+                    {},
+                    action_key=f"incident_ack_{selected_id}",
+                )
+                st.cache_data.clear()
+                st.rerun()
+        if str(selected.get("raw_status") or "").lower() == "active":
+            if st.button("Resolve", key=f"incident_resolve_{selected_id}"):
+                post_json(
+                    f"/incidents/{selected_id}/resolve",
+                    {"note": action_note},
+                    {},
+                    action_key=f"incident_resolve_{selected_id}",
+                )
+                st.cache_data.clear()
+                st.rerun()
+        else:
+            if st.button("Reopen", key=f"incident_reopen_{selected_id}"):
+                post_json(
+                    f"/incidents/{selected_id}/reopen",
+                    {"note": action_note},
+                    {},
+                    action_key=f"incident_reopen_{selected_id}",
+                )
+                st.cache_data.clear()
+                st.rerun()
+    _render_timeline(int(selected_id))
+
+
 def _render_incidents_body() -> None:
     """Render incidents body for the dashboard UI."""
     path = f"/incidents/paged?limit={int(incidents_page_size)}&offset={incidents_offset}"
@@ -245,9 +385,17 @@ def _render_incidents_body() -> None:
     dataframe = pd.DataFrame(incidents)
     dataframe["device_name"] = dataframe["device_name"].fillna("-") if "device_name" in dataframe.columns else "-"
     dataframe["summary"] = dataframe["summary"].fillna("-") if "summary" in dataframe.columns else "-"
+    dataframe["owner"] = dataframe["owner"].fillna("") if "owner" in dataframe.columns else ""
+    dataframe["assignee"] = dataframe["assignee"].fillna("") if "assignee" in dataframe.columns else ""
+    dataframe["severity_override"] = dataframe["severity_override"].fillna("") if "severity_override" in dataframe.columns else ""
+    dataframe["effective_severity"] = dataframe["effective_severity"].fillna("") if "effective_severity" in dataframe.columns else ""
+    dataframe["note"] = dataframe["note"].fillna("") if "note" in dataframe.columns else ""
+    dataframe["acknowledged_by"] = dataframe["acknowledged_by"].fillna("") if "acknowledged_by" in dataframe.columns else ""
     if "status" in dataframe.columns:
+        dataframe["raw_status"] = dataframe["status"].astype(str)
         dataframe["status"] = dataframe["status"].map(normalize_status_label)
     else:
+        dataframe["raw_status"] = "unknown"
         dataframe["status"] = "Unknown"
     dataframe["status_priority"] = dataframe["status"].map(status_priority)
 
@@ -264,6 +412,13 @@ def _render_incidents_body() -> None:
     else:
         dataframe["ended_at"] = pd.NaT
         dataframe["ended_at_wib"] = "-"
+
+    if "acknowledged_at" in dataframe.columns:
+        dataframe["acknowledged_at"] = to_wib_timestamp(dataframe["acknowledged_at"])
+        dataframe["acknowledged_at_wib"] = dataframe["acknowledged_at"].apply(format_wib_timestamp)
+    else:
+        dataframe["acknowledged_at"] = pd.NaT
+        dataframe["acknowledged_at_wib"] = "-"
 
     dataframe["duration_minutes"] = (
         (dataframe["ended_at"] - dataframe["started_at"]).dt.total_seconds().div(60)
@@ -286,8 +441,9 @@ def _render_incidents_body() -> None:
         filtered_frame = filtered_frame.sort_values("started_at", ascending=False)
 
     total_incidents = int(len(filtered_frame))
-    active_incidents = int(filtered_frame["status"].str.lower().eq("active").sum())
-    resolved_incidents = int(filtered_frame["status"].str.lower().eq("resolved").sum())
+    active_incidents = int(filtered_frame["raw_status"].str.lower().eq("active").sum())
+    resolved_incidents = int(filtered_frame["raw_status"].str.lower().eq("resolved").sum())
+    acknowledged_incidents = int(filtered_frame["acknowledged_at"].notna().sum())
     affected_devices = int(filtered_frame["device_name"].nunique())
 
     duration_series = filtered_frame["duration_minutes"].dropna()
@@ -298,11 +454,52 @@ def _render_incidents_body() -> None:
             ("Total Insiden", total_incidents, None),
             ("Insiden Aktif", active_incidents, None),
             ("Insiden Selesai", resolved_incidents, None),
+            ("Sudah Ack", acknowledged_incidents, None),
             ("Device Terdampak", affected_devices, None),
             ("Durasi Median", median_duration_label, None),
         ],
-        columns_per_row=5,
+        columns_per_row=6,
     )
+
+    workflow_tab, analytics_tab = st.tabs(["Workflow", "Analytics"])
+    with workflow_tab:
+        _render_escalations()
+        _render_workflow_panel(filtered_frame)
+    with analytics_tab:
+        _render_incident_analytics(filtered_frame)
+
+    detail_columns = [
+        "started_at_wib",
+        "ended_at_wib",
+        "acknowledged_at_wib",
+        "duration_label",
+        "device_name",
+        "effective_severity",
+        "assignee",
+        "status",
+        "summary",
+    ]
+    detail_frame = filtered_frame[detail_columns].rename(
+        columns={
+            "started_at_wib": "Mulai (WIB)",
+            "ended_at_wib": "Selesai (WIB)",
+            "acknowledged_at_wib": "Ack (WIB)",
+            "duration_label": "Durasi",
+            "device_name": "Nama Device",
+            "effective_severity": "Severity",
+            "assignee": "Assignee",
+            "status": "Status",
+            "summary": "Ringkasan",
+        }
+    )
+    capped_detail_frame = detail_frame.head(int(max_rows))
+    _render_detail_table(_render_detail_table_controls(capped_detail_frame, title="Detail Insiden", page_size=10))
+    st.markdown("")
+    st.caption("Tip: gunakan urutan Durasi Terpanjang untuk meninjau insiden dengan dampak waktu terbesar.")
+
+
+def _render_incident_analytics(filtered_frame: pd.DataFrame) -> None:
+    """Render incident analytics charts and compact tables."""
 
     status_counts = (
         filtered_frame["status"]
@@ -366,22 +563,6 @@ def _render_incidents_body() -> None:
                 "Jumlah Insiden": st.column_config.NumberColumn("Jumlah Insiden", width="small", format="%d"),
             },
         )
-
-    detail_columns = ["started_at_wib", "ended_at_wib", "duration_label", "device_name", "status", "summary"]
-    detail_frame = filtered_frame[detail_columns].rename(
-        columns={
-            "started_at_wib": "Mulai (WIB)",
-            "ended_at_wib": "Selesai (WIB)",
-            "duration_label": "Durasi",
-            "device_name": "Nama Device",
-            "status": "Status",
-            "summary": "Ringkasan",
-        }
-    )
-    capped_detail_frame = detail_frame.head(int(max_rows))
-    _render_detail_table(_render_detail_table_controls(capped_detail_frame, title="Detail Insiden", page_size=10))
-    st.markdown("")
-    st.caption("Tip: gunakan urutan Durasi Terpanjang untuk meninjau insiden dengan dampak waktu terbesar.")
 
 
 render_live_section(auto_refresh, interval_seconds, _render_incidents_body)

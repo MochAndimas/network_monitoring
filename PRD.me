@@ -257,10 +257,10 @@ Fitur operasional:
 
 ## 9. Gap Dan Risiko Saat Ini
 
-1. README belum sepenuhnya sinkron dengan kode terbaru untuk NAS dan beberapa endpoint seperti `/metrics/history/live`.
+1. README sudah lebih sinkron dengan kode terbaru, tetapi perlu dijaga setiap kali endpoint atau collector baru ditambah.
 2. Dashboard masih Streamlit, cocok untuk internal kecil tetapi akan sulit jika user concurrent dan UX semakin kompleks.
 3. Belum ada auto-discovery device, bulk import/export inventory, atau template device onboarding.
-4. Tidak ada explicit acknowledgment/escalation workflow untuk incident.
+4. Incident workflow dasar sudah ada; escalation policy masih sederhana dan belum memiliki routing per site/device type.
 5. Alert rule masih berbasis latest snapshot dan threshold sederhana; belum ada rule windowed/anomaly detection.
 6. Telegram adalah satu-satunya notifier eksternal dan memang menjadi channel notifikasi resmi untuk fase saat ini.
 7. Tidak ada role granular selain admin/viewer.
@@ -302,6 +302,15 @@ Acceptance criteria:
 ### Phase 2 - Incident Workflow Dan Notifikasi
 
 Prioritas: tinggi.
+
+Status implementasi:
+- [x] Incident acknowledgment untuk incident aktif via API dan dashboard Incidents.
+- [x] Field workflow incident: owner, assignee, severity override, note, acknowledged_by/at, resolved_by, dan updated_at.
+- [x] Timeline incident berbasis tabel append-only untuk created, acknowledged, alert changes, notification sent, resolved, reopened, dan workflow updated.
+- [x] Manual resolve dan reopen incident untuk admin/ops dari dashboard dan API.
+- [x] Escalation list untuk active incident critical/high yang belum di-ack melewati window durasi.
+- [x] Telegram tetap menjadi satu-satunya notification channel dan behavior lama tetap kompatibel.
+- [x] Dokumentasi README diperbarui untuk endpoint dan UX incident workflow.
 
 Requirements:
 - Tambahkan incident acknowledgment.
