@@ -1,6 +1,5 @@
 """Streamlit dashboard helpers for 6 Incidents."""
 
-from html import escape
 from urllib.parse import quote_plus
 
 import altair as alt
@@ -71,85 +70,56 @@ def _duration_label(minutes_value: float | None) -> str:
     return f"{hours}j {mins}m" if hours else f"{mins}m"
 
 
-def _render_detail_table(dataframe: pd.DataFrame) -> None:
-    """Render incident detail table with wrapped summary text."""
-    headers = list(dataframe.columns)
-    header_html = "".join(f"<th>{escape(str(header))}</th>" for header in headers)
-    rows_html = []
-    for _, row in dataframe.iterrows():
-        cells = []
-        for header in headers:
-            raw_value = "" if pd.isna(row[header]) else str(row[header])
-            cell_value = escape(raw_value)
-            cell_class = "summary-cell" if header == "Ringkasan" else ""
-            if header == "Ringkasan":
-                cell_value = cell_value.replace("; ", "<br>")
-            cells.append(f'<td class="{cell_class}">{cell_value}</td>')
-        rows_html.append(f"<tr>{''.join(cells)}</tr>")
-
-    st.markdown(
-        f"""
-        <style>
-        .incident-detail-table {{
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed;
-            font-size: 0.95rem;
-        }}
-        .incident-detail-table th {{
-            color: #a7b0bf;
-            background: #171a22;
-            border: 1px solid #2a2f3a;
-            padding: 0.72rem 0.7rem;
-            text-align: left;
-            font-weight: 600;
-        }}
-        .incident-detail-table td {{
-            border: 1px solid #252a34;
-            padding: 0.72rem 0.7rem;
-            vertical-align: top;
-            overflow-wrap: anywhere;
-            word-break: normal;
-        }}
-        .incident-detail-table th:nth-child(1),
-        .incident-detail-table th:nth-child(2) {{
-            width: 16%;
-        }}
-        .incident-detail-table th:nth-child(3) {{
-            width: 6%;
-        }}
-        .incident-detail-table th:nth-child(4) {{
-            width: 16%;
-        }}
-        .incident-detail-table th:nth-child(5) {{
-            width: 8%;
-        }}
-        .incident-detail-table th:nth-child(6) {{
-            width: 38%;
-        }}
-        .incident-detail-table .summary-cell {{
-            line-height: 1.45;
-            white-space: normal;
-        }}
-        @media (max-width: 900px) {{
-            .incident-detail-table {{
-                font-size: 0.85rem;
-            }}
-            .incident-detail-table th,
-            .incident-detail-table td {{
-                padding: 0.55rem 0.5rem;
-            }}
-        }}
-        </style>
-        <div style="overflow-x:auto;">
-            <table class="incident-detail-table">
-                <thead><tr>{header_html}</tr></thead>
-                <tbody>{''.join(rows_html)}</tbody>
-            </table>
-        </div>
-        """,
-        unsafe_allow_html=True,
+def _render_incident_detail(row: pd.Series) -> None:
+    """Render the full detail for one incident selected from the compact table."""
+    incident_id = int(row["ID"])
+    st.markdown(f"#### Detail Insiden #{incident_id}")
+    render_meta_row(
+        [
+            ("Mulai", str(row.get("Mulai (WIB)") or "-")),
+            ("Selesai", str(row.get("Selesai (WIB)") or "-")),
+            ("Acknowledged", str(row.get("Ack (WIB)") or "-")),
+            ("Owner", str(row.get("Owner") or "-")),
+            ("Assignee", str(row.get("Assignee") or "-")),
+        ]
     )
+    st.caption("Ringkasan")
+    st.write(str(row.get("Ringkasan") or "-"))
+
+
+def _render_detail_table(dataframe: pd.DataFrame) -> None:
+    """Render a compact selectable table and the selected incident detail."""
+    if dataframe.empty:
+        return
+
+    compact_frame = dataframe[
+        ["Waktu", "Nama Device", "Site", "Severity", "Durasi", "Status", "Ringkasan"]
+    ].rename(columns={"Nama Device": "Device"})
+    table_key = (
+        f"incidents_compact_detail_table_{int(dataframe.iloc[0]['ID'])}_"
+        f"{int(dataframe.iloc[-1]['ID'])}_{len(dataframe)}"
+    )
+    table_event = st.dataframe(
+        compact_frame,
+        width="stretch",
+        hide_index=True,
+        height=min(38 + len(compact_frame) * 40, 438),
+        on_select="rerun",
+        selection_mode="single-row",
+        key=table_key,
+        column_config={
+            "Waktu": st.column_config.TextColumn("Waktu", width=110),
+            "Device": st.column_config.TextColumn("Device", width=155),
+            "Site": st.column_config.TextColumn("Site", width=110),
+            "Severity": st.column_config.TextColumn("Severity", width=80),
+            "Durasi": st.column_config.TextColumn("Durasi", width=65),
+            "Status": st.column_config.TextColumn("Status", width=90),
+            "Ringkasan": st.column_config.TextColumn("Ringkasan", width=350),
+        },
+    )
+    selected_rows = list(table_event.selection.rows)
+    if selected_rows:
+        _render_incident_detail(dataframe.iloc[int(selected_rows[0])])
 
 
 def _render_detail_table_controls(
@@ -267,17 +237,30 @@ def _render_escalations() -> None:
 
 def _render_workflow_panel(dataframe: pd.DataFrame) -> None:
     """Render incident workflow actions and timeline."""
-    if dataframe.empty or "id" not in dataframe.columns:
-        return
     st.markdown("### Workflow Insiden")
-    options = dataframe.sort_values(["raw_status", "started_at"], ascending=[True, False])["id"].tolist()
+    required_columns = {"id", "raw_status"}
+    if dataframe.empty or not required_columns.issubset(dataframe.columns):
+        st.info("Tidak ada insiden aktif yang memerlukan tindakan workflow.")
+        return
+
+    active_frame = dataframe.loc[dataframe["raw_status"].fillna("").str.lower().eq("active")].copy()
+    if active_frame.empty:
+        st.info("Tidak ada insiden aktif yang memerlukan tindakan workflow.")
+        return
+
+    options = active_frame.sort_values("started_at", ascending=False)["id"].tolist()
+    selectbox_key = "incident_workflow_selected_id"
+    if st.session_state.get(selectbox_key) not in options:
+        st.session_state[selectbox_key] = options[0]
     selected_id = st.selectbox(
         "Pilih Incident",
         options=options,
-        format_func=lambda incident_id: _incident_option_label(dataframe.loc[dataframe["id"] == incident_id].iloc[0]),
-        key="incident_workflow_selected_id",
+        format_func=lambda incident_id: _incident_option_label(
+            active_frame.loc[active_frame["id"] == incident_id].iloc[0]
+        ),
+        key=selectbox_key,
     )
-    selected = dataframe.loc[dataframe["id"] == selected_id].iloc[0]
+    selected = active_frame.loc[active_frame["id"] == selected_id].iloc[0]
     workflow_col, action_col = st.columns([2, 1])
     with workflow_col:
         owner = st.text_input("Owner", value=str(selected.get("owner") or ""), key=f"incident_owner_{selected_id}")
@@ -408,9 +391,13 @@ def _render_incidents_body() -> None:
     if "started_at" in dataframe.columns:
         dataframe["started_at"] = to_wib_timestamp(dataframe["started_at"])
         dataframe["started_at_wib"] = dataframe["started_at"].apply(format_wib_timestamp)
+        dataframe["started_at_short"] = dataframe["started_at"].apply(
+            lambda value: value.strftime("%d-%m %H:%M") if pd.notna(value) else "-"
+        )
     else:
         dataframe["started_at"] = pd.NaT
         dataframe["started_at_wib"] = "-"
+        dataframe["started_at_short"] = "-"
 
     if "ended_at" in dataframe.columns:
         dataframe["ended_at"] = to_wib_timestamp(dataframe["ended_at"])
@@ -467,43 +454,49 @@ def _render_incidents_body() -> None:
         columns_per_row=6,
     )
 
-    workflow_tab, analytics_tab = st.tabs(["Workflow", "Analytics"])
-    with workflow_tab:
-        _render_escalations()
-        _render_workflow_panel(filtered_frame)
-    with analytics_tab:
-        _render_incident_analytics(filtered_frame)
-
     detail_columns = [
+        "id",
         "started_at_wib",
+        "started_at_short",
         "ended_at_wib",
         "acknowledged_at_wib",
         "duration_label",
         "device_name",
         "site",
         "effective_severity",
+        "owner",
         "assignee",
         "status",
         "summary",
     ]
     detail_frame = filtered_frame[detail_columns].rename(
         columns={
+            "id": "ID",
             "started_at_wib": "Mulai (WIB)",
+            "started_at_short": "Waktu",
             "ended_at_wib": "Selesai (WIB)",
             "acknowledged_at_wib": "Ack (WIB)",
             "duration_label": "Durasi",
             "device_name": "Nama Device",
             "site": "Site",
             "effective_severity": "Severity",
+            "owner": "Owner",
             "assignee": "Assignee",
             "status": "Status",
             "summary": "Ringkasan",
         }
     )
     capped_detail_frame = detail_frame.head(int(max_rows))
-    _render_detail_table(_render_detail_table_controls(capped_detail_frame, title="Detail Insiden", page_size=10))
-    st.markdown("")
-    st.caption("Tip: gunakan urutan Durasi Terpanjang untuk meninjau insiden dengan dampak waktu terbesar.")
+
+    analytics_tab, workflow_tab = st.tabs(["Analytics", "Workflow"])
+    with analytics_tab:
+        _render_incident_analytics(filtered_frame)
+        _render_detail_table(_render_detail_table_controls(capped_detail_frame, title="Detail Insiden", page_size=10))
+        st.markdown("")
+        st.caption("Tip: gunakan urutan Durasi Terpanjang untuk meninjau insiden dengan dampak waktu terbesar.")
+    with workflow_tab:
+        _render_escalations()
+        _render_workflow_panel(filtered_frame)
 
 
 def _render_incident_analytics(filtered_frame: pd.DataFrame) -> None:
