@@ -10,6 +10,7 @@ from components.auth import require_dashboard_login
 from components.api import get_json, paged_items, paged_meta
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
+from components.state import clamp_page, sync_filter_page
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
 from components.ui import (
     normalize_status_label,
@@ -53,10 +54,13 @@ alerts_filter_signature = (
     str(sort_mode),
     int(alerts_page_size),
 )
-if st.session_state.get(alerts_filter_signature_key) != alerts_filter_signature:
-    st.session_state[alerts_page_key] = 1
-    st.session_state[alerts_filter_signature_key] = alerts_filter_signature
-current_alerts_page = max(int(st.session_state.get(alerts_page_key, 1) or 1), 1)
+sync_filter_page(
+    st.session_state,
+    signature_key=alerts_filter_signature_key,
+    page_key=alerts_page_key,
+    signature=alerts_filter_signature,
+)
+current_alerts_page = clamp_page(st.session_state.get(alerts_page_key), total_pages=10**9)
 alerts_offset = (current_alerts_page - 1) * int(alerts_page_size)
 
 
@@ -98,7 +102,6 @@ def _render_alerts_body() -> None:
         "Halaman Alerts",
         min_value=1,
         max_value=alerts_total_pages,
-        value=min(current_alerts_page, alerts_total_pages),
         step=1,
         key=alerts_page_key,
     )

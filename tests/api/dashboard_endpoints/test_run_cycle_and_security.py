@@ -55,6 +55,7 @@ def test_telegram_messages_group_multiple_alerts_for_one_device():
     assert messages == [
         "\n".join(
             [
+                "Network Monitoring",
                 "[WARNING] ALERT ACTIVE",
                 "Device: MyRepublic - ISP",
                 "IP: 192.168.1.1",
@@ -100,6 +101,7 @@ def test_telegram_resolved_messages_include_alert_duration():
     assert messages == [
         "\n".join(
             [
+                "Network Monitoring",
                 "[CRITICAL] ALERT RESOLVED",
                 "Device: MyRepublic - ISP",
                 "IP: 192.168.1.1",
@@ -341,23 +343,27 @@ def test_pending_telegram_events_respect_summary_severity_mode():
     import backend.app.alerting.engine as engine_module
 
     previous_realtime = engine_module.settings.telegram_realtime_severities
+    previous_realtime_alert_types = engine_module.settings.telegram_realtime_alert_types
     previous_summary = engine_module.settings.telegram_summary_severities
+    previous_summary_alert_types = engine_module.settings.telegram_summary_alert_types
     previous_summary_interval = engine_module.settings.telegram_summary_interval_seconds
     previous_cooldown = engine_module.settings.telegram_notification_cooldown_seconds
     previous_grace = engine_module.settings.telegram_alert_grace_period_seconds
     engine_module.settings.telegram_realtime_severities = "critical"
+    engine_module.settings.telegram_realtime_alert_types = "device_down,internet_loss,high_packet_loss_critical"
     engine_module.settings.telegram_summary_severities = "warning"
+    engine_module.settings.telegram_summary_alert_types = "slow_http_response"
     engine_module.settings.telegram_summary_interval_seconds = 300
     engine_module.settings.telegram_notification_cooldown_seconds = 0
     engine_module.settings.telegram_alert_grace_period_seconds = 0
     try:
-        device = SimpleNamespace(id=1, name="AP4", ip_address="192.168.88.52", site="R. Server", device_type="access_point")
+        device = SimpleNamespace(id=1, name="MyRepublic - ISP", ip_address="192.168.1.1", site="R. Server", device_type="internet_target")
         alert = Alert(
             id=10,
             device_id=1,
-            alert_type="high_ping_latency_warning",
+            alert_type="slow_http_response",
             severity="warning",
-            message="AP4 ping latency reached 101.10ms",
+            message="MyRepublic - ISP HTTP response reached 8719.64ms",
             status="active",
             created_at=utcnow() - timedelta(minutes=6),
         )
@@ -370,10 +376,452 @@ def test_pending_telegram_events_respect_summary_severity_mode():
         assert events[0]["action"] == "summary_active"
     finally:
         engine_module.settings.telegram_realtime_severities = previous_realtime
+        engine_module.settings.telegram_realtime_alert_types = previous_realtime_alert_types
         engine_module.settings.telegram_summary_severities = previous_summary
+        engine_module.settings.telegram_summary_alert_types = previous_summary_alert_types
         engine_module.settings.telegram_summary_interval_seconds = previous_summary_interval
         engine_module.settings.telegram_notification_cooldown_seconds = previous_cooldown
         engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
+
+
+def test_pending_telegram_events_require_realtime_alert_type_allowlist():
+    import backend.app.alerting.engine as engine_module
+
+    previous_realtime = engine_module.settings.telegram_realtime_severities
+    previous_realtime_alert_types = engine_module.settings.telegram_realtime_alert_types
+    previous_grace = engine_module.settings.telegram_alert_grace_period_seconds
+    engine_module.settings.telegram_realtime_severities = "critical"
+    engine_module.settings.telegram_realtime_alert_types = "device_down,internet_loss,high_packet_loss_critical"
+    engine_module.settings.telegram_alert_grace_period_seconds = 0
+    try:
+        device = SimpleNamespace(id=1, name="VoIP - 5", ip_address="192.168.88.102", site="Office 1", device_type="voip")
+        latency_alert = Alert(
+            id=12,
+            device_id=1,
+            alert_type="high_ping_latency_critical",
+            severity="critical",
+            message="VoIP - 5 ping latency reached 621.89ms",
+            status="active",
+            created_at=utcnow() - timedelta(minutes=5),
+        )
+        packet_loss_alert = Alert(
+            id=13,
+            device_id=1,
+            alert_type="high_packet_loss_critical",
+            severity="critical",
+            message="VoIP - 5 packet_loss reached 80.00%",
+            status="active",
+            created_at=utcnow() - timedelta(minutes=5),
+        )
+
+        events = engine_module._pending_active_telegram_events(
+            [latency_alert, packet_loss_alert],
+            device_by_id={1: device},
+            device_type_by_id={1: "voip"},
+        )
+
+        assert [event["alert_type"] for event in events] == ["high_packet_loss_critical"]
+    finally:
+        engine_module.settings.telegram_realtime_severities = previous_realtime
+        engine_module.settings.telegram_realtime_alert_types = previous_realtime_alert_types
+        engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
+
+
+def test_pending_telegram_summary_allows_repeated_noisy_alerts():
+    import backend.app.alerting.engine as engine_module
+
+    previous_summary = engine_module.settings.telegram_summary_severities
+    previous_summary_alert_types = engine_module.settings.telegram_summary_alert_types
+    previous_summary_interval = engine_module.settings.telegram_summary_interval_seconds
+    previous_repeat_window = engine_module.settings.telegram_summary_repeat_window_seconds
+    previous_repeat_min_count = engine_module.settings.telegram_summary_repeat_min_count
+    previous_grace = engine_module.settings.telegram_alert_grace_period_seconds
+    engine_module.settings.telegram_summary_severities = "warning"
+    engine_module.settings.telegram_summary_alert_types = "slow_dns_resolution"
+    engine_module.settings.telegram_summary_interval_seconds = 1800
+    engine_module.settings.telegram_summary_repeat_window_seconds = 900
+    engine_module.settings.telegram_summary_repeat_min_count = 3
+    engine_module.settings.telegram_alert_grace_period_seconds = 0
+    try:
+        device = SimpleNamespace(id=1, name="MyRepublic - ISP", ip_address="192.168.1.1", site="R. Server", device_type="internet_target")
+        alert = Alert(
+            id=14,
+            device_id=1,
+            alert_type="slow_dns_resolution",
+            severity="warning",
+            message="MyRepublic - ISP DNS resolution reached 3883.07ms",
+            status="active",
+            created_at=utcnow() - timedelta(minutes=2),
+        )
+
+        events = engine_module._pending_active_telegram_events(
+            [alert],
+            device_by_id={1: device},
+            device_type_by_id={1: "internet_target"},
+            recent_alert_counts={(1, "slow_dns_resolution"): 3},
+        )
+
+        assert len(events) == 1
+        assert events[0]["action"] == "summary_active"
+    finally:
+        engine_module.settings.telegram_summary_severities = previous_summary
+        engine_module.settings.telegram_summary_alert_types = previous_summary_alert_types
+        engine_module.settings.telegram_summary_interval_seconds = previous_summary_interval
+        engine_module.settings.telegram_summary_repeat_window_seconds = previous_repeat_window
+        engine_module.settings.telegram_summary_repeat_min_count = previous_repeat_min_count
+        engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
+
+
+def test_telegram_summary_message_aggregates_internet_degradation():
+    import backend.app.alerting.engine as engine_module
+
+    device = SimpleNamespace(
+        id=1,
+        name="MyRepublic - ISP",
+        ip_address="192.168.1.1",
+        site="R. Server",
+        device_type="internet_target",
+    )
+    started_at = utcnow().replace(hour=13, minute=0, second=0, microsecond=0)
+    alerts = [
+        Alert(
+            id=1,
+            device_id=1,
+            alert_type="slow_http_response",
+            severity="warning",
+            message="MyRepublic - ISP HTTP response reached 8719.64ms",
+            status="resolved",
+            created_at=started_at,
+            resolved_at=started_at + timedelta(minutes=3),
+        ),
+        Alert(
+            id=2,
+            device_id=1,
+            alert_type="slow_dns_resolution",
+            severity="warning",
+            message="MyRepublic - ISP DNS resolution reached 3883.07ms",
+            status="resolved",
+            created_at=started_at + timedelta(minutes=6),
+            resolved_at=started_at + timedelta(minutes=9),
+        ),
+        Alert(
+            id=3,
+            device_id=1,
+            alert_type="slow_http_response",
+            severity="warning",
+            message="MyRepublic - ISP HTTP response reached 11829.04ms",
+            status="active",
+            created_at=started_at + timedelta(minutes=29),
+        ),
+    ]
+
+    messages = engine_module._build_telegram_messages(
+        [
+            {
+                "action": "summary_active",
+                "alert_id": 3,
+                "alert_type": "slow_http_response",
+                "severity": "warning",
+                "message": "MyRepublic - ISP HTTP response reached 11829.04ms",
+                "device": device,
+                "summary_alerts": alerts,
+            }
+        ]
+    )
+
+    assert messages == [
+        "\n".join(
+            [
+                "Network Monitoring",
+                "[WARNING] ALERT SUMMARY",
+                "Device: MyRepublic - ISP",
+                "IP: 192.168.1.1",
+                "Site: R. Server",
+                "Type: internet_target",
+                "Status: SUMMARY",
+                "Alerts:",
+                "- MyRepublic - ISP degraded 13:00-13:29: 2 slow HTTP, 1 slow DNS, max HTTP 11.8s, max DNS 3.9s",
+            ]
+        )
+    ]
+
+
+def test_pending_telegram_events_allow_device_down_but_filter_other_realtime_by_device_type():
+    import backend.app.alerting.engine as engine_module
+
+    previous_realtime = engine_module.settings.telegram_realtime_severities
+    previous_realtime_alert_types = engine_module.settings.telegram_realtime_alert_types
+    previous_realtime_device_types = engine_module.settings.telegram_realtime_device_types
+    previous_grace = engine_module.settings.telegram_alert_grace_period_seconds
+    engine_module.settings.telegram_realtime_severities = "critical"
+    engine_module.settings.telegram_realtime_alert_types = "device_down,high_packet_loss_critical"
+    engine_module.settings.telegram_realtime_device_types = "voip"
+    engine_module.settings.telegram_alert_grace_period_seconds = 0
+    try:
+        voip = SimpleNamespace(id=1, name="VoIP - 3", ip_address="192.168.88.183", site="Office 1", device_type="voip")
+        printer = SimpleNamespace(id=2, name="EPSON L3250 - 1", ip_address="192.168.88.38", site="Finance", device_type="printer")
+        voip_down = Alert(
+            id=15,
+            device_id=1,
+            alert_type="device_down",
+            severity="critical",
+            message="VoIP - 3 is unreachable",
+            status="active",
+            created_at=utcnow() - timedelta(minutes=5),
+        )
+        printer_down = Alert(
+            id=16,
+            device_id=2,
+            alert_type="device_down",
+            severity="critical",
+            message="EPSON L3250 - 1 is unreachable",
+            status="active",
+            created_at=utcnow() - timedelta(minutes=5),
+        )
+        printer_packet_loss = Alert(
+            id=17,
+            device_id=2,
+            alert_type="high_packet_loss_critical",
+            severity="critical",
+            message="EPSON L3250 - 1 packet_loss reached 100.00%",
+            status="active",
+            created_at=utcnow() - timedelta(minutes=5),
+        )
+
+        events = engine_module._pending_active_telegram_events(
+            [voip_down, printer_down, printer_packet_loss],
+            device_by_id={1: voip, 2: printer},
+            device_type_by_id={1: "voip", 2: "printer"},
+        )
+
+        assert [event["message"] for event in events] == [
+            "VoIP - 3 is unreachable",
+        ]
+    finally:
+        engine_module.settings.telegram_realtime_severities = previous_realtime
+        engine_module.settings.telegram_realtime_alert_types = previous_realtime_alert_types
+        engine_module.settings.telegram_realtime_device_types = previous_realtime_device_types
+        engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
+
+
+def test_non_priority_packet_loss_critical_uses_summary_not_realtime():
+    import backend.app.alerting.engine as engine_module
+
+    previous_realtime = engine_module.settings.telegram_realtime_severities
+    previous_realtime_alert_types = engine_module.settings.telegram_realtime_alert_types
+    previous_realtime_device_types = engine_module.settings.telegram_realtime_device_types
+    previous_summary = engine_module.settings.telegram_summary_severities
+    previous_summary_alert_types = engine_module.settings.telegram_summary_alert_types
+    previous_summary_interval = engine_module.settings.telegram_summary_interval_seconds
+    previous_grace = engine_module.settings.telegram_alert_grace_period_seconds
+    engine_module.settings.telegram_realtime_severities = "critical"
+    engine_module.settings.telegram_realtime_alert_types = "device_down,high_packet_loss_critical"
+    engine_module.settings.telegram_realtime_device_types = "internet_target,voip,switch,server"
+    engine_module.settings.telegram_summary_severities = "warning"
+    engine_module.settings.telegram_summary_alert_types = "slow_http_response,slow_dns_resolution"
+    engine_module.settings.telegram_summary_interval_seconds = 300
+    engine_module.settings.telegram_alert_grace_period_seconds = 0
+    try:
+        voip = SimpleNamespace(id=1, name="VoIP - 4", ip_address="192.168.88.184", site="Office 1", device_type="voip")
+        nas = SimpleNamespace(id=2, name="NAS Backup", ip_address="192.168.88.20", site="R. Server", device_type="nas")
+        voip_packet_loss = Alert(
+            id=18,
+            device_id=1,
+            alert_type="high_packet_loss_critical",
+            severity="critical",
+            message="VoIP - 4 packet_loss reached 80.00%",
+            status="active",
+            created_at=utcnow() - timedelta(minutes=10),
+        )
+        nas_packet_loss = Alert(
+            id=19,
+            device_id=2,
+            alert_type="high_packet_loss_critical",
+            severity="critical",
+            message="NAS Backup packet_loss reached 80.00%",
+            status="active",
+            created_at=utcnow() - timedelta(minutes=10),
+        )
+
+        events = engine_module._pending_active_telegram_events(
+            [voip_packet_loss, nas_packet_loss],
+            device_by_id={1: voip, 2: nas},
+            device_type_by_id={1: "voip", 2: "nas"},
+        )
+
+        assert [(event["message"], event["action"]) for event in events] == [
+            ("VoIP - 4 packet_loss reached 80.00%", "active"),
+            ("NAS Backup packet_loss reached 80.00%", "summary_active"),
+        ]
+    finally:
+        engine_module.settings.telegram_realtime_severities = previous_realtime
+        engine_module.settings.telegram_realtime_alert_types = previous_realtime_alert_types
+        engine_module.settings.telegram_realtime_device_types = previous_realtime_device_types
+        engine_module.settings.telegram_summary_severities = previous_summary
+        engine_module.settings.telegram_summary_alert_types = previous_summary_alert_types
+        engine_module.settings.telegram_summary_interval_seconds = previous_summary_interval
+        engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
+
+
+def test_device_down_flap_suppression_requires_duration_or_repeats():
+    import backend.app.alerting.engine as engine_module
+
+    previous_realtime = engine_module.settings.telegram_realtime_severities
+    previous_realtime_alert_types = engine_module.settings.telegram_realtime_alert_types
+    previous_summary = engine_module.settings.telegram_summary_severities
+    previous_grace = engine_module.settings.telegram_alert_grace_period_seconds
+    previous_flap_suppression = engine_module.settings.telegram_flap_suppression_seconds
+    previous_flap_window = engine_module.settings.telegram_flap_repeat_window_seconds
+    previous_flap_min_count = engine_module.settings.telegram_flap_repeat_min_count
+    engine_module.settings.telegram_realtime_severities = "critical"
+    engine_module.settings.telegram_realtime_alert_types = "device_down"
+    engine_module.settings.telegram_summary_severities = ""
+    engine_module.settings.telegram_alert_grace_period_seconds = 0
+    engine_module.settings.telegram_flap_suppression_seconds = 120
+    engine_module.settings.telegram_flap_repeat_window_seconds = 900
+    engine_module.settings.telegram_flap_repeat_min_count = 3
+    try:
+        printer = SimpleNamespace(id=2, name="EPSON L3250 - 1", ip_address="192.168.88.38", site="Finance", device_type="printer")
+        printer_down = Alert(
+            id=20,
+            device_id=2,
+            alert_type="device_down",
+            severity="critical",
+            message="EPSON L3250 - 1 is unreachable",
+            status="active",
+            created_at=utcnow() - timedelta(seconds=30),
+        )
+
+        suppressed = engine_module._pending_active_telegram_events(
+            [printer_down],
+            device_by_id={2: printer},
+            device_type_by_id={2: "printer"},
+            recent_alert_counts={(2, "device_down"): 1},
+        )
+        repeated = engine_module._pending_active_telegram_events(
+            [printer_down],
+            device_by_id={2: printer},
+            device_type_by_id={2: "printer"},
+            recent_alert_counts={(2, "device_down"): 3},
+        )
+
+        assert suppressed == []
+        assert [(event["message"], event["action"]) for event in repeated] == [
+            ("EPSON L3250 - 1 is unreachable", "active"),
+        ]
+    finally:
+        engine_module.settings.telegram_realtime_severities = previous_realtime
+        engine_module.settings.telegram_realtime_alert_types = previous_realtime_alert_types
+        engine_module.settings.telegram_summary_severities = previous_summary
+        engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
+        engine_module.settings.telegram_flap_suppression_seconds = previous_flap_suppression
+        engine_module.settings.telegram_flap_repeat_window_seconds = previous_flap_window
+        engine_module.settings.telegram_flap_repeat_min_count = previous_flap_min_count
+
+
+def test_old_active_critical_alert_sends_hourly_reminder():
+    import backend.app.alerting.engine as engine_module
+
+    previous_realtime = engine_module.settings.telegram_realtime_severities
+    previous_realtime_alert_types = engine_module.settings.telegram_realtime_alert_types
+    previous_summary = engine_module.settings.telegram_summary_severities
+    previous_grace = engine_module.settings.telegram_alert_grace_period_seconds
+    previous_cooldown = engine_module.settings.telegram_notification_cooldown_seconds
+    previous_reminder = engine_module.settings.telegram_critical_reminder_interval_seconds
+    previous_voip_grace = engine_module.settings.telegram_voip_alert_grace_period_seconds
+    previous_voip_reminder = engine_module.settings.telegram_voip_critical_reminder_interval_seconds
+    engine_module.settings.telegram_realtime_severities = "critical"
+    engine_module.settings.telegram_realtime_alert_types = "device_down"
+    engine_module.settings.telegram_summary_severities = ""
+    engine_module.settings.telegram_alert_grace_period_seconds = 0
+    engine_module.settings.telegram_notification_cooldown_seconds = 86400
+    engine_module.settings.telegram_critical_reminder_interval_seconds = 3600
+    engine_module.settings.telegram_voip_alert_grace_period_seconds = 0
+    engine_module.settings.telegram_voip_critical_reminder_interval_seconds = 3600
+    try:
+        voip = SimpleNamespace(id=1, name="VoIP - 4", ip_address="192.168.88.184", site="Office 1", device_type="voip")
+        alert = Alert(
+            id=21,
+            device_id=1,
+            alert_type="device_down",
+            severity="critical",
+            message="VoIP - 4 is unreachable",
+            status="active",
+            created_at=utcnow() - timedelta(hours=2),
+            telegram_notified_at=utcnow() - timedelta(minutes=61),
+        )
+
+        events = engine_module._pending_active_telegram_events(
+            [alert],
+            device_by_id={1: voip},
+            device_type_by_id={1: "voip"},
+        )
+        messages = engine_module._build_telegram_messages(events)
+
+        assert [event["action"] for event in events] == ["active_reminder"]
+        assert "[CRITICAL] ALERT REMINDER" in messages[0]
+    finally:
+        engine_module.settings.telegram_realtime_severities = previous_realtime
+        engine_module.settings.telegram_realtime_alert_types = previous_realtime_alert_types
+        engine_module.settings.telegram_summary_severities = previous_summary
+        engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
+        engine_module.settings.telegram_notification_cooldown_seconds = previous_cooldown
+        engine_module.settings.telegram_critical_reminder_interval_seconds = previous_reminder
+        engine_module.settings.telegram_voip_alert_grace_period_seconds = previous_voip_grace
+        engine_module.settings.telegram_voip_critical_reminder_interval_seconds = previous_voip_reminder
+
+
+def test_pending_telegram_events_applies_voip_grace_and_reminder_policy():
+    import backend.app.alerting.engine as engine_module
+
+    previous_realtime = engine_module.settings.telegram_realtime_severities
+    previous_realtime_alert_types = engine_module.settings.telegram_realtime_alert_types
+    previous_grace = engine_module.settings.telegram_alert_grace_period_seconds
+    previous_reminder = engine_module.settings.telegram_critical_reminder_interval_seconds
+    previous_voip_grace = engine_module.settings.telegram_voip_alert_grace_period_seconds
+    previous_voip_reminder = engine_module.settings.telegram_voip_critical_reminder_interval_seconds
+    engine_module.settings.telegram_realtime_severities = "critical"
+    engine_module.settings.telegram_realtime_alert_types = "device_down"
+    engine_module.settings.telegram_alert_grace_period_seconds = 0
+    engine_module.settings.telegram_critical_reminder_interval_seconds = 3600
+    engine_module.settings.telegram_voip_alert_grace_period_seconds = 300
+    engine_module.settings.telegram_voip_critical_reminder_interval_seconds = 28800
+    try:
+        voip = SimpleNamespace(id=1, name="VoIP - 4", ip_address="192.168.88.184", site="Office 1", device_type="voip")
+        pending_alert = Alert(
+            id=22,
+            device_id=1,
+            alert_type="device_down",
+            severity="critical",
+            message="VoIP - 4 is unreachable",
+            status="active",
+            created_at=utcnow() - timedelta(minutes=4),
+        )
+        reminder_alert = Alert(
+            id=23,
+            device_id=1,
+            alert_type="device_down",
+            severity="critical",
+            message="VoIP - 4 is unreachable",
+            status="active",
+            created_at=utcnow() - timedelta(hours=10),
+            telegram_notified_at=utcnow() - timedelta(hours=4),
+        )
+
+        events = engine_module._pending_active_telegram_events(
+            [pending_alert, reminder_alert],
+            device_by_id={1: voip},
+            device_type_by_id={1: "voip"},
+        )
+
+        assert events == []
+    finally:
+        engine_module.settings.telegram_realtime_severities = previous_realtime
+        engine_module.settings.telegram_realtime_alert_types = previous_realtime_alert_types
+        engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
+        engine_module.settings.telegram_critical_reminder_interval_seconds = previous_reminder
+        engine_module.settings.telegram_voip_alert_grace_period_seconds = previous_voip_grace
+        engine_module.settings.telegram_voip_critical_reminder_interval_seconds = previous_voip_reminder
 
 
 def test_pending_telegram_events_skip_stale_metric_backed_alerts():
@@ -1213,6 +1661,7 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
 
     engine_module._recent_telegram_notification_keys.clear()
     monkeypatch.setattr(engine_module.settings, "telegram_alert_grace_period_seconds", 0)
+    monkeypatch.setattr(engine_module.settings, "telegram_flap_suppression_seconds", 0)
     monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
 
     with client_context() as (client, session_factory):
@@ -1308,20 +1757,7 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
             "high_packet_loss_critical",
             "high_jitter_critical",
         }
-        assert quality_sent_messages == [
-            "\n".join(
-                [
-                    "[CRITICAL] ALERT ACTIVE",
-                    "Device: Dinstar Gateway",
-                    "IP: 192.168.88.10",
-                    "Site: Office 1",
-                    "Type: voip",
-                    "Status: ACTIVE",
-                    "Alerts:",
-                    "- high_packet_loss_critical: Dinstar Gateway packet_loss reached 80.00%",
-                ]
-            )
-        ]
+        assert quality_sent_messages == []
 
         assert down_response.status_code == 200
         assert down_response.json()["alerts_created"] == 1
@@ -1333,31 +1769,8 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
             "high_jitter_critical",
         }
         assert resolved_response.status_code == 200
-        assert resolved_response.json()["alerts_resolved"] == 1
-        assert sent_messages[0] == quality_sent_messages[0]
-        assert sent_messages[1] == "\n".join(
-            [
-                "[CRITICAL] ALERT ACTIVE",
-                "Device: Dinstar Gateway",
-                "IP: 192.168.88.10",
-                "Site: Office 1",
-                "Type: voip",
-                "Status: ACTIVE",
-                "Alerts:",
-                "- device_down: Dinstar Gateway is unreachable",
-            ]
-        )
-        resolved_message_lines = sent_messages[2].splitlines()
-        assert resolved_message_lines[:7] == [
-            "[CRITICAL] ALERT RESOLVED",
-            "Device: Dinstar Gateway",
-            "IP: 192.168.88.10",
-            "Site: Office 1",
-            "Type: voip",
-            "Status: RESOLVED",
-            "Alerts:",
-        ]
-        assert resolved_message_lines[7].startswith("- device_down: Dinstar Gateway is unreachable (duration: ")
+        assert resolved_response.json()["alerts_resolved"] == 0
+        assert sent_messages == []
 
 
 def test_run_cycle_creates_printer_alerts_and_incident():
@@ -1490,6 +1903,7 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
 
     engine_module._recent_telegram_notification_keys.clear()
     monkeypatch.setattr(engine_module.settings, "telegram_alert_grace_period_seconds", 0)
+    monkeypatch.setattr(engine_module.settings, "telegram_flap_suppression_seconds", 0)
     monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
 
     with client_context() as (client, session_factory):
@@ -1574,20 +1988,7 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
             "high_jitter_critical",
             "printer_error_state",
         }
-        assert quality_sent_messages == [
-            "\n".join(
-                [
-                    "[CRITICAL] ALERT ACTIVE",
-                    "Device: EPSON L3250 - 1",
-                    "IP: 192.168.88.38",
-                    "Site: Finance",
-                    "Type: printer",
-                    "Status: ACTIVE",
-                    "Alerts:",
-                    "- printer_error_state: EPSON L3250 - 1 printer error state: jammed",
-                ]
-            )
-        ]
+        assert quality_sent_messages == []
 
         assert down_response.status_code == 200
         assert down_response.json()["alerts_created"] == 1
@@ -1598,45 +1999,9 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
             "high_jitter_critical",
             "printer_error_state",
         }
-        assert sent_messages[:2] == [
-            "\n".join(
-                [
-                    "[CRITICAL] ALERT ACTIVE",
-                    "Device: EPSON L3250 - 1",
-                    "IP: 192.168.88.38",
-                    "Site: Finance",
-                    "Type: printer",
-                    "Status: ACTIVE",
-                    "Alerts:",
-                    "- printer_error_state: EPSON L3250 - 1 printer error state: jammed",
-                ]
-            ),
-            "\n".join(
-                [
-                    "[CRITICAL] ALERT ACTIVE",
-                    "Device: EPSON L3250 - 1",
-                    "IP: 192.168.88.38",
-                    "Site: Finance",
-                    "Type: printer",
-                    "Status: ACTIVE",
-                    "Alerts:",
-                    "- device_down: EPSON L3250 - 1 is unreachable",
-                ]
-            ),
-        ]
-        resolved_message_lines = sent_messages[2].splitlines()
-        assert resolved_message_lines[:7] == [
-            "[CRITICAL] ALERT RESOLVED",
-            "Device: EPSON L3250 - 1",
-            "IP: 192.168.88.38",
-            "Site: Finance",
-            "Type: printer",
-            "Status: RESOLVED",
-            "Alerts:",
-        ]
-        assert resolved_message_lines[7].startswith("- device_down: EPSON L3250 - 1 is unreachable (duration: ")
+        assert sent_messages == []
         assert resolved_response.status_code == 200
-        assert resolved_response.json()["alerts_resolved"] == 1
+        assert resolved_response.json()["alerts_resolved"] == 0
 
 
 

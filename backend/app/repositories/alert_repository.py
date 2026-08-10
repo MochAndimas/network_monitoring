@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Select, desc, func, or_, select
+from sqlalchemy import Select, desc, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.alert import Alert
@@ -193,3 +193,61 @@ class AlertRepository:
             )
         )
         return int(await self.db.scalar(query) or 0) > 0
+
+    async def recent_telegram_notified_keys(
+        self, keys: set[tuple[int | None, str]], *, since: datetime
+    ) -> set[tuple[int | None, str]]:
+        """Return recently notified logical keys across active and resolved rows."""
+        if not keys:
+            return set()
+        query = select(Alert.device_id, Alert.alert_type).where(
+            tuple_(Alert.device_id, Alert.alert_type).in_(keys),
+            Alert.telegram_notified_at.is_not(None),
+            Alert.telegram_notified_at >= since,
+        )
+        return {(device_id, str(alert_type).lower()) for device_id, alert_type in (await self.db.execute(query)).all()}
+
+    async def count_recent_alerts_by_key(
+        self,
+        keys: set[tuple[int | None, str]],
+        *,
+        since: datetime,
+    ) -> dict[tuple[int | None, str], int]:
+        """Return recent alert counts keyed by device and alert type."""
+        if not keys:
+            return {}
+
+        query = (
+            select(Alert.device_id, Alert.alert_type, func.count())
+            .where(
+                tuple_(Alert.device_id, Alert.alert_type).in_(keys),
+                Alert.created_at >= since,
+            )
+            .group_by(Alert.device_id, Alert.alert_type)
+        )
+        rows = (await self.db.execute(query)).all()
+        return {(device_id, str(alert_type)): int(total) for device_id, alert_type, total in rows}
+
+    async def list_recent_alerts_by_keys(
+        self,
+        keys: set[tuple[int | None, str]],
+        *,
+        since: datetime,
+    ) -> dict[int | None, list[Alert]]:
+        """Return recent alert rows grouped by device for a bounded key set."""
+        if not keys:
+            return {}
+
+        query = (
+            select(Alert)
+            .where(
+                tuple_(Alert.device_id, Alert.alert_type).in_(keys),
+                Alert.created_at >= since,
+            )
+            .order_by(Alert.created_at.asc(), Alert.id.asc())
+        )
+        alerts = list((await self.db.scalars(query)).all())
+        grouped: dict[int | None, list[Alert]] = {}
+        for alert in alerts:
+            grouped.setdefault(alert.device_id, []).append(alert)
+        return grouped

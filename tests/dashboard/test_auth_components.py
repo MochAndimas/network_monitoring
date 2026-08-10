@@ -462,6 +462,29 @@ def test_get_json_uses_cached_get_reader(monkeypatch):
     assert cached_calls == [("/alerts/active", 5.0, api_module.API_BASE_URL, "token-123")]
 
 
+def test_get_json_can_accept_degraded_health_status(monkeypatch):
+    fake_st = FakeStreamlit({"dashboard_authenticated": True, "auth_token": "token-123"})
+    monkeypatch.setattr(api_module, "st", fake_st)
+
+    request_calls: list[tuple[str, tuple[int, ...]]] = []
+
+    def fake_request_json(method: str, path: str, **kwargs):
+        request_calls.append((f"{method} {path}", kwargs["accepted_status_codes"]))
+        return {"status": "degraded", "scheduler_alerts": [{"job_name": "retention_cleanup"}]}
+
+    monkeypatch.setattr(api_module, "_request_json", fake_request_json)
+
+    payload = api_module.get_json(
+        "/health/dependencies",
+        {},
+        accepted_status_codes=(503,),
+    )
+
+    assert payload["status"] == "degraded"
+    assert request_calls == [("GET /health/dependencies", (503,))]
+    assert fake_st.warnings == []
+
+
 def test_get_json_keeps_401_recovery_with_cached_get_reader(monkeypatch):
     fake_st = FakeStreamlit(
         {

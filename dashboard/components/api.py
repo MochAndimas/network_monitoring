@@ -77,6 +77,7 @@ async def _request_json_async(
     timeout: float = 5.0,
     api_base_url: str = API_BASE_URL,
     auth_token: str = "",
+    accepted_status_codes: tuple[int, ...] = (),
 ):
     """Send one async JSON API request and return the decoded response payload."""
     async with httpx.AsyncClient(base_url=api_base_url, timeout=httpx.Timeout(5.0)) as client:
@@ -87,7 +88,8 @@ async def _request_json_async(
             timeout=timeout,
             headers=_request_headers(auth_token),
         )
-    response.raise_for_status()
+    if response.status_code not in accepted_status_codes:
+        response.raise_for_status()
     if response.status_code == 204 or not response.content:
         return True
     return response.json()
@@ -125,6 +127,7 @@ def _request_json(
     timeout: float = 5.0,
     api_base_url: str = API_BASE_URL,
     auth_token: str = "",
+    accepted_status_codes: tuple[int, ...] = (),
 ):
     """Send one JSON API request and return the decoded response payload."""
     return _run_async(
@@ -135,6 +138,7 @@ def _request_json(
             timeout=timeout,
             api_base_url=api_base_url,
             auth_token=auth_token,
+            accepted_status_codes=accepted_status_codes,
         )
     )
 
@@ -194,6 +198,7 @@ def _request_with_auth_recovery(
     action: str,
     rerun_on_401: bool = False,
     action_key: str | None = None,
+    accepted_status_codes: tuple[int, ...] = (),
 ):
     """Run an API request and retry queued writes after token restoration."""
     pending_request = _pending_api_request(action_key) if action_key else None
@@ -201,16 +206,21 @@ def _request_with_auth_recovery(
     request_payload = pending_request.get("payload") if pending_request else payload
     request_fallback = pending_request.get("fallback") if pending_request else fallback
     try:
-        if method == "GET" and request_payload is None:
+        if method == "GET" and request_payload is None and not accepted_status_codes:
             result = _cached_get_by_profile(request_path, timeout, api_base_url, auth_token)
         else:
+            request_options = {
+                "payload": request_payload,
+                "timeout": timeout,
+                "api_base_url": api_base_url,
+                "auth_token": auth_token,
+            }
+            if accepted_status_codes:
+                request_options["accepted_status_codes"] = accepted_status_codes
             result = _request_json(
                 method,
                 request_path,
-                payload=request_payload,
-                timeout=timeout,
-                api_base_url=api_base_url,
-                auth_token=auth_token,
+                **request_options,
             )
         if action_key:
             _clear_pending_action(action_key)
@@ -297,7 +307,7 @@ def _cached_get_map_by_profile(
     return _cached_get_json_map(request_items, api_base_url, auth_token)
 
 
-def get_json(path: str, fallback):
+def get_json(path: str, fallback, *, accepted_status_codes: tuple[int, ...] = ()):
     """Fetch a dashboard API payload with auth recovery enabled."""
     return _request_with_auth_recovery(
         "GET",
@@ -308,6 +318,7 @@ def get_json(path: str, fallback):
         auth_token=str(st.session_state.get("auth_token") or ""),
         action="Gagal mengambil data",
         rerun_on_401=True,
+        accepted_status_codes=accepted_status_codes,
     )
 
 

@@ -38,8 +38,23 @@ class TelegramSettings:
     chat_id: str
     alert_grace_period_seconds: int
     realtime_severities: str
+    realtime_alert_types: str
+    realtime_device_types: str
+    non_realtime_device_down_summary_seconds: int
+    site_outage_min_devices: int
+    site_outage_window_seconds: int
+    site_outage_cooldown_seconds: int
     summary_severities: str
+    summary_alert_types: str
     summary_interval_seconds: int
+    summary_repeat_window_seconds: int
+    summary_repeat_min_count: int
+    flap_suppression_seconds: int
+    flap_repeat_window_seconds: int
+    flap_repeat_min_count: int
+    critical_reminder_interval_seconds: int
+    voip_alert_grace_period_seconds: int
+    voip_critical_reminder_interval_seconds: int
     notification_cooldown_seconds: int
     resolved_correlation_window_seconds: int
 

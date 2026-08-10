@@ -108,6 +108,16 @@ async def list_incident_escalations(
     return IncidentEscalationResponse(items=[IncidentItem(**row) for row in rows])
 
 
+@router.get("/{incident_id}", response_model=IncidentItem)
+async def get_incident(
+    incident_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> IncidentItem:
+    """Return one incident for Streamlit board drill-down views."""
+    row = await _incident_or_404(IncidentRepository(db).get_incident_row(incident_id))
+    return IncidentItem(**row)
+
+
 @router.get("/{incident_id}/timeline", response_model=IncidentTimelineResponse)
 async def list_incident_timeline(
     incident_id: int,

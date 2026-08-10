@@ -442,11 +442,22 @@ Incident workflow mendukung acknowledgment, owner/assignee, severity override, n
 
 Monitoring intelligence fase 3 menambahkan rolling-window alert untuk mengurangi noise transient, maintenance window per device/site untuk suppress alert saat pekerjaan terjadwal, threshold override per device/device type/site, baseline anomaly sederhana untuk ping latency dan traffic interface Mikrotik, serta filter site di Alerts dan Incidents.
 
-Scalability fase 4 menambahkan Long-Term Explorer yang membaca `metric_daily_rollups`, `metric_cold_archives`, dan materialized summary `metric_site_type_daily_summaries` agar operator dapat melihat tren jangka panjang tanpa query raw metrics besar. Retention cleanup juga melakukan compact latest snapshot untuk inactive device rows dan refresh summary per site/device type.
+Scalability fase 4 menambahkan backend long-term data melalui `metric_daily_rollups`, `metric_cold_archives`, dan materialized summary `metric_site_type_daily_summaries` tanpa query raw metrics besar. Tampilan historis dipusatkan di Daily Summary melalui custom date range, sedangkan retention cleanup melakukan compact latest snapshot untuk inactive device rows dan refresh summary per site/device type.
 
 Telegram notification optional memakai:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
+
+Policy Telegram dibatasi agar chat hanya menerima alert yang actionable:
+- `TELEGRAM_REALTIME_ALERT_TYPES` untuk alert impact besar yang dikirim langsung setelah grace period, default `device_down,internet_loss,high_packet_loss_critical`.
+- `TELEGRAM_REALTIME_DEVICE_TYPES` untuk whitelist device penting pada realtime selain `device_down`, default `internet_target,voip,switch,server`; `device_down` tetap realtime untuk semua device type. `high_packet_loss_critical` dari device di luar whitelist, misalnya AP/printer/NAS, diarahkan ke digest Telegram/dashboard, bukan realtime.
+- `TELEGRAM_SUMMARY_ALERT_TYPES` untuk alert warning yang masuk digest, default `slow_http_response,slow_dns_resolution`.
+- `TELEGRAM_SUMMARY_INTERVAL_SECONDS` menahan warning sampai cukup lama aktif, default 30 menit.
+- `TELEGRAM_SUMMARY_REPEAT_WINDOW_SECONDS` dan `TELEGRAM_SUMMARY_REPEAT_MIN_COUNT` mengirim digest lebih cepat jika alert type yang sama berulang, default 3 kali dalam 15 menit.
+- `TELEGRAM_FLAP_SUPPRESSION_SECONDS`, `TELEGRAM_FLAP_REPEAT_WINDOW_SECONDS`, dan `TELEGRAM_FLAP_REPEAT_MIN_COUNT` menahan `device_down` yang pulih cepat kecuali flapping berulang, default <2 menit dan 3 kali dalam 15 menit.
+- `TELEGRAM_CRITICAL_REMINDER_INTERVAL_SECONDS` mengirim reminder untuk critical active lama, default tiap 60 menit sampai resolved.
+- `ping_latency_anomaly`, `high_ping_latency_warning`, dan `mikrotik_interface_traffic_anomaly` tetap tampil di dashboard/incident, tetapi tidak masuk Telegram default.
+Summary untuk `slow_http_response` dan `slow_dns_resolution` digabung per device/incident menjadi satu pesan degraded, misalnya jumlah slow HTTP/DNS dan nilai maksimum dalam window.
 
 ## Auth Dan Security
 
@@ -773,7 +784,6 @@ Halaman:
 - `Incidents`: active/resolved incidents, workflow action, timeline, escalation, dan CSV export
 - `Thresholds`: global threshold, scoped override, dan maintenance window untuk admin
 - `System Health`: database status, scheduler jobs, operational alerts, auth counters, runtime info, freshness per collector/site, dan CSV export operasional
-- `Long-Term Explorer`: tren historis per site/device type dan cold archive detail dengan CSV export
 
 Auth dashboard:
 - login memakai `/auth/login`
@@ -1279,6 +1289,10 @@ Mulai tidak ideal jika:
 - auth/navigation perlu kontrol frontend penuh
 
 Kalau kebutuhan sudah menuju sana, jalur upgrade paling aman adalah mempertahankan FastAPI sebagai backend observability dan mengganti dashboard menjadi frontend web dedicated.
+
+Keputusan produk saat ini adalah mempertahankan Streamlit sebagai satu-satunya frontend. Phase 5 berfokus pada evolusi UX di dalam Streamlit: state helper reusable, fragment-based refresh, role-aware screen, Incident Board, dan drill-down berbasis query parameter. Migrasi ke frontend dedicated tetap menjadi opsi masa depan hanya jika trigger concurrency atau kompleksitas di atas benar-benar tercapai.
+
+Incident Board tersedia di halaman `Incidents` tanpa mengganti Analytics sebagai tab default. Board memakai lane belum di-ack, sedang ditangani, dan selesai terbaru; detail incident dapat dibuka melalui query parameter `incident`, sedangkan mutation workflow tetap dibatasi backend dan hanya ditampilkan untuk admin.
 
 ## Checklist Handover
 

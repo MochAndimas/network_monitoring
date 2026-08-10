@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import re
+from types import SimpleNamespace
 
 from ...core.config import settings
 from ...core.time import utcnow
@@ -42,7 +44,11 @@ from .utils import (
 # Backward-compat shim for tests that still reference this symbol.
 # Telegram dedupe is now stateless and batch-scoped.
 _recent_telegram_notification_keys: dict[tuple, datetime] = {}
-_DEFAULT_REALTIME_SEVERITIES = {"critical", "high", "warning"}
+_DEFAULT_REALTIME_SEVERITIES = {"critical"}
+_DEFAULT_REALTIME_ALERT_TYPES = {"device_down", "internet_loss", "high_packet_loss_critical"}
+_DEFAULT_REALTIME_DEVICE_TYPES = {"internet_target", "voip", "switch", "server"}
+_DEFAULT_SUMMARY_ALERT_TYPES = {"slow_http_response", "slow_dns_resolution"}
+_SUMMARY_AGGREGATE_ALERT_TYPES = {"slow_http_response", "slow_dns_resolution"}
 
 
 @dataclass
@@ -62,9 +68,24 @@ class TelegramNotificationPolicy:
     """Normalized Telegram alerting policy used by notification selection."""
 
     realtime_severities: set[str]
+    realtime_alert_types: set[str]
+    realtime_device_types: set[str]
+    non_realtime_device_down_summary_seconds: int
+    site_outage_min_devices: int
+    site_outage_window_seconds: int
+    site_outage_cooldown_seconds: int
     summary_severities: set[str]
+    summary_alert_types: set[str]
     alert_grace_period_seconds: int
     summary_interval_seconds: int
+    summary_repeat_window_seconds: int
+    summary_repeat_min_count: int
+    flap_suppression_seconds: int
+    flap_repeat_window_seconds: int
+    flap_repeat_min_count: int
+    critical_reminder_interval_seconds: int
+    voip_alert_grace_period_seconds: int
+    voip_critical_reminder_interval_seconds: int
     notification_cooldown_seconds: int
     resolved_correlation_window_seconds: int
 
@@ -97,6 +118,7 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
         thresholds=thresholds,
         threshold_overrides=threshold_overrides,
         active_maintenance_windows=active_maintenance_windows,
+        active_alerts=active_alerts_list,
     )
     notification_policy = _telegram_notification_policy()
 
@@ -120,6 +142,19 @@ async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
             device_type_by_id=device_type_by_id,
             latest_metrics=latest_metrics,
             policy=notification_policy,
+            recent_alert_counts=await _recent_telegram_policy_counts(
+                alert_repository,
+                state.alerts.values(),
+                policy=notification_policy,
+            ),
+            recent_summary_alerts=await _recent_telegram_summary_alerts(
+                alert_repository,
+                state.alerts.values(),
+                policy=notification_policy,
+            ),
+            recently_notified_keys=await _recent_telegram_notified_keys(
+                alert_repository, state.alerts.values(), policy=notification_policy
+            ),
         )
     )
     await _send_telegram_events(
@@ -218,6 +253,7 @@ async def _expected_alert_map(
     thresholds: dict,
     threshold_overrides: list[dict],
     active_maintenance_windows: list,
+    active_alerts: list[Alert],
 ) -> dict[tuple[int | None, str], dict]:
     """Evaluate all device rules and return expected active alerts."""
     printer_device_ids = [device.id for device in devices if device.device_type == "printer"]
@@ -258,6 +294,20 @@ async def _expected_alert_map(
                 metric_history_by_device=metric_history_by_device,
             )
         )
+    # Require three successful ping samples before resolving a reachability alert.
+    # This prevents a one-cycle recovery from reopening Telegram noise during flaps.
+    for alert in active_alerts:
+        key = (alert.device_id, alert.alert_type)
+        if alert.alert_type not in {"device_down", "internet_loss"} or key in expected_alerts:
+            continue
+        history = metric_history_by_device.get(alert.device_id, {}).get("ping", [])
+        if len(history) < 3 or any(str(metric.status or "").lower() == "down" for metric in history[:3]):
+            expected_alerts[key] = {
+                "device_id": alert.device_id,
+                "alert_type": alert.alert_type,
+                "severity": alert.severity,
+                "message": alert.message,
+            }
     return expected_alerts
 
 
@@ -461,12 +511,46 @@ def _telegram_notification_policy() -> TelegramNotificationPolicy:
             settings.telegram.realtime_severities,
             fallback=_DEFAULT_REALTIME_SEVERITIES,
         ),
+        realtime_alert_types=_parse_alert_type_csv(
+            settings.telegram.realtime_alert_types,
+            fallback=_DEFAULT_REALTIME_ALERT_TYPES,
+        ),
+        realtime_device_types=_parse_alert_type_csv(
+            settings.telegram.realtime_device_types,
+            fallback=_DEFAULT_REALTIME_DEVICE_TYPES,
+        ),
+        non_realtime_device_down_summary_seconds=max(
+            int(settings.telegram.non_realtime_device_down_summary_seconds or 0), 0
+        ),
+        site_outage_min_devices=max(int(settings.telegram.site_outage_min_devices or 0), 0),
+        site_outage_window_seconds=max(int(settings.telegram.site_outage_window_seconds or 0), 0),
+        site_outage_cooldown_seconds=max(int(settings.telegram.site_outage_cooldown_seconds or 0), 0),
         summary_severities=_parse_severity_csv(settings.telegram.summary_severities),
+        summary_alert_types=_parse_alert_type_csv(
+            settings.telegram.summary_alert_types,
+            fallback=_DEFAULT_SUMMARY_ALERT_TYPES,
+        ),
         alert_grace_period_seconds=max(int(settings.telegram.alert_grace_period_seconds or 0), 0),
         summary_interval_seconds=max(int(settings.telegram.summary_interval_seconds or 0), 0),
+        summary_repeat_window_seconds=max(int(settings.telegram.summary_repeat_window_seconds or 0), 0),
+        summary_repeat_min_count=max(int(settings.telegram.summary_repeat_min_count or 0), 0),
+        flap_suppression_seconds=max(int(settings.telegram.flap_suppression_seconds or 0), 0),
+        flap_repeat_window_seconds=max(int(settings.telegram.flap_repeat_window_seconds or 0), 0),
+        flap_repeat_min_count=max(int(settings.telegram.flap_repeat_min_count or 0), 0),
+        critical_reminder_interval_seconds=max(int(settings.telegram.critical_reminder_interval_seconds or 0), 0),
+        voip_alert_grace_period_seconds=max(int(settings.telegram.voip_alert_grace_period_seconds or 0), 0),
+        voip_critical_reminder_interval_seconds=max(
+            int(settings.telegram.voip_critical_reminder_interval_seconds or 0), 0
+        ),
         notification_cooldown_seconds=max(int(settings.telegram.notification_cooldown_seconds or 0), 0),
         resolved_correlation_window_seconds=max(int(settings.telegram.resolved_correlation_window_seconds or 0), 0),
     )
+
+
+def _parse_alert_type_csv(raw_value: str, *, fallback: set[str] | None = None) -> set[str]:
+    """Parse comma-separated alert types into normalized identifiers."""
+    values = {item.strip().lower() for item in str(raw_value or "").split(",") if item.strip()}
+    return values or set(fallback or set())
 
 
 def _alert_reached_telegram_cooldown(
@@ -507,11 +591,21 @@ def _pending_active_telegram_events(
     device_type_by_id: dict,
     latest_metrics: dict[tuple[int, str], Metric] | None = None,
     policy: TelegramNotificationPolicy | None = None,
+    recent_alert_counts: dict[tuple[int | None, str], int] | None = None,
+    recent_summary_alerts: dict[int | None, list[Alert]] | None = None,
+    recently_notified_keys: set[tuple[int | None, str]] | None = None,
 ) -> list[dict]:
     """Return active alerts ready for Telegram based on realtime and summary rules."""
+    alerts = list(alerts)
     policy = policy or _telegram_notification_policy()
+    recent_alert_counts = recent_alert_counts or {}
+    recent_summary_alerts = recent_summary_alerts or {}
+    recently_notified_keys = recently_notified_keys or set()
     current_time = utcnow()
     events: list[dict] = []
+    unreachable_device_ids = {
+        alert.device_id for alert in alerts if str(alert.alert_type or "").lower() in {"device_down", "internet_loss"}
+    }
     for alert in alerts:
         device_type = device_type_by_id.get(alert.device_id) if alert.device_id is not None else None
         if not _should_send_telegram_alert(alert.alert_type, device_type):
@@ -519,27 +613,64 @@ def _pending_active_telegram_events(
         if _active_alert_metric_is_stale(alert, latest_metrics, current_time=current_time):
             continue
         alert_severity = str(alert.severity or "unknown").lower()
+        alert_type = str(alert.alert_type or "").lower()
+        if alert.telegram_notified_at is None and (alert.device_id, alert_type) in recently_notified_keys:
+            continue
+        # Packet loss is not actionable once the same device is unreachable.
+        if alert_type == "high_packet_loss_critical" and alert.device_id in unreachable_device_ids:
+            continue
+        realtime_device_allowed = _telegram_realtime_device_allowed(
+            alert_type,
+            device_by_id.get(alert.device_id),
+            policy=policy,
+        )
         should_send_realtime = (
             alert_severity in policy.realtime_severities
+            and alert_type in policy.realtime_alert_types
+            and realtime_device_allowed
+            and _alert_passes_flap_suppression(
+                alert,
+                current_time,
+                policy=policy,
+                recent_alert_count=recent_alert_counts.get((alert.device_id, alert_type), 0),
+            )
             and _alert_reached_telegram_grace_period(
                 alert.created_at,
                 current_time,
-                grace_period_seconds=policy.alert_grace_period_seconds,
+                grace_period_seconds=_telegram_alert_grace_period_seconds(device_type, policy=policy),
             )
-            and alert.telegram_notified_at is None
+            and _alert_reached_telegram_cooldown(
+                alert.telegram_notified_at,
+                current_time,
+                cooldown_seconds=_active_telegram_cooldown_seconds(alert, device_type=device_type, policy=policy),
+            )
         )
         should_send_summary = (
-            alert_severity in policy.summary_severities
-            and _alert_reached_summary_interval(
+            _telegram_summary_allowed(
+                alert_type,
+                alert_severity,
+                realtime_device_allowed=realtime_device_allowed,
+                policy=policy,
+            )
+            and _alert_reached_summary_delivery_threshold(
+                alert, current_time, alert_type=alert_type, realtime_device_allowed=realtime_device_allowed,
+                policy=policy, recent_alert_count=recent_alert_counts.get((alert.device_id, alert_type), 0),
+            )
+            and _alert_reached_telegram_grace_period(
                 alert.created_at,
                 current_time,
-                summary_interval_seconds=policy.summary_interval_seconds,
+                grace_period_seconds=_telegram_alert_grace_period_seconds(device_type, policy=policy),
+            )
+            and _alert_reached_telegram_cooldown(
+                alert.telegram_notified_at,
+                current_time,
+                cooldown_seconds=policy.notification_cooldown_seconds,
             )
             and alert.telegram_notified_at is None
         )
         if not should_send_realtime and not should_send_summary:
             continue
-        action = "summary_active" if should_send_summary and not should_send_realtime else "active"
+        action = _telegram_active_event_action(alert, should_send_summary=should_send_summary, should_send_realtime=should_send_realtime)
         events.append(
             {
                 "action": action,
@@ -549,9 +680,216 @@ def _pending_active_telegram_events(
                 "severity": alert.severity,
                 "message": alert.message,
                 "device": device_by_id.get(alert.device_id),
+                "summary_alerts": recent_summary_alerts.get(alert.device_id, []),
             }
         )
-    return events
+    return _collapse_site_outage_events(events, alerts, device_by_id=device_by_id, policy=policy, current_time=current_time)
+
+
+def _collapse_site_outage_events(events: list[dict], alerts: list[Alert], *, device_by_id: dict, policy: TelegramNotificationPolicy, current_time: datetime) -> list[dict]:
+    """Replace a burst of same-site device-down messages with one outage message."""
+    if policy.site_outage_min_devices <= 1 or policy.site_outage_window_seconds <= 0:
+        return events
+    by_site: dict[str, list[Alert]] = {}
+    for alert in alerts:
+        if str(alert.alert_type or "").lower() != "device_down" or alert.device_id is None:
+            continue
+        device = device_by_id.get(alert.device_id)
+        site = str(getattr(device, "site", "") or "").strip()
+        if not site or alert.created_at > current_time - timedelta(seconds=policy.site_outage_window_seconds):
+            continue
+        by_site.setdefault(site, []).append(alert)
+    collapsed_ids: set[int] = set()
+    outage_events: list[dict] = []
+    for site, site_alerts in by_site.items():
+        if len(site_alerts) < policy.site_outage_min_devices:
+            continue
+        collapsed_ids.update(alert.id for alert in site_alerts if alert.id is not None)
+        names = [str(getattr(device_by_id.get(alert.device_id), "name", alert.device_id)) for alert in site_alerts]
+        representative = site_alerts[0]
+        outage_events.append({
+            "action": "active",
+            "alert": representative,
+            "alerts": site_alerts,
+            "alert_id": representative.id,
+            "alert_type": "site_outage",
+            "severity": "critical",
+            "message": f"{len(site_alerts)} devices unreachable: {', '.join(sorted(names))}",
+            "device": SimpleNamespace(id=f"site:{site}", name=f"Site outage: {site}", ip_address="-", site=site, device_type="site"),
+        })
+    if not collapsed_ids:
+        return events
+    return [event for event in events if event.get("alert_id") not in collapsed_ids] + outage_events
+
+
+def _telegram_realtime_device_allowed(alert_type: str, device, *, policy: TelegramNotificationPolicy) -> bool:
+    """Return whether a device is important enough for realtime Telegram."""
+    if not policy.realtime_device_types:
+        return True
+    return str(getattr(device, "device_type", "") or "").strip().lower() in policy.realtime_device_types
+
+
+def _telegram_summary_allowed(
+    alert_type: str,
+    alert_severity: str,
+    *,
+    realtime_device_allowed: bool,
+    policy: TelegramNotificationPolicy,
+) -> bool:
+    """Return whether an active alert can be sent through Telegram digest."""
+    if alert_type == "device_down" and not realtime_device_allowed:
+        return True
+    if alert_severity in policy.summary_severities and alert_type in policy.summary_alert_types:
+        return True
+    return (
+        alert_type == "high_packet_loss_critical"
+        and alert_severity == "critical"
+        and not realtime_device_allowed
+    )
+
+
+def _alert_reached_summary_delivery_threshold(
+    alert,
+    current_time: datetime,
+    *,
+    alert_type: str,
+    realtime_device_allowed: bool,
+    policy: TelegramNotificationPolicy,
+    recent_alert_count: int,
+) -> bool:
+    """Use the shorter non-critical-device window before delivering a down digest."""
+    if alert_type == "device_down" and not realtime_device_allowed:
+        return _alert_reached_summary_interval(
+            alert.created_at,
+            current_time,
+            summary_interval_seconds=policy.non_realtime_device_down_summary_seconds,
+        )
+    return _alert_reached_telegram_summary_threshold(
+        alert, current_time, policy=policy, recent_alert_count=recent_alert_count
+    )
+
+
+def _alert_passes_flap_suppression(
+    alert,
+    current_time: datetime,
+    *,
+    policy: TelegramNotificationPolicy,
+    recent_alert_count: int,
+) -> bool:
+    """Suppress one-off fast device-down flaps unless they repeat."""
+    if str(alert.alert_type or "").lower() != "device_down":
+        return True
+    if policy.flap_suppression_seconds <= 0:
+        return True
+    if alert.created_at <= current_time - timedelta(seconds=policy.flap_suppression_seconds):
+        return True
+    if policy.flap_repeat_window_seconds <= 0 or policy.flap_repeat_min_count <= 1:
+        return False
+    return int(recent_alert_count or 0) >= policy.flap_repeat_min_count
+
+
+def _telegram_alert_grace_period_seconds(device_type: str | None, *, policy: TelegramNotificationPolicy) -> int:
+    """Return the Telegram grace period for a device type."""
+    if str(device_type or "").strip().lower() == "voip":
+        return policy.voip_alert_grace_period_seconds
+    return policy.alert_grace_period_seconds
+
+
+def _active_telegram_cooldown_seconds(
+    alert,
+    *,
+    device_type: str | None,
+    policy: TelegramNotificationPolicy,
+) -> int:
+    """Return cooldown seconds for first sends and active critical reminders."""
+    if alert.telegram_notified_at is not None and str(alert.severity or "").lower() == "critical":
+        if str(device_type or "").strip().lower() == "voip":
+            return policy.voip_critical_reminder_interval_seconds
+        return policy.critical_reminder_interval_seconds
+    return policy.notification_cooldown_seconds
+
+
+def _telegram_active_event_action(alert, *, should_send_summary: bool, should_send_realtime: bool) -> str:
+    """Return the active Telegram action name for a selected alert."""
+    if should_send_summary and not should_send_realtime:
+        return "summary_active"
+    if alert.telegram_notified_at is not None:
+        return "active_reminder"
+    return "active"
+
+
+async def _recent_telegram_policy_counts(
+    alert_repository: AlertRepository,
+    alerts,
+    *,
+    policy: TelegramNotificationPolicy,
+) -> dict[tuple[int | None, str], int]:
+    """Return recent repeat counts for summary and flap suppression policies."""
+    lookback_seconds = max(policy.summary_repeat_window_seconds, policy.flap_repeat_window_seconds)
+    if lookback_seconds <= 0:
+        return {}
+    keys = {
+        (alert.device_id, str(alert.alert_type or "").lower())
+        for alert in alerts
+        if str(alert.alert_type or "").lower() in policy.summary_alert_types
+        or str(alert.alert_type or "").lower() == "high_packet_loss_critical"
+        or str(alert.alert_type or "").lower() == "device_down"
+    }
+    return await alert_repository.count_recent_alerts_by_key(
+        keys,
+        since=utcnow() - timedelta(seconds=lookback_seconds),
+    )
+
+
+async def _recent_telegram_summary_alerts(
+    alert_repository: AlertRepository,
+    alerts,
+    *,
+    policy: TelegramNotificationPolicy,
+) -> dict[int | None, list[Alert]]:
+    """Return recent alert rows used to aggregate Telegram summary messages."""
+    if policy.summary_repeat_window_seconds <= 0:
+        return {}
+    keys = {
+        (alert.device_id, str(alert.alert_type or "").lower())
+        for alert in alerts
+        if str(alert.alert_type or "").lower() in _SUMMARY_AGGREGATE_ALERT_TYPES
+    }
+    return await alert_repository.list_recent_alerts_by_keys(
+        keys,
+        since=utcnow() - timedelta(seconds=policy.summary_repeat_window_seconds),
+    )
+
+
+async def _recent_telegram_notified_keys(
+    alert_repository: AlertRepository, alerts, *, policy: TelegramNotificationPolicy
+) -> set[tuple[int | None, str]]:
+    """Keep cooldown after a flap creates a replacement alert row."""
+    if policy.notification_cooldown_seconds <= 0:
+        return set()
+    keys = {(alert.device_id, str(alert.alert_type or "").lower()) for alert in alerts}
+    return await alert_repository.recent_telegram_notified_keys(
+        keys, since=utcnow() - timedelta(seconds=policy.notification_cooldown_seconds)
+    )
+
+
+def _alert_reached_telegram_summary_threshold(
+    alert,
+    current_time: datetime,
+    *,
+    policy: TelegramNotificationPolicy,
+    recent_alert_count: int,
+) -> bool:
+    """Return whether an alert is old or repetitive enough for summary delivery."""
+    if _alert_reached_summary_interval(
+        alert.created_at,
+        current_time,
+        summary_interval_seconds=policy.summary_interval_seconds,
+    ):
+        return True
+    if policy.summary_repeat_window_seconds <= 0 or policy.summary_repeat_min_count <= 1:
+        return False
+    return int(recent_alert_count or 0) >= policy.summary_repeat_min_count
 
 
 def _active_alert_metric_is_stale(
@@ -638,7 +976,7 @@ def _group_telegram_events(events: list[dict]) -> dict[tuple[int | None, str], l
 
 def _order_telegram_events(events: list[dict]) -> list[dict]:
     """Keep active notifications ahead of resolved notifications in the same send batch."""
-    action_rank = {"active": 0, "summary_active": 1, "created": 1, "resolved": 2}
+    action_rank = {"active": 0, "active_reminder": 1, "summary_active": 2, "created": 2, "resolved": 3}
     return sorted(events, key=lambda event: action_rank.get(str(event.get("action") or "active").lower(), 0))
 
 
@@ -659,24 +997,23 @@ async def _send_telegram_events(db, alert_repository: AlertRepository, events: l
     has_marked_alerts = False
     has_notification_events = False
     for group, result in zip(grouped_items, results, strict=True):
-        if isinstance(result, Exception):
+        # ``None`` remains accepted for legacy test notifiers; the real notifier
+        # returns False when Telegram was skipped or rejected the request.
+        if isinstance(result, Exception) or result is False:
             continue
         for event in group:
-            alert = event.get("alert")
-            if alert is None:
-                continue
-            await incident_repository.add_notification_timeline_event_for_alert(
-                alert=alert,
-                action=str(event.get("action") or "active"),
-                channel="telegram",
-                notified_at=notified_at,
-                commit=False,
-            )
-            has_notification_events = True
-            if str(event.get("action") or "active").lower() not in {"active", "summary_active"}:
-                continue
-            await alert_repository.mark_telegram_notified(alert, notified_at, commit=False)
-            has_marked_alerts = True
+            event_alerts = event.get("alerts") or [event.get("alert")]
+            for alert in event_alerts:
+                if alert is None:
+                    continue
+                await incident_repository.add_notification_timeline_event_for_alert(
+                    alert=alert, action=str(event.get("action") or "active"), channel="telegram",
+                    notified_at=notified_at, commit=False,
+                )
+                has_notification_events = True
+                if str(event.get("action") or "active").lower() in {"active", "active_reminder", "summary_active"}:
+                    await alert_repository.mark_telegram_notified(alert, notified_at, commit=False)
+                    has_marked_alerts = True
 
     if has_marked_alerts or has_notification_events:
         if commit:
@@ -690,7 +1027,7 @@ async def _refresh_telegram_events(db, events: list[dict]) -> list[dict]:
     refreshed_events: list[dict] = []
     for event in events:
         action = str(event.get("action") or "active").lower()
-        if action not in {"active", "summary_active"}:
+        if action not in {"active", "active_reminder", "summary_active"}:
             refreshed_events.append(event)
             continue
 
@@ -700,7 +1037,9 @@ async def _refresh_telegram_events(db, events: list[dict]) -> list[dict]:
             continue
 
         fresh_alert = await db.get(Alert, alert_id)
-        if fresh_alert is None or fresh_alert.telegram_notified_at is not None:
+        if fresh_alert is None:
+            continue
+        if fresh_alert.telegram_notified_at is not None and action != "active_reminder":
             continue
         fresh_event = {**event, "alert": fresh_alert}
         if str(fresh_alert.status or "").lower() == "active":
@@ -717,7 +1056,8 @@ def _build_telegram_message(events: list[dict]) -> str:
     action = str(first_event.get("action") or "").lower()
     is_resolved = str(action or "").lower() == "resolved"
     is_summary = str(action or "").lower() == "summary_active"
-    title = "ALERT RESOLVED" if is_resolved else ("ALERT SUMMARY" if is_summary else "ALERT ACTIVE")
+    is_reminder = str(action or "").lower() == "active_reminder"
+    title = "ALERT RESOLVED" if is_resolved else ("ALERT SUMMARY" if is_summary else "ALERT REMINDER" if is_reminder else "ALERT ACTIVE")
     status = "RESOLVED" if is_resolved else ("SUMMARY" if is_summary else "ACTIVE")
     severity = _highest_severity(str(event.get("severity") or "unknown") for event in events)
     device = first_event.get("device")
@@ -729,8 +1069,11 @@ def _build_telegram_message(events: list[dict]) -> str:
         _format_telegram_alert_line(event, include_duration=is_resolved)
         for event in sorted(events, key=lambda item: str(item.get("alert_type") or ""))
     ]
+    if is_summary:
+        alert_lines = _format_telegram_summary_alert_lines(events, device_name=device_name)
     return "\n".join(
         [
+            settings.app.name or "Network Monitoring",
             f"[{str(severity or 'unknown').upper()}] {title}",
             f"Device: {device_name}",
             f"IP: {ip_address}",
@@ -753,6 +1096,79 @@ def _format_telegram_alert_line(event: dict, *, include_duration: bool) -> str:
     if duration is None:
         return line
     return f"{line} (duration: {duration})"
+
+
+def _format_telegram_summary_alert_lines(events: list[dict], *, device_name: str) -> list[str]:
+    """Format summary events as one aggregate incident/device digest when possible."""
+    summary_alerts = _summary_alerts_for_events(events)
+    aggregate_alerts = [
+        alert
+        for alert in summary_alerts
+        if str(getattr(alert, "alert_type", "") or "").lower() in _SUMMARY_AGGREGATE_ALERT_TYPES
+    ]
+    if not aggregate_alerts:
+        return [
+            _format_telegram_alert_line(event, include_duration=False)
+            for event in sorted(events, key=lambda item: str(item.get("alert_type") or ""))
+        ]
+
+    return [_format_degraded_summary_line(device_name=device_name, alerts=aggregate_alerts)]
+
+
+def _summary_alerts_for_events(events: list[dict]) -> list[Alert]:
+    """Return unique recent alerts carried by summary events."""
+    alerts_by_id = {}
+    for event in events:
+        for alert in event.get("summary_alerts") or []:
+            alerts_by_id[getattr(alert, "id", id(alert))] = alert
+    return list(alerts_by_id.values())
+
+
+def _format_degraded_summary_line(*, device_name: str, alerts: list[Alert]) -> str:
+    """Return one concise degraded-service summary line for HTTP/DNS alerts."""
+    ordered_alerts = sorted(alerts, key=lambda alert: (alert.created_at, alert.id or 0))
+    started_at = ordered_alerts[0].created_at
+    ended_at = max((alert.resolved_at or alert.created_at) for alert in ordered_alerts)
+    counts = {
+        "slow_http_response": sum(1 for alert in ordered_alerts if alert.alert_type == "slow_http_response"),
+        "slow_dns_resolution": sum(1 for alert in ordered_alerts if alert.alert_type == "slow_dns_resolution"),
+    }
+    parts = [
+        f"{counts['slow_http_response']} slow HTTP" if counts["slow_http_response"] else "",
+        f"{counts['slow_dns_resolution']} slow DNS" if counts["slow_dns_resolution"] else "",
+    ]
+    max_http_ms = _max_metric_ms(ordered_alerts, "slow_http_response")
+    max_dns_ms = _max_metric_ms(ordered_alerts, "slow_dns_resolution")
+    if max_http_ms is not None:
+        parts.append(f"max HTTP {_format_metric_latency(max_http_ms)}")
+    if max_dns_ms is not None:
+        parts.append(f"max DNS {_format_metric_latency(max_dns_ms)}")
+    summary = ", ".join(part for part in parts if part)
+    return f"- {device_name} degraded {_format_summary_window(started_at, ended_at)}: {summary}"
+
+
+def _max_metric_ms(alerts: list[Alert], alert_type: str) -> float | None:
+    """Extract the maximum millisecond value from alert messages for one alert type."""
+    values = [
+        float(match.group(1))
+        for alert in alerts
+        if alert.alert_type == alert_type
+        for match in [re.search(r"reached\s+([0-9]+(?:\.[0-9]+)?)ms", str(alert.message or ""))]
+        if match
+    ]
+    return max(values) if values else None
+
+
+def _format_metric_latency(value_ms: float) -> str:
+    """Format latency in ms or seconds for compact Telegram summaries."""
+    if value_ms >= 1000:
+        return f"{value_ms / 1000:.1f}s"
+    return f"{value_ms:.0f}ms"
+
+
+def _format_summary_window(started_at: datetime, ended_at: datetime) -> str:
+    """Format the time window for a summary Telegram line."""
+    return f"{started_at:%H:%M}-{ended_at:%H:%M}"
 
 
 def _format_alert_duration(started_at, resolved_at) -> str | None:

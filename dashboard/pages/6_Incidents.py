@@ -6,10 +6,18 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from components.auth import require_dashboard_login
+from components.auth import is_admin, require_dashboard_login
 from components.api import get_json, paged_items, paged_meta, post_json, put_json
+from components.incident_board import (
+    LANE_IN_PROGRESS,
+    LANE_RESOLVED,
+    LANE_UNACKNOWLEDGED,
+    parse_incident_query_id,
+    partition_incidents,
+)
 from components.refresh import live_status_text, refresh_controls, render_live_section, rendered_at_label
 from components.sidebar import collapse_sidebar_on_page_load
+from components.state import clamp_page, sync_filter_page
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
 from components.ui import (
     normalize_status_label,
@@ -54,10 +62,13 @@ incidents_filter_signature = (
     str(sort_mode),
     int(incidents_page_size),
 )
-if st.session_state.get(incidents_filter_signature_key) != incidents_filter_signature:
-    st.session_state[incidents_page_key] = 1
-    st.session_state[incidents_filter_signature_key] = incidents_filter_signature
-current_incidents_page = max(int(st.session_state.get(incidents_page_key, 1) or 1), 1)
+sync_filter_page(
+    st.session_state,
+    signature_key=incidents_filter_signature_key,
+    page_key=incidents_page_key,
+    signature=incidents_filter_signature,
+)
+current_incidents_page = clamp_page(st.session_state.get(incidents_page_key), total_pages=10**9)
 incidents_offset = (current_incidents_page - 1) * int(incidents_page_size)
 
 
@@ -68,6 +79,58 @@ def _duration_label(minutes_value: float | None) -> str:
     minutes = int(minutes_value)
     hours, mins = divmod(minutes, 60)
     return f"{hours}j {mins}m" if hours else f"{mins}m"
+
+
+def _prepare_incident_frame(items: list[dict]) -> pd.DataFrame:
+    """Normalize incident API rows for board, analytics, and workflow views."""
+    if not items:
+        return pd.DataFrame()
+    dataframe = pd.DataFrame(items)
+    defaults = {
+        "device_name": "-",
+        "site": "-",
+        "summary": "-",
+        "owner": "",
+        "assignee": "",
+        "severity_override": "",
+        "effective_severity": "",
+        "note": "",
+        "acknowledged_by": "",
+    }
+    for column, default in defaults.items():
+        dataframe[column] = dataframe[column].fillna(default) if column in dataframe.columns else default
+
+    if "status" in dataframe.columns:
+        dataframe["raw_status"] = dataframe["status"].fillna("unknown").astype(str).str.lower()
+        dataframe["status"] = dataframe["raw_status"].map(normalize_status_label)
+    else:
+        dataframe["raw_status"] = "unknown"
+        dataframe["status"] = "Unknown"
+    dataframe["status_priority"] = dataframe["status"].map(status_priority)
+
+    for source, display in (
+        ("started_at", "started_at_wib"),
+        ("ended_at", "ended_at_wib"),
+        ("acknowledged_at", "acknowledged_at_wib"),
+    ):
+        if source in dataframe.columns:
+            dataframe[source] = to_wib_timestamp(dataframe[source])
+            dataframe[display] = dataframe[source].apply(format_wib_timestamp)
+        else:
+            dataframe[source] = pd.NaT
+            dataframe[display] = "-"
+
+    dataframe["started_at_short"] = dataframe["started_at"].apply(
+        lambda value: value.strftime("%d-%m %H:%M") if pd.notna(value) else "-"
+    )
+    duration_end = dataframe["ended_at"].copy()
+    active_rows = duration_end.isna() & dataframe["started_at"].notna()
+    if active_rows.any():
+        now_wib = pd.Timestamp.now(tz="Asia/Jakarta").as_unit("s")
+        duration_end.loc[active_rows] = now_wib
+    dataframe["duration_minutes"] = (duration_end - dataframe["started_at"]).dt.total_seconds().div(60)
+    dataframe["duration_label"] = dataframe["duration_minutes"].map(_duration_label)
+    return dataframe
 
 
 def _render_incident_detail(row: pd.Series) -> None:
@@ -147,7 +210,6 @@ def _render_detail_table_controls(
                 "Halaman Detail",
                 min_value=1,
                 max_value=total_pages,
-                value=current_page,
                 step=1,
                 key=page_key,
             )
@@ -170,16 +232,7 @@ def _render_detail_table_controls(
     return dataframe.iloc[start_index : start_index + page_size]
 
 
-def _incident_option_label(row: pd.Series) -> str:
-    """Return a compact incident selector label."""
-    status = str(row.get("status") or "-")
-    device = str(row.get("device_name") or "-")
-    severity = str(row.get("effective_severity") or "-")
-    started = str(row.get("started_at_wib") or "-")
-    return f"#{int(row['id'])} | {status} | {severity} | {device} | {started}"
-
-
-def _render_timeline(incident_id: int) -> None:
+def _render_timeline(incident_id: int, *, key_prefix: str) -> None:
     """Render one incident timeline."""
     timeline_payload = get_json(f"/incidents/{incident_id}/timeline", {"items": []})
     timeline_items = timeline_payload.get("items", []) if isinstance(timeline_payload, dict) else []
@@ -197,6 +250,7 @@ def _render_timeline(incident_id: int) -> None:
         timeline_frame[["Waktu (WIB)", "Event", "Actor", "Pesan"]],
         width="stretch",
         hide_index=True,
+        key=f"{key_prefix}_incident_timeline_{incident_id}",
         column_config={
             "Waktu (WIB)": st.column_config.TextColumn("Waktu (WIB)", width="medium"),
             "Event": st.column_config.TextColumn("Event", width="small"),
@@ -235,36 +289,42 @@ def _render_escalations() -> None:
     )
 
 
-def _render_workflow_panel(dataframe: pd.DataFrame) -> None:
-    """Render incident workflow actions and timeline."""
-    st.markdown("### Workflow Insiden")
-    required_columns = {"id", "raw_status"}
-    if dataframe.empty or not required_columns.issubset(dataframe.columns):
-        st.info("Tidak ada insiden aktif yang memerlukan tindakan workflow.")
-        return
-
-    active_frame = dataframe.loc[dataframe["raw_status"].fillna("").str.lower().eq("active")].copy()
-    if active_frame.empty:
-        st.info("Tidak ada insiden aktif yang memerlukan tindakan workflow.")
-        return
-
-    options = active_frame.sort_values("started_at", ascending=False)["id"].tolist()
-    selectbox_key = "incident_workflow_selected_id"
-    if st.session_state.get(selectbox_key) not in options:
-        st.session_state[selectbox_key] = options[0]
-    selected_id = st.selectbox(
-        "Pilih Incident",
-        options=options,
-        format_func=lambda incident_id: _incident_option_label(
-            active_frame.loc[active_frame["id"] == incident_id].iloc[0]
-        ),
-        key=selectbox_key,
+def _render_incident_overview(selected: pd.Series) -> None:
+    """Render read-only incident facts shared by board and workflow views."""
+    render_meta_row(
+        [
+            ("Status", selected.get("status") or "-"),
+            ("Severity", str(selected.get("effective_severity") or "-").title()),
+            ("Device", selected.get("device_name") or "-"),
+            ("Site", selected.get("site") or "-"),
+            ("Durasi", selected.get("duration_label") or "-"),
+        ]
     )
-    selected = active_frame.loc[active_frame["id"] == selected_id].iloc[0]
+    st.caption("Ringkasan")
+    st.write(str(selected.get("summary") or "-"))
+
+
+def _render_selected_workflow(selected: pd.Series, *, key_prefix: str) -> None:
+    """Render one incident workflow with role-aware mutation controls."""
+    selected_id = int(selected["id"])
+    _render_incident_overview(selected)
+    if not is_admin():
+        st.info("Role viewer memiliki akses baca. Perubahan workflow hanya tersedia untuk admin.")
+        _render_timeline(selected_id, key_prefix=key_prefix)
+        return
+
     workflow_col, action_col = st.columns([2, 1])
     with workflow_col:
-        owner = st.text_input("Owner", value=str(selected.get("owner") or ""), key=f"incident_owner_{selected_id}")
-        assignee = st.text_input("Assignee", value=str(selected.get("assignee") or ""), key=f"incident_assignee_{selected_id}")
+        owner = st.text_input(
+            "Owner",
+            value=str(selected.get("owner") or ""),
+            key=f"{key_prefix}_incident_owner_{selected_id}",
+        )
+        assignee = st.text_input(
+            "Assignee",
+            value=str(selected.get("assignee") or ""),
+            key=f"{key_prefix}_incident_assignee_{selected_id}",
+        )
         current_severity = str(selected.get("severity_override") or "")
         severity_index = SEVERITY_OPTIONS.index(current_severity) if current_severity in SEVERITY_OPTIONS else 0
         severity_override = st.selectbox(
@@ -272,53 +332,166 @@ def _render_workflow_panel(dataframe: pd.DataFrame) -> None:
             options=SEVERITY_OPTIONS,
             index=severity_index,
             format_func=lambda value: "Ikuti alert" if not value else value.title(),
-            key=f"incident_severity_{selected_id}",
+            key=f"{key_prefix}_incident_severity_{selected_id}",
         )
-        note = st.text_area("Note", value=str(selected.get("note") or ""), key=f"incident_note_{selected_id}", height=120)
-        if st.button("Simpan Workflow", key=f"incident_save_{selected_id}", type="primary"):
+        note = st.text_area(
+            "Note",
+            value=str(selected.get("note") or ""),
+            key=f"{key_prefix}_incident_note_{selected_id}",
+            height=120,
+        )
+        if st.button("Simpan Workflow", key=f"{key_prefix}_incident_save_{selected_id}", type="primary"):
             put_json(
                 f"/incidents/{selected_id}/workflow",
                 {"owner": owner, "assignee": assignee, "severity_override": severity_override or None, "note": note},
                 {},
-                action_key=f"incident_workflow_{selected_id}",
+                action_key=f"{key_prefix}_incident_workflow_{selected_id}",
             )
             st.cache_data.clear()
             st.rerun()
     with action_col:
         st.caption(f"Status: {selected.get('status') or '-'}")
         st.caption(f"Ack: {selected.get('acknowledged_by') or '-'}")
-        action_note = st.text_area("Action Note", key=f"incident_action_note_{selected_id}", height=100)
+        action_note = st.text_area(
+            "Action Note",
+            key=f"{key_prefix}_incident_action_note_{selected_id}",
+            height=100,
+        )
         if pd.isna(selected.get("acknowledged_at")) or not selected.get("acknowledged_at"):
-            if st.button("Acknowledge", key=f"incident_ack_{selected_id}"):
+            if st.button("Acknowledge", key=f"{key_prefix}_incident_ack_{selected_id}"):
                 post_json(
                     f"/incidents/{selected_id}/ack",
                     {"note": action_note, "assignee": assignee},
                     {},
-                    action_key=f"incident_ack_{selected_id}",
+                    action_key=f"{key_prefix}_incident_ack_{selected_id}",
                 )
                 st.cache_data.clear()
                 st.rerun()
         if str(selected.get("raw_status") or "").lower() == "active":
-            if st.button("Resolve", key=f"incident_resolve_{selected_id}"):
+            if st.button("Resolve", key=f"{key_prefix}_incident_resolve_{selected_id}"):
                 post_json(
                     f"/incidents/{selected_id}/resolve",
                     {"note": action_note},
                     {},
-                    action_key=f"incident_resolve_{selected_id}",
+                    action_key=f"{key_prefix}_incident_resolve_{selected_id}",
                 )
                 st.cache_data.clear()
                 st.rerun()
         else:
-            if st.button("Reopen", key=f"incident_reopen_{selected_id}"):
+            if st.button("Reopen", key=f"{key_prefix}_incident_reopen_{selected_id}"):
                 post_json(
                     f"/incidents/{selected_id}/reopen",
                     {"note": action_note},
                     {},
-                    action_key=f"incident_reopen_{selected_id}",
+                    action_key=f"{key_prefix}_incident_reopen_{selected_id}",
                 )
                 st.cache_data.clear()
                 st.rerun()
-    _render_timeline(int(selected_id))
+    _render_timeline(int(selected_id), key_prefix=key_prefix)
+
+
+def _board_path(status: str, limit: int) -> str:
+    """Return a board API path using the page-level site and search filters."""
+    path = f"/incidents/paged?status={status}&limit={limit}&offset=0"
+    if site_filter.strip():
+        path = f"{path}&site={quote_plus(site_filter.strip())}"
+    if search_filter.strip():
+        path = f"{path}&search={quote_plus(search_filter.strip())}"
+    return path
+
+
+def _load_board_frame() -> pd.DataFrame:
+    """Load bounded active and recent-resolved data for the incident board."""
+    active_payload = get_json(_board_path("active", 200), {"items": [], "meta": {"total": 0}})
+    resolved_payload = get_json(_board_path("resolved", 50), {"items": [], "meta": {"total": 0}})
+    rows_by_id: dict[int, dict] = {}
+    for row in [*paged_items(active_payload, []), *paged_items(resolved_payload, [])]:
+        if row.get("id") is not None:
+            rows_by_id[int(row["id"])] = row
+    return _prepare_incident_frame(list(rows_by_id.values()))
+
+
+def _select_board_incident(incident_id: int) -> None:
+    """Persist board selection in session state and URL query params."""
+    st.session_state["incident_board_selected_id"] = incident_id
+    st.query_params["incident"] = str(incident_id)
+
+
+def _render_board_card(row: pd.Series) -> None:
+    """Render one compact incident card."""
+    incident_id = int(row["id"])
+    with st.container(border=True):
+        title_col, severity_col = st.columns([3, 1])
+        title_col.markdown(f"**#{incident_id} {row.get('device_name') or '-'}**")
+        severity_col.caption(str(row.get("effective_severity") or "-").title())
+        st.caption(f"{row.get('site') or '-'} | {row.get('duration_label') or '-'}")
+        st.write(str(row.get("summary") or "-"))
+        if st.button("Buka detail", key=f"incident_board_open_{incident_id}", width="stretch"):
+            _select_board_incident(incident_id)
+            st.rerun()
+
+
+def _clear_board_selection() -> None:
+    """Clear the selected incident from session state and the deep-link URL."""
+    st.session_state.pop("incident_board_selected_id", None)
+    if "incident" in st.query_params:
+        del st.query_params["incident"]
+
+
+@st.dialog("Detail Incident", width="large", dismissible=False)
+def _render_board_drilldown(incident_id: int) -> None:
+    """Render a deep-linked incident detail and workflow in a modal dialog."""
+    payload = get_json(f"/incidents/{incident_id}", {})
+    if not isinstance(payload, dict) or not payload.get("id"):
+        st.warning(f"Incident #{incident_id} tidak ditemukan atau sudah tidak tersedia.")
+        return
+    frame = _prepare_incident_frame([payload])
+    if frame.empty:
+        return
+    heading_col, close_col = st.columns([5, 1])
+    heading_col.markdown(f"### Detail Incident #{incident_id}")
+    if close_col.button("Tutup", key=f"incident_board_close_{incident_id}", width="stretch"):
+        _clear_board_selection()
+        st.rerun()
+    _render_selected_workflow(frame.iloc[0], key_prefix="board")
+
+
+def _render_incident_board() -> None:
+    """Render operational incident lanes and optional deep-link drill-down."""
+    board_frame = _load_board_frame()
+    st.markdown("### Incident Board")
+    if board_frame.empty:
+        st.info("Tidak ada incident yang cocok dengan filter site dan pencarian saat ini.")
+        return
+
+    lane_limit = st.selectbox(
+        "Kartu per Lane",
+        options=[5, 10, 20],
+        index=1,
+        key="incident_board_lane_limit",
+    )
+    lanes = partition_incidents(board_frame.to_dict("records"))
+    lane_config = (
+        (LANE_UNACKNOWLEDGED, "Belum Di-ack"),
+        (LANE_IN_PROGRESS, "Sedang Ditangani"),
+        (LANE_RESOLVED, "Selesai Terbaru"),
+    )
+    columns = st.columns(3)
+    for column, (lane_key, label) in zip(columns, lane_config, strict=False):
+        rows = lanes[lane_key]
+        with column:
+            st.markdown(f"#### {label} ({len(rows)})")
+            for row in rows[: int(lane_limit)]:
+                _render_board_card(pd.Series(row))
+            if len(rows) > int(lane_limit):
+                st.caption(f"Menampilkan {lane_limit} dari {len(rows)} incident.")
+
+    query_incident_id = parse_incident_query_id(st.query_params.get("incident"))
+    selected_id = query_incident_id or parse_incident_query_id(
+        st.session_state.get("incident_board_selected_id")
+    )
+    if selected_id is not None:
+        _render_board_drilldown(selected_id)
 
 
 def _render_incidents_body() -> None:
@@ -360,7 +533,6 @@ def _render_incidents_body() -> None:
         "Halaman Incidents",
         min_value=1,
         max_value=incidents_total_pages,
-        value=min(current_incidents_page, incidents_total_pages),
         step=1,
         key=incidents_page_key,
     )
@@ -370,55 +542,7 @@ def _render_incidents_body() -> None:
         st.info("Belum ada insiden tercatat. Data akan muncul setelah gangguan terdeteksi.")
         return
 
-    dataframe = pd.DataFrame(incidents)
-    dataframe["device_name"] = dataframe["device_name"].fillna("-") if "device_name" in dataframe.columns else "-"
-    dataframe["site"] = dataframe["site"].fillna("-") if "site" in dataframe.columns else "-"
-    dataframe["summary"] = dataframe["summary"].fillna("-") if "summary" in dataframe.columns else "-"
-    dataframe["owner"] = dataframe["owner"].fillna("") if "owner" in dataframe.columns else ""
-    dataframe["assignee"] = dataframe["assignee"].fillna("") if "assignee" in dataframe.columns else ""
-    dataframe["severity_override"] = dataframe["severity_override"].fillna("") if "severity_override" in dataframe.columns else ""
-    dataframe["effective_severity"] = dataframe["effective_severity"].fillna("") if "effective_severity" in dataframe.columns else ""
-    dataframe["note"] = dataframe["note"].fillna("") if "note" in dataframe.columns else ""
-    dataframe["acknowledged_by"] = dataframe["acknowledged_by"].fillna("") if "acknowledged_by" in dataframe.columns else ""
-    if "status" in dataframe.columns:
-        dataframe["raw_status"] = dataframe["status"].astype(str)
-        dataframe["status"] = dataframe["status"].map(normalize_status_label)
-    else:
-        dataframe["raw_status"] = "unknown"
-        dataframe["status"] = "Unknown"
-    dataframe["status_priority"] = dataframe["status"].map(status_priority)
-
-    if "started_at" in dataframe.columns:
-        dataframe["started_at"] = to_wib_timestamp(dataframe["started_at"])
-        dataframe["started_at_wib"] = dataframe["started_at"].apply(format_wib_timestamp)
-        dataframe["started_at_short"] = dataframe["started_at"].apply(
-            lambda value: value.strftime("%d-%m %H:%M") if pd.notna(value) else "-"
-        )
-    else:
-        dataframe["started_at"] = pd.NaT
-        dataframe["started_at_wib"] = "-"
-        dataframe["started_at_short"] = "-"
-
-    if "ended_at" in dataframe.columns:
-        dataframe["ended_at"] = to_wib_timestamp(dataframe["ended_at"])
-        dataframe["ended_at_wib"] = dataframe["ended_at"].apply(format_wib_timestamp)
-    else:
-        dataframe["ended_at"] = pd.NaT
-        dataframe["ended_at_wib"] = "-"
-
-    if "acknowledged_at" in dataframe.columns:
-        dataframe["acknowledged_at"] = to_wib_timestamp(dataframe["acknowledged_at"])
-        dataframe["acknowledged_at_wib"] = dataframe["acknowledged_at"].apply(format_wib_timestamp)
-    else:
-        dataframe["acknowledged_at"] = pd.NaT
-        dataframe["acknowledged_at_wib"] = "-"
-
-    dataframe["duration_minutes"] = (
-        (dataframe["ended_at"] - dataframe["started_at"]).dt.total_seconds().div(60)
-        if "ended_at" in dataframe.columns and "started_at" in dataframe.columns
-        else pd.Series(dtype=float)
-    )
-    dataframe["duration_label"] = dataframe["duration_minutes"].map(_duration_label)
+    dataframe = _prepare_incident_frame(incidents)
 
     filtered_frame = dataframe.copy()
 
@@ -488,15 +612,15 @@ def _render_incidents_body() -> None:
     )
     capped_detail_frame = detail_frame.head(int(max_rows))
 
-    analytics_tab, workflow_tab = st.tabs(["Analytics", "Workflow"])
+    analytics_tab, board_tab = st.tabs(["Analytics", "Incident Board"])
     with analytics_tab:
         _render_incident_analytics(filtered_frame)
         _render_detail_table(_render_detail_table_controls(capped_detail_frame, title="Detail Insiden", page_size=10))
         st.markdown("")
         st.caption("Tip: gunakan urutan Durasi Terpanjang untuk meninjau insiden dengan dampak waktu terbesar.")
-    with workflow_tab:
+    with board_tab:
+        _render_incident_board()
         _render_escalations()
-        _render_workflow_panel(filtered_frame)
 
 
 def _render_incident_analytics(filtered_frame: pd.DataFrame) -> None:

@@ -11,6 +11,7 @@ from ..core.security import validate_auth_configuration
 from ..db.init_db import init_db
 from ..db.session import SessionLocal
 from ..services.auth_service import ensure_bootstrap_admin
+from ..services.observability_service import mark_scheduler_jobs_registered
 from .scheduler import create_scheduler
 
 
@@ -45,6 +46,8 @@ async def run_scheduler_worker() -> None:
     _install_signal_handlers(stop_event)
 
     scheduler = create_scheduler()
+    async with SessionLocal() as db:
+        await mark_scheduler_jobs_registered(db, job_names=[job.id for job in scheduler.get_jobs()])
     scheduler.start()
     logger.info("Scheduler worker started")
     try:

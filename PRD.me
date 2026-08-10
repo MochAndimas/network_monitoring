@@ -356,14 +356,14 @@ Acceptance criteria:
 Prioritas: sedang.
 
 Status implementasi:
-- [x] Dashboard Long-Term Explorer untuk cold archive dan long-term trend dari rollup/archive, bukan raw metrics besar.
+- [x] Data historis jangka panjang tersedia melalui daily rollup, cold archive, materialized summary, dan custom range Daily Summary.
 - [x] Materialized summary harian per site/device type lewat `metric_site_type_daily_summaries`.
 - [x] Retention cleanup refresh materialized summary dan compact latest snapshot untuk inactive device rows tanpa menghapus snapshot aktif terakhir.
 - [x] Index tambahan untuk lookup cold archive dan daily rollup long-term explorer.
 - [x] Performance budget endpoint `/system/performance-budgets` untuk endpoint dashboard utama.
 
 Requirements:
-- Tambahkan dashboard explorer untuk cold archive dan long-term trend.
+- Pusatkan eksplorasi historis user-facing di Daily Summary dengan custom date range; pertahankan API long-term untuk kebutuhan backend dan integrasi.
 - Tambahkan materialized summary tambahan per site/device type.
 - Tambahkan background job untuk compact/optimize latest snapshot dan stale metric cleanup.
 - Evaluasi indexing tambahan berdasarkan query production aktual.
@@ -374,19 +374,37 @@ Acceptance criteria:
 - Endpoint dashboard utama tetap memenuhi p95 target yang disepakati.
 - Query slow/outlier tercatat di observability dan punya runbook triage.
 
-### Phase 5 - Frontend Evolution
+### Phase 5 - Streamlit UX Evolution
 
-Prioritas: rendah-sedang, karena dashboard saat ini ditujukan untuk tim kecil.
+Prioritas: sedang. Streamlit tetap menjadi satu-satunya frontend karena dashboard dipakai tim kecil.
+
+Status implementasi:
+- [x] Helper session-state reusable untuk reset filter/pagination dan page clamping.
+- [x] Analytics tetap menjadi tab default pada halaman Incidents.
+- [x] Incident Board tiga lane: belum di-ack, sedang ditangani, dan selesai terbaru.
+- [x] Drill-down incident memakai query parameter dan endpoint detail FastAPI tanpa memindahkan business logic ke UI.
+- [x] Detail board mencakup status, severity, device, site, durasi, ringkasan, workflow, dan timeline.
+- [x] Workflow Incidents role-aware: viewer read-only dan mutation controls hanya ditampilkan untuk admin.
+- [x] Workflow dipusatkan di drill-down Incident Board tanpa tab terpisah yang redundan.
+- [x] Board memakai payload bounded, filter site/search yang sama, cache GET, dan batas kartu per lane.
+- [x] Normalisasi data incident dipusatkan untuk board, analytics, tabel, dan workflow.
+- [x] Test helper state, klasifikasi lane, query parameter, dan kontrak detail incident.
 
 Requirements:
-- Evaluasi migrasi dashboard dari Streamlit ke frontend dedicated bila user aktif meningkat atau workflow makin stateful.
-- Pertahankan FastAPI sebagai backend kontrak.
-- Desain ulang navigation, filtering, realtime refresh, dan role-based screens.
-- Tambahkan incident board dan richer drill-down bila workflow operasional sudah membutuhkan.
+- Pertahankan Streamlit sebagai satu-satunya frontend dan FastAPI sebagai backend kontrak.
+- Standarkan state filter, pagination, selection, dan refresh agar reusable lintas halaman.
+- Pertahankan fragment-based refresh agar hanya section data yang dirender ulang.
+- Tambahkan incident board dan richer drill-down untuk workflow operasional.
+- Pastikan screen dan mutation control mengikuti role admin/viewer.
+- Gunakan query bounded/pagination untuk menjaga dashboard tetap responsif.
 
 Acceptance criteria:
-- Ada decision record kapan Streamlit tetap cukup dan kapan migrasi dimulai.
-- API contract sudah siap untuk frontend baru tanpa memindahkan business logic ke UI.
+- Tidak ada service frontend selain Streamlit.
+- Analytics tetap menjadi tab default dan Incident Board tersedia tanpa mengubah alur analisis existing.
+- Viewer dapat membaca incident dan timeline tanpa melihat kontrol mutation.
+- Admin dapat mengelola workflow dari drill-down Incident Board.
+- Incident dapat dibuka lewat query parameter yang stabil.
+- Business logic dan authorization tetap berada di FastAPI.
 
 ## 11. Success Metrics
 

@@ -246,6 +246,7 @@ def test_incident_workflow_actions_timeline_and_escalations():
 
         incident_id = run(scenario())
 
+        detail_response = client.get(f"/incidents/{incident_id}", headers=API_HEADERS)
         escalation_response = client.get("/incidents/escalations?critical_after_minutes=15", headers=API_HEADERS)
         update_response = client.put(
             f"/incidents/{incident_id}/workflow",
@@ -275,6 +276,9 @@ def test_incident_workflow_actions_timeline_and_escalations():
         )
         timeline_response = client.get(f"/incidents/{incident_id}/timeline", headers=API_HEADERS)
 
+        assert detail_response.status_code == 200
+        assert detail_response.json()["id"] == incident_id
+        assert detail_response.json()["device_name"] == "Core Router"
         assert escalation_response.status_code == 200
         assert escalation_response.json()["items"][0]["id"] == incident_id
         assert escalation_response.json()["items"][0]["effective_severity"] == "critical"

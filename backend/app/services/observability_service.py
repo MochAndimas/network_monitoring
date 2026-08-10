@@ -267,6 +267,24 @@ async def mark_scheduler_job_started(db: AsyncSession, *, job_name: str, commit:
         await db.flush()
 
 
+async def mark_scheduler_jobs_registered(
+    db: AsyncSession,
+    *,
+    job_names: list[str],
+    commit: bool = True,
+) -> None:
+    """Refresh scheduler heartbeats when a worker registers its jobs."""
+    registered_at = utcnow()
+    for job_name in sorted(set(job_names)):
+        status = await _get_or_create_scheduler_job_status(db, job_name=job_name)
+        status.is_running = False
+        status.updated_at = registered_at
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
+
+
 async def mark_scheduler_job_succeeded(
     db: AsyncSession, *, job_name: str, duration_ms: float, commit: bool = True
 ) -> None:
@@ -322,7 +340,14 @@ def scheduler_job_is_stale(job: SchedulerJobStatus) -> bool:
     expected_interval = _expected_scheduler_interval_seconds(job.job_name)
     if expected_interval is None:
         return False
-    last_reference = job.last_finished_at or job.last_started_at or job.updated_at
+    references = [
+        timestamp
+        for timestamp in (job.last_finished_at, job.last_started_at, job.updated_at)
+        if timestamp is not None
+    ]
+    if not references:
+        return False
+    last_reference = max(references)
     stale_after_seconds = max(expected_interval * max(settings.scheduler.job_stale_factor, 1), 60)
     return last_reference <= utcnow() - timedelta(seconds=stale_after_seconds)
 

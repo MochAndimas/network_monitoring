@@ -3,6 +3,10 @@
 This module contains automated regression and validation scenarios.
 """
 
+from datetime import timedelta
+
+from backend.app.core.time import utcnow
+from backend.app.models.scheduler_job_status import SchedulerJobStatus
 from backend.app.services import observability_service as observability_module
 
 
@@ -22,6 +26,21 @@ def test_redact_sensitive_log_message_masks_telegram_credentials(monkeypatch):
     assert "-987654321" not in redacted_message
     assert "[telegram_bot_token]" in redacted_message
     assert "[telegram_chat_id]" in redacted_message
+
+
+def test_scheduler_registration_heartbeat_prevents_stale_alert(monkeypatch):
+    monkeypatch.setattr(observability_module.settings, "scheduler_cleanup_interval_hours", 24)
+    old_timestamp = utcnow() - timedelta(days=4)
+    status = SchedulerJobStatus(
+        job_name="retention_cleanup",
+        last_finished_at=old_timestamp,
+        last_succeeded_at=old_timestamp,
+        updated_at=utcnow(),
+        consecutive_failures=0,
+        is_running=False,
+    )
+
+    assert observability_module.scheduler_job_is_stale(status) is False
 
 
 def test_observability_payload_metrics_cover_paged_endpoints():

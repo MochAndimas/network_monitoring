@@ -103,6 +103,7 @@ def _render_system_health_body() -> None:
             "scheduler_jobs": [],
             "scheduler_alerts": [],
         },
+        accepted_status_codes=(503,),
     )
     freshness_payload = get_json(
         "/metrics/freshness/summary?stale_after_minutes=5&active_only=true",
