@@ -3,6 +3,7 @@ __pycache__/
 *.sqlite3
 *.db
 .env
+backup/
 .venv/
 venv/
 .pytest_cache/
@@ -16,3 +17,10 @@ dist/
 build/
 *.egg-info/
 logs/
+bin/
+etc/
+include/
+lib/
+scripts/
+share/
+pyvenv.cfg

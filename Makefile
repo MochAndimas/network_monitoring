@@ -1,4 +1,4 @@
-.PHONY: setup precommit-install precommit-run lint format typecheck test test-fast test-unit test-integration test-slow test-mysql ci backend scheduler dashboard docker-up docker-logs security
+.PHONY: setup precommit-install precommit-run lint format typecheck test test-fast test-unit test-integration test-slow test-mysql migration-check ci backend scheduler dashboard docker-up docker-logs security
 
 setup:
 	python -m pip install --upgrade pip
@@ -37,6 +37,10 @@ test-slow:
 
 test-mysql:
 	pytest -q -m mysql
+
+migration-check:
+	test "$$(alembic heads | grep -c '(head)' || true)" -eq 1
+	alembic check
 
 ci: lint typecheck test
 

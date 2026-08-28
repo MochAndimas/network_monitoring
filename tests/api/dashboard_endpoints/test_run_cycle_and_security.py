@@ -30,6 +30,7 @@ def test_telegram_messages_group_multiple_alerts_for_one_device():
         name="MyRepublic - ISP",
         ip_address="192.168.1.1",
         site="R. Server",
+        location="Ruang Server",
         device_type="internet_target",
     )
 
@@ -60,11 +61,68 @@ def test_telegram_messages_group_multiple_alerts_for_one_device():
                 "Device: MyRepublic - ISP",
                 "IP: 192.168.1.1",
                 "Site: R. Server",
+                "Location: Ruang Server",
                 "Type: internet_target",
                 "Status: ACTIVE",
                 "Alerts:",
                 "- high_jitter_warning: MyRepublic - ISP jitter reached 69.73ms",
                 "- high_ping_latency_warning: MyRepublic - ISP ping latency reached 141.38ms",
+            ]
+        )
+    ]
+
+
+def test_telegram_messages_batch_same_site_same_severity_devices():
+    """Validate simultaneous same-site device alerts share one Telegram message."""
+    from backend.app.alerting.engine import _build_telegram_messages
+
+    ap = SimpleNamespace(
+        id=1,
+        name="Ruijie AP Meeting",
+        ip_address="192.168.1.50",
+        site="Kantor Pusat",
+        location="Ruang Meeting",
+        device_type="access_point",
+    )
+    nas = SimpleNamespace(
+        id=2,
+        name="NAS Utama",
+        ip_address="192.168.1.20",
+        site="Kantor Pusat",
+        location="Ruang Server",
+        device_type="nas",
+    )
+
+    messages = _build_telegram_messages(
+        [
+            {
+                "action": "active",
+                "alert_type": "device_down",
+                "severity": "critical",
+                "message": "Ruijie AP Meeting is unreachable",
+                "device": ap,
+            },
+            {
+                "action": "active",
+                "alert_type": "device_down",
+                "severity": "critical",
+                "message": "NAS Utama is unreachable",
+                "device": nas,
+            },
+        ]
+    )
+
+    assert messages == [
+        "\n".join(
+            [
+                "Network Monitoring",
+                "[CRITICAL] ALERT ACTIVE",
+                "Site: Kantor Pusat",
+                "Devices affected: 2",
+                "Status: ACTIVE",
+                "Alerts:",
+                "- NAS Utama (192.168.1.20 | Ruang Server): device_down: NAS Utama is unreachable",
+                "- Ruijie AP Meeting (192.168.1.50 | Ruang Meeting): device_down: Ruijie AP Meeting is unreachable",
             ]
         )
     ]
@@ -2002,6 +2060,4 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
         assert sent_messages == []
         assert resolved_response.status_code == 200
         assert resolved_response.json()["alerts_resolved"] == 0
-
-
 

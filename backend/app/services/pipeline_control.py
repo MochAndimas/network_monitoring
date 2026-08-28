@@ -16,6 +16,7 @@ from ..db.session import engine
 
 
 _monitoring_pipeline_locks: dict[str, asyncio.Lock] = {}
+_pipeline_lock_contention_count = 0
 logger = logging.getLogger("network_monitoring.pipeline")
 MONITORING_METRIC_LOCK_SCOPES = ("metrics:internet", "metrics:device", "metrics:server", "metrics:mikrotik")
 MONITORING_ALERT_LOCK_SCOPE = "alerts"
@@ -110,8 +111,11 @@ async def _release_mysql_lock(connection, *, scope: str | None) -> None:
 @asynccontextmanager
 async def monitoring_pipeline_guard(*, wait: bool, scope: str | None = None) -> AsyncIterator[bool]:
     """Acquire the process or MySQL lock for one monitoring work scope."""
+    global _pipeline_lock_contention_count
     if engine.dialect.name == "mysql":
         connection, acquired = await _acquire_mysql_lock(wait=wait, scope=scope)
+        if not acquired:
+            _pipeline_lock_contention_count += 1
         try:
             yield acquired
         finally:
@@ -130,12 +134,18 @@ async def monitoring_pipeline_guard(*, wait: bool, scope: str | None = None) -> 
             acquired = True
         except TimeoutError:
             acquired = False
+            _pipeline_lock_contention_count += 1
 
     try:
         yield acquired
     finally:
         if acquired:
             process_lock.release()
+
+
+def pipeline_lock_health() -> dict[str, int]:
+    """Return process-local lock contention observations for the active worker."""
+    return {"contention_count": _pipeline_lock_contention_count}
 
 
 @asynccontextmanager

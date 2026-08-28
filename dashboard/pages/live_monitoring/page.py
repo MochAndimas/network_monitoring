@@ -37,9 +37,18 @@ def render_live_monitoring_page() -> None:
     device_type_by_id = {int(device["id"]): str(device.get("device_type") or "") for device in devices}
     device_name_by_id = {int(device["id"]): str(device.get("name") or "") for device in devices}
     device_by_id = {int(device["id"]): device for device in devices}
+    voip_devices = [device for device in devices if str(device.get("device_type") or "") == "voip"]
+    voip_group_label = f"Semua VoIP ({len(voip_devices)} device)"
     device_options: dict[str, int | None] = {"Semua Device": None}
     for device in devices:
+        # VoIP is monitored as one operational group; individual selection
+        # would only duplicate the group chart and make the filter unwieldy.
+        if len(voip_devices) >= 2 and str(device.get("device_type") or "") == "voip":
+            continue
         device_options[format_device_label(device)] = int(device["id"])
+    if len(voip_devices) >= 2:
+        # The special option has no device ID; filters carry its member IDs separately.
+        device_options[voip_group_label] = None
 
     today = datetime.now().date()
     default_start_date = today - timedelta(days=1)
@@ -48,6 +57,8 @@ def render_live_monitoring_page() -> None:
         devices=devices,
         device_options=device_options,
         device_by_id=device_by_id,
+        voip_group_label=voip_group_label if len(voip_devices) >= 2 else None,
+        voip_device_ids=[int(device["id"]) for device in voip_devices],
         today=today,
         default_start_date=default_start_date,
         auto_refresh=auto_refresh,

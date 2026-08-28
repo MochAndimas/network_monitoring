@@ -1,8 +1,8 @@
 """Live monitoring rendering and table shaping helpers."""
 
 
-import altair as alt
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from .constants import (
@@ -78,50 +78,17 @@ def _render_metric_trend_section(
     _render_stat_card(stat_col4, "Status", _status_label_for_display(latest_metric_row["status"]))
 
     chart_title = f"Tren {metric_label} - {metric_device_name}"
-    avg_frame = pd.DataFrame([{"line_label": "Rata-rata", "line_value": chart_avg}])
-    line_chart = (
-        alt.Chart(chart_metric_frame)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X(
-                "checked_at:T",
-                title="Waktu Check (WIB)",
-                axis=alt.Axis(format="%H:%M", labelAngle=0),
-            ),
-            y=alt.Y(
-                "metric_value_numeric:Q",
-                title=_y_axis_label(metric_name, metric_unit),
-            ),
-            tooltip=[
-                alt.Tooltip("checked_at_wib:N", title="Dicek"),
-                alt.Tooltip("device_name:N", title="Device"),
-                alt.Tooltip("metric_label:N", title="Metrik"),
-                alt.Tooltip("display_value:N", title="Nilai"),
-                alt.Tooltip("status:N", title="Status"),
-            ],
-        )
+    chart = px.line(
+        chart_metric_frame,
+        x="checked_at",
+        y="metric_value_numeric",
+        markers=True,
+        hover_data={"checked_at_wib": True, "device_name": True, "metric_label": True, "display_value": True, "status": True},
+        title=chart_title,
     )
-    reference_lines = (
-        alt.Chart(avg_frame)
-        .mark_rule(strokeDash=[6, 4], strokeWidth=1.5)
-        .encode(
-            y=alt.Y("line_value:Q"),
-            color=alt.Color(
-                "line_label:N",
-                title="Referensi",
-                scale=alt.Scale(
-                    domain=["Rata-rata"],
-                    range=["#22c55e"],
-                ),
-            ),
-            tooltip=[
-                alt.Tooltip("line_label:N", title="Garis"),
-                alt.Tooltip("line_value:Q", title="Nilai", format=".2f"),
-            ],
-        )
-    )
-    chart = (line_chart + reference_lines).properties(title=chart_title, height=280)
-    container.altair_chart(chart, width="stretch")
+    chart.add_hline(y=chart_avg, line_dash="dash", line_color="#22c55e", annotation_text="Rata-rata")
+    chart.update_layout(height=280, xaxis_title="Waktu Check (WIB)", yaxis_title=_y_axis_label(metric_name, metric_unit), showlegend=False)
+    container.plotly_chart(chart, width="stretch")
 
 
 def _render_stat_card(column, label: str, value: str | int, *, compact: bool = False) -> None:
@@ -148,14 +115,6 @@ def _status_counts_frame(
         return status_counts
     status_counts["priority"] = status_counts["status"].map(status_priority)
     return status_counts.sort_values(["priority", "Jumlah", "status"], ascending=[True, False, True]).reset_index(drop=True)
-
-
-def _status_color_scale() -> alt.Scale:
-    """Return status color scale for the live monitoring dashboard."""
-    return alt.Scale(
-        domain=["Down", "Error", "Warning", "Unknown", "Active", "Resolved", "OK", "Up"],
-        range=["#dc2626", "#ef4444", "#f59e0b", "#6b7280", "#3b82f6", "#10b981", "#22c55e", "#16a34a"],
-    )
 
 
 def _health_score_percent(status_counts: pd.DataFrame) -> int:
@@ -346,4 +305,4 @@ def _non_numeric_metric_timeline(metric_frame: pd.DataFrame) -> pd.DataFrame:
         }
     )
 
-__all__ = ['_render_metric_trend_section', '_render_stat_card', '_status_counts_frame', '_status_color_scale', '_health_score_percent', '_entity_volume_frame', '_recent_anomaly_frame', '_format_metric_numeric', '_format_celsius', '_trend_direction_text', '_metric_kpi_summary', '_raw_history_view', '_status_label_for_display', '_non_numeric_metric_timeline']
+__all__ = ['_render_metric_trend_section', '_render_stat_card', '_status_counts_frame', '_health_score_percent', '_entity_volume_frame', '_recent_anomaly_frame', '_format_metric_numeric', '_format_celsius', '_trend_direction_text', '_metric_kpi_summary', '_raw_history_view', '_status_label_for_display', '_non_numeric_metric_timeline']

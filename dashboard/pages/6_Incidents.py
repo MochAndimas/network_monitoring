@@ -2,8 +2,8 @@
 
 from urllib.parse import quote_plus
 
-import altair as alt
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from components.auth import is_admin, require_dashboard_login
@@ -25,6 +25,7 @@ from components.ui import (
     render_kpi_cards,
     render_meta_row,
     render_page_header,
+    render_paginated_dataframe,
     status_priority,
 )
 
@@ -246,11 +247,12 @@ def _render_timeline(incident_id: int, *, key_prefix: str) -> None:
     timeline_frame["Event"] = timeline_frame["event_type"].astype(str).str.replace("_", " ").str.title()
     timeline_frame["Actor"] = timeline_frame["actor"].fillna("-")
     timeline_frame["Pesan"] = timeline_frame["message"].fillna("-")
-    st.dataframe(
+    render_paginated_dataframe(
         timeline_frame[["Waktu (WIB)", "Event", "Actor", "Pesan"]],
+        key=f"{key_prefix}_incident_timeline_{incident_id}",
+        label="Timeline Insiden",
         width="stretch",
         hide_index=True,
-        key=f"{key_prefix}_incident_timeline_{incident_id}",
         column_config={
             "Waktu (WIB)": st.column_config.TextColumn("Waktu (WIB)", width="medium"),
             "Event": st.column_config.TextColumn("Event", width="small"),
@@ -275,8 +277,10 @@ def _render_escalations() -> None:
     escalation_frame["Device"] = escalation_frame["device_name"].fillna("-")
     escalation_frame["Assignee"] = escalation_frame["assignee"].fillna("-")
     escalation_frame["Ringkasan"] = escalation_frame["summary"].fillna("-")
-    st.dataframe(
+    render_paginated_dataframe(
         escalation_frame[["Mulai (WIB)", "Severity", "Device", "Assignee", "Ringkasan"]],
+        key="incident_escalation_table",
+        label="Eskalasi",
         width="stretch",
         hide_index=True,
         column_config={
@@ -646,17 +650,9 @@ def _render_incident_analytics(filtered_frame: pd.DataFrame) -> None:
     summary_col, top_col = st.columns([1, 1])
     with summary_col:
         st.markdown("### Distribusi Status Insiden")
-        status_chart = (
-            alt.Chart(status_counts)
-            .mark_bar()
-            .encode(
-                x=alt.X("Jumlah:Q", title="Jumlah Insiden"),
-                y=alt.Y("Status:N", sort="-x", title="Status"),
-                tooltip=[alt.Tooltip("Status:N", title="Status"), alt.Tooltip("Jumlah:Q", title="Jumlah")],
-            )
-            .properties(height=260)
-        )
-        st.altair_chart(status_chart, width="stretch")
+        status_chart = px.bar(status_counts, x="Jumlah", y="Status", orientation="h", text="Jumlah")
+        status_chart.update_layout(height=260, xaxis_title="Jumlah Insiden", yaxis_title="Status", yaxis={"categoryorder": "total ascending"})
+        st.plotly_chart(status_chart, width="stretch")
         st.dataframe(
             status_counts[["Status", "Jumlah"]],
             width="stretch",
@@ -668,17 +664,9 @@ def _render_incident_analytics(filtered_frame: pd.DataFrame) -> None:
         )
     with top_col:
         st.markdown("### Device Paling Terdampak")
-        device_chart = (
-            alt.Chart(top_devices)
-            .mark_bar()
-            .encode(
-                x=alt.X("Jumlah Insiden:Q", title="Jumlah Insiden"),
-                y=alt.Y("Nama Device:N", sort="-x", title="Nama Device"),
-                tooltip=[alt.Tooltip("Nama Device:N", title="Nama Device"), alt.Tooltip("Jumlah Insiden:Q", title="Jumlah")],
-            )
-            .properties(height=260)
-        )
-        st.altair_chart(device_chart, width="stretch")
+        device_chart = px.bar(top_devices, x="Jumlah Insiden", y="Nama Device", orientation="h", text="Jumlah Insiden")
+        device_chart.update_layout(height=260, xaxis_title="Jumlah Insiden", yaxis_title="Nama Device", yaxis={"categoryorder": "total ascending"})
+        st.plotly_chart(device_chart, width="stretch")
         st.dataframe(
             top_devices,
             width="stretch",

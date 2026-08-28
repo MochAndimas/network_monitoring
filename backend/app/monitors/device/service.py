@@ -3,18 +3,18 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...repositories.device_repository import DeviceRepository
-from ..helpers import bounded_gather, build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping, safe_ping
+from ..helpers import bounded_gather
+from .adapters import NasSnmpCollector, PrinterSnmpCollector, collector_for_device_type
 from .nas_snmp import collect_nas_snmp_metrics
 from .printer_snmp import collect_printer_snmp_metrics
 
 
 DEVICE_TYPES = ["nas", "nvr", "switch", "access_point", "voip", "printer"]
-QUALITY_CHECK_TYPES = {"access_point", "nas", "switch", "voip", "printer"}
 
 
-async def run_device_checks(db: AsyncSession) -> list[dict]:
+async def run_device_checks(db: AsyncSession, *, site: str | None = None, excluded_sites: set[str] | None = None) -> list[dict]:
     """Run device checks for monitoring collection."""
-    devices = await DeviceRepository(db).list_by_types(DEVICE_TYPES, active_only=True)
+    devices = await DeviceRepository(db).list_by_types(DEVICE_TYPES, active_only=True, site=site, excluded_sites=excluded_sites)
     return [
         metric
         for device_metrics in await bounded_gather([_build_device_metrics(device) for device in devices])
@@ -23,30 +23,12 @@ async def run_device_checks(db: AsyncSession) -> list[dict]:
 
 
 async def _build_device_metrics(device) -> list[dict]:
-    """Build device metrics for monitoring collection."""
+    """Build metrics through the adapter selected for this device type."""
+    # Keep these dependencies injectable at the service boundary. Existing
+    # tests and future vendor overrides can replace only the SNMP capability
+    # without knowing the adapter's orchestration details.
     if device.device_type == "printer":
-        samples = await collect_ping_samples(device.ip_address)
-        printer_snmp_metrics = await collect_printer_snmp_metrics(device.id, device.ip_address)
-        return [
-            build_ping_metric(device.id, latest_successful_ping(samples)),
-            *build_ping_quality_metrics(device.id, samples),
-            *printer_snmp_metrics,
-        ]
-
+        return await PrinterSnmpCollector(collect_printer_snmp_metrics).collect(device)
     if device.device_type == "nas":
-        samples = await collect_ping_samples(device.ip_address)
-        nas_snmp_metrics = await collect_nas_snmp_metrics(device.id, device.ip_address)
-        return [
-            build_ping_metric(device.id, latest_successful_ping(samples)),
-            *build_ping_quality_metrics(device.id, samples),
-            *nas_snmp_metrics,
-        ]
-
-    if device.device_type in QUALITY_CHECK_TYPES:
-        samples = await collect_ping_samples(device.ip_address)
-        return [
-            build_ping_metric(device.id, latest_successful_ping(samples)),
-            *build_ping_quality_metrics(device.id, samples),
-        ]
-
-    return [build_ping_metric(device.id, await safe_ping(device.ip_address))]
+        return await NasSnmpCollector(collect_nas_snmp_metrics).collect(device)
+    return await collector_for_device_type(device.device_type).collect(device)

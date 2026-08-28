@@ -391,12 +391,13 @@ Device memiliki field utama:
 - `ip_address`
 - `device_type`
 - `site`
+- `location`
 - `description`
 - `is_active`
 
 Device inactive tetap ada di inventory, tapi tidak ikut collector bila query memakai `active_only=True`.
 
-Target deployment produk adalah multi-site. Field `site` dipakai sebagai metadata utama untuk memisahkan lokasi kantor/cabang, filter operasional, export CSV, dan improvement grouping incident/alert berikutnya.
+Target deployment produk adalah multi-site. Field `site` dipakai sebagai metadata utama untuk memisahkan kantor/cabang, filter operasional, export CSV, serta grouping incident/alert. Field `location` bersifat opsional untuk area di dalam site, misalnya `Ruang Meeting Lt. 2`; keduanya muncul pada notifikasi Telegram bila tersedia.
 
 ## Alert, Incident, Dan Threshold
 
@@ -839,6 +840,16 @@ Docker Compose migration:
 docker compose --profile ops run --rm migrate
 ```
 
+Validasi sebelum deploy (membutuhkan `DATABASE_URL` yang menunjuk ke database target yang aman untuk dibaca):
+
+```bash
+make migration-check
+# atau
+just migration-check
+```
+
+CI menjalankan validasi yang lebih lengkap pada MySQL sementara: single Alembic head, `alembic check` untuk schema drift, lalu downgrade satu revision dan upgrade ulang ke head.
+
 Backend tidak menjalankan `create_all()` kecuali `DATABASE_AUTO_CREATE_TABLES=true`, dan flag itu ditolak di production. Schema production/shared environment harus dikelola lewat Alembic.
 
 Model utama:
@@ -928,8 +939,10 @@ curl -X POST http://localhost:8000/system/run-cycle -H "x-api-key: dev-internal-
 ### SNMP printer test
 
 ```bash
-python scripts/test_snmp.py --ip 192.168.88.38 --community public
+SNMP_COMMUNITY='read-only-community' python scripts/test_snmp.py --ip 192.168.88.38
 ```
+
+Jangan letakkan community pada source code atau command history. Jika memilih `--community`, shell history dapat menyimpan nilainya.
 
 ### Backfill numeric metric
 

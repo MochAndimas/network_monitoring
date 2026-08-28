@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import os
 
 from pysnmp.hlapi.asyncio import (
     CommunityData,
@@ -12,12 +13,6 @@ from pysnmp.hlapi.asyncio import (
     UdpTransportTarget,
     get_cmd,
 )
-
-
-DEFAULT_TARGETS = [
-    ("EPSON L3250 - 1", "192.168.88.38", "Epson1RO2047!"),
-    ("EPSON L3250 - 2", "192.168.88.145", "Epson2RO2047!"),
-]
 
 DEFAULT_OIDS = [
     ("sysDescr", "1.3.6.1.2.1.1.1.0"),
@@ -65,8 +60,12 @@ async def run_targets(targets: list[tuple[str, str, str]], timeout: int, retries
 def parse_args() -> argparse.Namespace:
     """Parse args for the command-line workflow."""
     parser = argparse.ArgumentParser(description="Test SNMP v2c reachability to one or more targets.")
-    parser.add_argument("--ip", help="Target IP address.")
-    parser.add_argument("--community", help="SNMP v2c community string.")
+    parser.add_argument("--ip", required=True, help="Target IP address.")
+    parser.add_argument(
+        "--community",
+        default=os.getenv("SNMP_COMMUNITY"),
+        help="SNMP v2c community string. Prefer SNMP_COMMUNITY environment variable to avoid shell history.",
+    )
     parser.add_argument("--label", default="Custom Target", help="Display label for custom target.")
     parser.add_argument("--timeout", type=int, default=2, help="Timeout in seconds per request.")
     parser.add_argument("--retries", type=int, default=1, help="Retry count per request.")
@@ -75,11 +74,9 @@ def parse_args() -> argparse.Namespace:
 
 def build_targets(args: argparse.Namespace) -> list[tuple[str, str, str]]:
     """Build targets for the command-line workflow."""
-    if args.ip and args.community:
-        return [(args.label, args.ip, args.community)]
-    if args.ip or args.community:
-        raise SystemExit("Both --ip and --community must be provided together.")
-    return DEFAULT_TARGETS
+    if not args.community:
+        raise SystemExit("Provide SNMP community through SNMP_COMMUNITY or --community.")
+    return [(args.label, args.ip, args.community)]
 
 
 async def main() -> None:

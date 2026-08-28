@@ -964,12 +964,17 @@ def _build_telegram_messages(events: list[dict]) -> list[str]:
     return [_build_telegram_message(group) for group in _group_telegram_events(events).values()]
 
 
-def _group_telegram_events(events: list[dict]) -> dict[tuple[int | None, str], list[dict]]:
-    """Group Telegram events by device and alert state."""
-    grouped_events: dict[tuple[int | None, str], list[dict]] = {}
+def _group_telegram_events(events: list[dict]) -> dict[tuple[str, str, str], list[dict]]:
+    """Group simultaneous Telegram events by site, state, and severity."""
+    grouped_events: dict[tuple[str, str, str], list[dict]] = {}
     for event in events:
         device = event.get("device")
-        group_key = (getattr(device, "id", None), str(event.get("action") or "active").lower())
+        site = str(getattr(device, "site", None) or "Unassigned").strip() or "Unassigned"
+        group_key = (
+            site.casefold(),
+            str(event.get("action") or "active").lower(),
+            str(event.get("severity") or "unknown").lower(),
+        )
         grouped_events.setdefault(group_key, []).append(event)
     return grouped_events
 
@@ -1051,7 +1056,7 @@ async def _refresh_telegram_events(db, events: list[dict]) -> list[dict]:
 
 
 def _build_telegram_message(events: list[dict]) -> str:
-    """Build Telegram message for one device and one alert state."""
+    """Build a Telegram message for one device or a same-site alert batch."""
     first_event = events[0]
     action = str(first_event.get("action") or "").lower()
     is_resolved = str(action or "").lower() == "resolved"
@@ -1064,6 +1069,7 @@ def _build_telegram_message(events: list[dict]) -> str:
     device_name = getattr(device, "name", None) or "-"
     ip_address = getattr(device, "ip_address", None) or "-"
     site = getattr(device, "site", None) or "-"
+    location = str(getattr(device, "location", None) or "").strip()
     device_type = getattr(device, "device_type", None) or "-"
     alert_lines = [
         _format_telegram_alert_line(event, include_duration=is_resolved)
@@ -1071,19 +1077,68 @@ def _build_telegram_message(events: list[dict]) -> str:
     ]
     if is_summary:
         alert_lines = _format_telegram_summary_alert_lines(events, device_name=device_name)
+    unique_device_ids = {getattr(item.get("device"), "id", None) for item in events}
+    if len(unique_device_ids) > 1:
+        return _build_batched_telegram_message(
+            events,
+            title=title,
+            status=status,
+            severity=severity,
+            include_duration=is_resolved,
+        )
+    details = [
+        settings.app.name or "Network Monitoring",
+        f"[{str(severity or 'unknown').upper()}] {title}",
+        f"Device: {device_name}",
+        f"IP: {ip_address}",
+        f"Site: {site}",
+    ]
+    if location:
+        details.append(f"Location: {location}")
+    return "\n".join([*details, f"Type: {device_type}", f"Status: {status}", "Alerts:", *alert_lines])
+
+
+def _build_batched_telegram_message(
+    events: list[dict],
+    *,
+    title: str,
+    status: str,
+    severity: str,
+    include_duration: bool,
+) -> str:
+    """Build one concise Telegram message for simultaneous same-site device alerts."""
+    first_device = events[0].get("device")
+    site = getattr(first_device, "site", None) or "Unassigned"
+    device_ids = {getattr(event.get("device"), "id", None) for event in events}
+    alert_lines = [
+        _format_batched_telegram_alert_line(event, include_duration=include_duration)
+        for event in sorted(events, key=lambda item: (str(getattr(item.get("device"), "name", "")), str(item.get("alert_type") or "")))
+    ]
     return "\n".join(
         [
             settings.app.name or "Network Monitoring",
             f"[{str(severity or 'unknown').upper()}] {title}",
-            f"Device: {device_name}",
-            f"IP: {ip_address}",
             f"Site: {site}",
-            f"Type: {device_type}",
+            f"Devices affected: {len(device_ids)}",
             f"Status: {status}",
             "Alerts:",
             *alert_lines,
         ]
     )
+
+
+def _format_batched_telegram_alert_line(event: dict, *, include_duration: bool) -> str:
+    """Format one device alert line inside a same-site Telegram batch."""
+    device = event.get("device")
+    device_name = getattr(device, "name", None) or "-"
+    ip_address = getattr(device, "ip_address", None) or "-"
+    location = str(getattr(device, "location", None) or "").strip()
+    location_suffix = f" | {location}" if location else ""
+    line = f"- {device_name} ({ip_address}{location_suffix}): {event['alert_type']}: {event['message']}"
+    if not include_duration:
+        return line
+    duration = _format_alert_duration(event.get("created_at"), event.get("resolved_at"))
+    return f"{line} (duration: {duration})" if duration is not None else line
 
 
 def _format_telegram_alert_line(event: dict, *, include_duration: bool) -> str:

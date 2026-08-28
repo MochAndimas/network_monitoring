@@ -20,6 +20,8 @@ from ..services.observability_service import (
 from ..services.pipeline_control import monitoring_pipeline_guard
 from ..services.monitoring_service import persist_metrics
 from ..services.retention_service import cleanup_monitoring_data
+from ..models.collector_run import CollectorRun
+from ..core.time import utcnow
 
 
 logger = logging.getLogger("network_monitoring.scheduler")
@@ -28,6 +30,21 @@ logger = logging.getLogger("network_monitoring.scheduler")
 def register_jobs(scheduler) -> None:
     """Register jobs for scheduled monitoring execution."""
     scheduler_settings = settings.scheduler
+    # A site agent deliberately owns only its local device polling. Central
+    # services keep internet/API/alert/retention work, avoiding duplicated
+    # global checks and keeping management traffic inside each VPN/LAN.
+    if str(settings.monitor.collector_agent_site or "").strip():
+        scheduler.add_job(
+            run_device_job,
+            "interval",
+            seconds=scheduler_settings.interval_device_seconds,
+            id="device_checks",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=scheduler_settings.job_max_instances,
+            misfire_grace_time=_misfire_grace_time(scheduler_settings.interval_device_seconds),
+        )
+        return
     scheduler.add_job(
         run_internet_job,
         "interval",
@@ -97,7 +114,30 @@ async def run_internet_job() -> None:
 
 async def run_device_job() -> None:
     """Run device job for scheduled monitoring execution."""
-    await _run_scheduler_job("device_checks", lambda db: _persist_runner(run_device_checks, db, lock_scope="device"))
+    agent_site = str(settings.monitor.collector_agent_site or "").strip()
+    delegated_sites = {
+        item.strip()
+        for item in str(settings.monitor.collector_agent_sites or "").split(",")
+        if item.strip()
+    }
+    if agent_site:
+        await _run_scheduler_job(
+            "device_checks",
+            lambda db: _persist_runner(
+                lambda session: run_device_checks(session, site=agent_site),
+                db,
+                lock_scope=f"device:{agent_site}",
+            ),
+        )
+        return
+    await _run_scheduler_job(
+        "device_checks",
+        lambda db: _persist_runner(
+            lambda session: run_device_checks(session, excluded_sites=delegated_sites),
+            db,
+            lock_scope="device:central",
+        ),
+    )
 
 
 async def run_server_job() -> None:
@@ -125,9 +165,11 @@ async def _persist_runner(runner, db, *, lock_scope: str) -> None:
     # Only metric writes are scoped by domain, while alert/incident mutation
     # remains serialized below.
     """Persist runner for scheduled monitoring execution."""
+    started_at = perf_counter()
     metrics = await runner(db)
     async with monitoring_pipeline_guard(wait=True, scope=f"metrics:{lock_scope}"):
         await persist_metrics(db, metrics, commit=False)
+        db.add(CollectorRun(collector_name=f"{lock_scope}_checks", status="ok", duration_ms=(perf_counter() - started_at) * 1000, metric_count=len(metrics), checked_at=utcnow()))
         await db.commit()
     # Re-evaluate alerts immediately after fresh metrics land so alerting
     # doesn't get starved by the separate scheduler tick. Alert/incident state

@@ -27,6 +27,7 @@ class Device(Base):
     ip_address: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     device_type: Mapped[str] = mapped_column(String(50), nullable=False)
     site: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(100), nullable=True)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

@@ -18,6 +18,7 @@ from ..models.metric_daily_rollup import MetricDailyRollup
 from ..models.retention_bucket_progress import RetentionBucketProgress
 from ..core.time import utcnow
 from ..models.device import Device
+from ..models.collector_run import CollectorRun
 from ..repositories.metric_repository import MetricRepository
 
 
@@ -34,6 +35,7 @@ async def cleanup_monitoring_data(db: AsyncSession, *, commit: bool = True) -> d
     rolled_up_days = await rollup_completed_raw_metrics(db, commit=False)
     archived_metric_groups = await archive_expired_raw_metrics(db, commit=False)
     deleted_metrics = await delete_expired_raw_metrics(db, commit=False)
+    deleted_collector_runs = await delete_expired_collector_runs(db, commit=False)
     deleted_alerts = await delete_expired_alerts(db, commit=False)
     deleted_incidents = await delete_expired_incidents(db, commit=False)
     compacted_latest_metrics = await compact_latest_snapshot(db, commit=False)
@@ -46,11 +48,22 @@ async def cleanup_monitoring_data(db: AsyncSession, *, commit: bool = True) -> d
         "rolled_up_days": rolled_up_days,
         "archived_metric_groups": archived_metric_groups,
         "deleted_metrics": deleted_metrics,
+        "deleted_collector_runs": deleted_collector_runs,
         "deleted_alerts": deleted_alerts,
         "deleted_incidents": deleted_incidents,
         "compacted_latest_metrics": compacted_latest_metrics,
         "refreshed_site_type_summaries": refreshed_site_type_summaries,
     }
+
+
+async def delete_expired_collector_runs(db: AsyncSession, *, commit: bool = True) -> int:
+    """Prune execution telemetry with the same retention horizon as raw metrics."""
+    result = await db.execute(delete(CollectorRun).where(CollectorRun.checked_at < _raw_metric_cutoff()))
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def compact_latest_snapshot(db: AsyncSession, *, commit: bool = True) -> int:
@@ -760,4 +773,3 @@ async def _load_existing_retention_markers(
                 )
             ] = marker
     return existing
-

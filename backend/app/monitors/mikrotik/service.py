@@ -42,6 +42,7 @@ _latest_metric_map = _impl._latest_metric_map
 _limit_items = _impl._limit_items
 _list_mikrotik_devices = _impl._list_mikrotik_devices
 _memory_used_bytes = _impl._memory_used_bytes
+_mikrotik_api_error_category = _impl._mikrotik_api_error_category
 _metric = _impl._metric
 _mikrotik_disk_percent = _impl._mikrotik_disk_percent
 _mikrotik_memory_percent = _impl._mikrotik_memory_percent
@@ -78,6 +79,7 @@ __all__ = [
     "_limit_items",
     "_list_mikrotik_devices",
     "_memory_used_bytes",
+    "_mikrotik_api_error_category",
     "_metric",
     "_mikrotik_disk_percent",
     "_mikrotik_memory_percent",

@@ -2,14 +2,14 @@
 
 from datetime import datetime, timedelta
 
-import altair as alt
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from components.auth import is_admin, require_dashboard_login
 from components.api import delete_json, get_json, has_pending_action, post_json, put_json
 from components.sidebar import collapse_sidebar_on_page_load
-from components.ui import render_kpi_cards, render_page_header
+from components.ui import render_kpi_cards, render_paginated_dataframe, render_page_header
 
 st.set_page_config(page_title="Thresholds", layout="wide", initial_sidebar_state="collapsed")
 collapse_sidebar_on_page_load()
@@ -54,9 +54,7 @@ with global_tab:
     )
     search_key = filter_col2.text_input("Cari", placeholder="Cari threshold key")
     with st.expander("Filter Lanjutan"):
-        adv_col1, adv_col2 = st.columns(2)
-        sort_by = adv_col1.selectbox("Urutkan", options=["Key (A-Z)", "Nilai (Tinggi-Rendah)", "Kategori"], index=0)
-        max_rows = adv_col2.selectbox("Maks. Baris Detail", options=[25, 50, 100, 200], index=2)
+        sort_by = st.selectbox("Urutkan", options=["Key (A-Z)", "Nilai (Tinggi-Rendah)", "Kategori"], index=0)
 
     filtered_frame = dataframe.copy()
     if selected_category != "All":
@@ -115,21 +113,9 @@ with global_tab:
         summary_col, detail_col = st.columns([1, 2])
         with summary_col:
             st.markdown("### Ringkasan Kategori")
-            category_chart = (
-                alt.Chart(summary_frame)
-                .mark_bar()
-                .encode(
-                    x=alt.X("Jumlah Threshold:Q", title="Jumlah Threshold"),
-                    y=alt.Y("Kategori:N", sort="-x", title="Kategori"),
-                    tooltip=[
-                        alt.Tooltip("Kategori:N", title="Kategori"),
-                        alt.Tooltip("Jumlah Threshold:Q", title="Jumlah"),
-                        alt.Tooltip("Rata-rata:Q", title="Rata-rata", format=".2f"),
-                    ],
-                )
-                .properties(height=260)
-            )
-            st.altair_chart(category_chart, width="stretch")
+            category_chart = px.bar(summary_frame, x="Jumlah Threshold", y="Kategori", orientation="h", text="Jumlah Threshold", hover_data={"Rata-rata": ":.2f"})
+            category_chart.update_layout(height=260, xaxis_title="Jumlah Threshold", yaxis_title="Kategori", yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(category_chart, width="stretch")
             st.dataframe(
                 summary_frame,
                 width="stretch",
@@ -144,8 +130,10 @@ with global_tab:
             )
         with detail_col:
             st.markdown("### Detail Threshold")
-            st.dataframe(
-                detail_frame.head(int(max_rows)),
+            render_paginated_dataframe(
+                detail_frame,
+                key="threshold_details_table",
+                label="Threshold",
                 width="stretch",
                 hide_index=True,
                 column_config={
@@ -203,8 +191,10 @@ with overrides_tab:
             axis=1,
         )
         override_frame["status"] = override_frame["is_active"].map(lambda value: "Active" if value else "Inactive")
-        st.dataframe(
+        render_paginated_dataframe(
             override_frame[["id", "threshold_key", "value", "scope", "status", "description"]],
+            key="threshold_overrides_table",
+            label="Override",
             width="stretch",
             hide_index=True,
         )
@@ -254,8 +244,10 @@ with maintenance_tab:
             axis=1,
         )
         window_frame["status"] = window_frame["is_active"].map(lambda value: "Active" if value else "Inactive")
-        st.dataframe(
+        render_paginated_dataframe(
             window_frame[["id", "name", "scope", "starts_at", "ends_at", "status", "reason"]],
+            key="maintenance_windows_table",
+            label="Maintenance",
             width="stretch",
             hide_index=True,
         )

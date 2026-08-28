@@ -94,6 +94,19 @@ jobs:
       - name: Run Alembic upgrade
         run: alembic upgrade head
 
+      - name: Verify a single Alembic head
+        run: |
+          head_count="$(alembic heads | grep -c '(head)' || true)"
+          test "$head_count" -eq 1
+
+      - name: Verify database schema has no model drift
+        run: alembic check
+
+      - name: Verify latest migration can roll back and re-apply
+        run: |
+          alembic downgrade -1
+          alembic upgrade head
+
       - name: Run MySQL integration tests
         run: pytest tests/services/test_mysql_integration.py -q
 

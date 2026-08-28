@@ -4,13 +4,15 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import streamlit as st
+import plotly.express as px
 
 try:
-    from components.ui import render_section_header_with_download
+    from components.ui import render_paginated_dataframe, render_section_header_with_download
 except ModuleNotFoundError:  # pragma: no cover - supports imports outside Streamlit's app root
-    from dashboard.components.ui import render_section_header_with_download
+    from dashboard.components.ui import render_paginated_dataframe, render_section_header_with_download
 
 from dashboard.pages.live_monitoring.helpers import (
+    CHART_WINDOW_OPTIONS,
     PRINTER_METRIC_NAMES,
     _default_mikrotik_trend_metrics,
     _default_nas_trend_metrics,
@@ -33,10 +35,8 @@ from dashboard.pages.live_monitoring.helpers import (
     _render_printer_history_section,
     _render_stat_card,
     _snapshot_pagination_controls,
-    _status_color_scale,
     _status_label_for_display,
     _trend_direction_text,
-    alt,
     format_wib_timestamp,
     paged_items,
     pd,
@@ -52,6 +52,7 @@ def render_history_overview_sections(
     interval_seconds: int,
     selected_device: str,
     selected_device_id: int | None,
+    selected_is_device_group: bool,
     selected_metric: str,
     checked_from_date: Any,
     checked_to_date: Any,
@@ -71,6 +72,8 @@ def render_history_overview_sections(
         st.markdown("### Ringkasan Eksekutif")
         if selected_device_id is not None:
             st.caption(f"Ringkasan cepat untuk device terpilih: {selected_device}.")
+        elif selected_is_device_group:
+            st.caption(f"Ringkasan gabungan untuk {selected_device}; kartu metrik dihitung sebagai rata-rata antar device.")
         else:
             st.caption("Ringkasan cepat untuk melihat kondisi keseluruhan sebelum masuk ke investigasi detail.")
         summary_col1, summary_col2, summary_col3, summary_col4, summary_col5 = st.columns(5)
@@ -131,21 +134,9 @@ def render_history_overview_sections(
         if status_counts.empty:
             insight_col1.info("Belum ada status device untuk diringkas pada rentang ini.")
         else:
-            status_chart = (
-                alt.Chart(status_counts)
-                .mark_arc(innerRadius=55)
-                .encode(
-                    theta=alt.Theta("Jumlah:Q", title="Jumlah"),
-                    color=alt.Color("status:N", title="Status", scale=_status_color_scale()),
-                    tooltip=[
-                        alt.Tooltip("status:N", title="Status"),
-                        alt.Tooltip("Jumlah:Q", title="Jumlah"),
-                    ],
-                    order=alt.Order("priority:Q", sort="ascending"),
-                )
-                .properties(height=260)
-            )
-            insight_col1.altair_chart(status_chart, width="stretch")
+            status_chart = px.pie(status_counts, names="status", values="Jumlah", hole=0.5)
+            status_chart.update_layout(height=260, legend_title_text="Status")
+            insight_col1.plotly_chart(status_chart, width="stretch")
 
         with insight_col2:
             if not status_counts.empty:
@@ -231,8 +222,10 @@ def render_history_overview_sections(
                 key="download_live_monitoring_anomalies",
                 level=4,
             )
-            st.dataframe(
+            render_paginated_dataframe(
                 anomaly_view,
+                key="live_monitoring_anomaly_table",
+                label="Anomali",
                 width="stretch",
                 hide_index=True,
                 column_config={
@@ -251,6 +244,7 @@ def render_device_detail_sections(
     device_type_by_id: dict[int, str],
     device_name_by_id: dict[int, str],
     selected_device_id: int | None,
+    selected_is_device_group: bool,
     selected_device_type: str | None,
     selected_device_record: dict | None,
     selected_metric: str,
@@ -295,6 +289,14 @@ def render_device_detail_sections(
 
     trend_heading = "### Tren Metrik Bergerak" if selected_device_type == "nas" else "### Tren Metrik"
     st.markdown(trend_heading)
+    if selected_is_device_group:
+        _render_device_group_trends(
+            full_device_history=full_device_history,
+            selected_metric=selected_metric,
+            chart_window_label=chart_window_label,
+            prepare_history_frame=prepare_history_frame,
+        )
+        return
     if selected_device_id is None:
         st.info("Pilih satu device untuk menampilkan grafik tren.")
         return
@@ -372,8 +374,10 @@ def render_device_detail_sections(
                 key="download_live_monitoring_timeline",
                 level=4,
             )
-            st.dataframe(
+            render_paginated_dataframe(
                 non_numeric_timeline,
+                key="live_monitoring_timeline_table",
+                label="Timeline",
                 width="stretch",
                 hide_index=True,
                 column_config={
@@ -471,3 +475,63 @@ def render_device_detail_sections(
         },
     )
 
+
+def _render_device_group_trends(
+    *,
+    full_device_history: list[dict],
+    selected_metric: str,
+    chart_window_label: str,
+    prepare_history_frame: Callable[..., pd.DataFrame],
+) -> None:
+    """Render aggregated KPI cards and one chart line for every device in a group."""
+    group_history_frame = prepare_history_frame(full_device_history, sort_desc=False)
+    if group_history_frame.empty:
+        st.info("Belum ada history VoIP untuk rentang waktu terpilih.")
+        return
+
+    available_metrics = sorted(group_history_frame["metric_name"].dropna().astype(str).unique().tolist())
+    metric_names = [selected_metric] if selected_metric != "All Metrics" else available_metrics
+    st.caption("Setiap warna pada grafik mewakili satu device VoIP. Kartu memakai rata-rata dari seluruh device yang memiliki data.")
+
+    for metric_name in metric_names:
+        metric_frame = group_history_frame[
+            group_history_frame["metric_name"].astype(str) == str(metric_name)
+        ].dropna(subset=["metric_value_numeric"]).sort_values("checked_at").copy()
+        if metric_frame.empty:
+            continue
+
+        latest_timestamp = metric_frame["checked_at"].max()
+        chart_window_hours = CHART_WINDOW_OPTIONS[chart_window_label]
+        chart_start = latest_timestamp - pd.Timedelta(hours=chart_window_hours)
+        chart_frame = metric_frame[metric_frame["checked_at"] >= chart_start].copy()
+        if chart_frame.empty:
+            chart_frame = metric_frame
+
+        latest_by_device = (
+            chart_frame.sort_values("checked_at", ascending=False)
+            .drop_duplicates(subset=["device_id"])
+            .copy()
+        )
+        metric_unit = str(latest_by_device["unit"].dropna().iloc[0]) if latest_by_device["unit"].notna().any() else ""
+        average_value = float(latest_by_device["metric_value_numeric"].mean())
+        min_value = float(latest_by_device["metric_value_numeric"].min())
+        max_value = float(latest_by_device["metric_value_numeric"].max())
+        metric_label = _friendly_metric_name(str(metric_name))
+
+        st.markdown(f"#### {metric_label} - Semua VoIP")
+        card_col1, card_col2, card_col3, card_col4 = st.columns(4)
+        _render_stat_card(card_col1, "Rata-rata Terkini", _format_metric_numeric(average_value, metric_unit))
+        _render_stat_card(card_col2, "Minimum", _format_metric_numeric(min_value, metric_unit))
+        _render_stat_card(card_col3, "Maksimum", _format_metric_numeric(max_value, metric_unit))
+        _render_stat_card(card_col4, "Device dengan Data", int(latest_by_device["device_id"].nunique()))
+
+        chart = px.line(
+            chart_frame,
+            x="checked_at",
+            y="metric_value_numeric",
+            color="device_name",
+            hover_data={"checked_at_wib": True, "display_value": True, "status": True},
+            title=f"Tren {metric_label} - Semua VoIP",
+        )
+        chart.update_layout(height=320, xaxis_title="Waktu Check (WIB)", yaxis_title=f"{metric_label}{f' ({metric_unit})' if metric_unit else ''}", legend_title_text="Device")
+        st.plotly_chart(chart, width="stretch")

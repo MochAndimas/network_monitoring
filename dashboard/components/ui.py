@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Sequence
+from typing import Any, Sequence
 
 import pandas as pd
 import streamlit as st
@@ -89,6 +89,60 @@ def render_section_header_with_download(
             file_name=file_name,
             key=key,
         )
+
+
+def render_paginated_dataframe(
+    dataframe: pd.DataFrame,
+    *,
+    key: str,
+    label: str = "Tabel",
+    page_size_options: Sequence[int] = (10, 25, 50, 100),
+    default_page_size: int = 10,
+    **dataframe_kwargs: Any,
+) -> None:
+    """Render a dataframe page with controls below it to avoid long scrolling tables."""
+    normalized_options = tuple(sorted({max(int(option), 1) for option in page_size_options}))
+    if not normalized_options:
+        normalized_options = (10,)
+    default_page_size = min(normalized_options, key=lambda option: abs(option - default_page_size))
+    page_size_key = f"{key}_page_size"
+    page_key = f"{key}_page"
+    if page_size_key not in st.session_state:
+        st.session_state[page_size_key] = default_page_size
+
+    page_size = int(st.session_state[page_size_key])
+    if len(dataframe) <= page_size:
+        st.dataframe(dataframe, **dataframe_kwargs)
+        return
+    page_count = max(math.ceil(len(dataframe) / page_size), 1)
+    current_page = int(st.session_state.get(page_key, 1))
+    if current_page > page_count:
+        st.session_state[page_key] = page_count
+        current_page = page_count
+    elif current_page < 1:
+        st.session_state[page_key] = 1
+        current_page = 1
+
+    start = (current_page - 1) * page_size
+    st.dataframe(dataframe.iloc[start : start + page_size], **dataframe_kwargs)
+
+    control_col, page_col = st.columns([1, 1])
+    control_col.selectbox(
+        f"Baris {label}",
+        options=normalized_options,
+        key=page_size_key,
+    )
+    page_col.number_input(
+        f"Halaman {label}",
+        min_value=1,
+        max_value=page_count,
+        step=1,
+        key=page_key,
+    )
+    if dataframe.empty:
+        st.caption("Tidak ada baris untuk ditampilkan.")
+    else:
+        st.caption(f"Menampilkan {start + 1}-{min(start + page_size, len(dataframe))} dari {len(dataframe)} baris.")
 
 
 def freshness_label(

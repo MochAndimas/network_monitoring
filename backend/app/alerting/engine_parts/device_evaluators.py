@@ -18,13 +18,11 @@ def evaluate_mikrotik_alerts(
 ) -> None:
     """Add Mikrotik-specific expected alerts for API, client, interface, and firewall metrics."""
     api_metric = latest_metrics.get((device.id, "mikrotik_api"))
-    if api_metric is not None and (
-        str(api_metric.status or "").lower() == "error" or str(api_metric.metric_value or "") == "connection_failed"
-    ):
+    if api_metric is not None and str(api_metric.status or "").lower() == "error":
         expected_alerts[(device.id, "mikrotik_api_failed")] = _build_alert_payload(
             device_id=device.id,
             alert_type="mikrotik_api_failed",
-            message=f"{device.name} Mikrotik API connection failed",
+            message=f"{device.name} Mikrotik API collection is {api_metric.metric_value}",
         )
 
     client_metric = latest_metrics.get((device.id, "connected_clients"))
@@ -88,7 +86,7 @@ def evaluate_nas_alerts(
     ]:
         metric = latest_metrics.get((device.id, metric_name))
         status_value = str(getattr(metric, "metric_value", "") or "").lower()
-        if metric is not None and status_value not in {"normal", "ok"}:
+        if metric is not None and str(getattr(metric, "status", "")).lower() == "error" and status_value not in {"normal", "ok"}:
             expected_alerts[(device.id, alert_type)] = _build_alert_payload(
                 device_id=device.id,
                 alert_type=alert_type,
@@ -180,7 +178,7 @@ def _add_nas_status_alert(
         if current_device_id != device.id or not str(metric_name).startswith(prefix) or not str(metric_name).endswith(suffix):
             continue
         value = str(getattr(metric, "metric_value", "") or "").lower()
-        if value not in normalized_ok_values:
+        if str(getattr(metric, "status", "")).lower() == "error" and value not in normalized_ok_values:
             problems.append(f"{metric_name}={metric.metric_value}")
     if not problems:
         return

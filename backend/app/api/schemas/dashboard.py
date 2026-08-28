@@ -25,6 +25,7 @@ class DeviceListItem(BaseModel):
     ip_address: str
     device_type: str
     site: str | None = None
+    location: str | None = None
     description: str | None = None
     is_active: bool
     latest_status: str = "unknown"
@@ -58,7 +59,8 @@ class DeviceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     ip_address: str = Field(min_length=1, max_length=50)
     device_type: str = Field(min_length=1, max_length=50)
-    site: str | None = Field(default=None, max_length=100)
+    site: str = Field(min_length=1, max_length=100)
+    location: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, max_length=255)
     is_active: bool = True
 
@@ -77,6 +79,15 @@ class DeviceCreate(BaseModel):
             raise ValueError(f"device_type must be one of: {', '.join(DEVICE_TYPE_CHOICES)}")
         return value
 
+    @field_validator("site")
+    @classmethod
+    def normalize_required_site(cls, value: str) -> str:
+        """Require a meaningful site value instead of accepting whitespace."""
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("site must not be blank")
+        return normalized
+
 
 class DeviceUpdate(BaseModel):
     """Pydantic schema for DeviceUpdate payloads."""
@@ -84,6 +95,7 @@ class DeviceUpdate(BaseModel):
     ip_address: str | None = Field(default=None, min_length=1, max_length=50)
     device_type: str | None = Field(default=None, min_length=1, max_length=50)
     site: str | None = Field(default=None, max_length=100)
+    location: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, max_length=255)
     is_active: bool | None = None
 
@@ -105,6 +117,17 @@ class DeviceUpdate(BaseModel):
         if value not in DEVICE_TYPE_CHOICES:
             raise ValueError(f"device_type must be one of: {', '.join(DEVICE_TYPE_CHOICES)}")
         return value
+
+    @field_validator("site")
+    @classmethod
+    def normalize_optional_site(cls, value: str | None) -> str | None:
+        """Allow omitting site on a patch, but never clearing it to whitespace."""
+        if value is None:
+            return value
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("site must not be blank")
+        return normalized
 
 
 class MetricHistoryItem(BaseModel):
@@ -450,6 +473,7 @@ class DeviceOption(BaseModel):
     ip_address: str
     device_type: str
     site: str | None = None
+    location: str | None = None
     is_active: bool
 
 

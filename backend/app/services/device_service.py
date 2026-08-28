@@ -38,6 +38,9 @@ async def get_device_row(db: AsyncSession, device_id: int) -> dict:
 
 async def create_device(db: AsyncSession, payload: dict, *, commit: bool = True):
     """Create device in the service layer."""
+    payload = {**payload, "site": str(payload.get("site") or "").strip()}
+    if not payload["site"]:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="site is required")
     repository = DeviceRepository(db)
     existing = await repository.get_by_ip_address(payload["ip_address"])
     if existing is not None:
@@ -53,6 +56,11 @@ async def update_device(db: AsyncSession, device_id: int, payload: dict, *, comm
     device = await repository.get_by_id(device_id)
     if device is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    if "site" in payload:
+        payload = {**payload, "site": str(payload.get("site") or "").strip()}
+        if not payload["site"]:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="site is required")
 
     ip_address = payload.get("ip_address")
     if ip_address:

@@ -2,8 +2,8 @@
 
 from urllib.parse import quote_plus
 
-import altair as alt
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from components.auth import require_dashboard_login
@@ -17,6 +17,7 @@ from components.ui import (
     render_kpi_cards,
     render_meta_row,
     render_page_header,
+    render_paginated_dataframe,
     render_section_header_with_download,
     status_priority,
 )
@@ -180,17 +181,9 @@ def _render_alerts_body() -> None:
     chart_col, table_col = st.columns([1, 1])
     with chart_col:
         st.markdown("### Distribusi Tingkat Alert")
-        severity_chart = (
-            alt.Chart(severity_counts)
-            .mark_bar()
-            .encode(
-                x=alt.X("Jumlah:Q", title="Jumlah Alert"),
-                y=alt.Y("Tingkat:N", sort="-x", title="Tingkat"),
-                tooltip=[alt.Tooltip("Tingkat:N", title="Tingkat"), alt.Tooltip("Jumlah:Q", title="Jumlah")],
-            )
-            .properties(height=260)
-        )
-        st.altair_chart(severity_chart, width="stretch")
+        severity_chart = px.bar(severity_counts, x="Jumlah", y="Tingkat", orientation="h", text="Jumlah")
+        severity_chart.update_layout(height=260, xaxis_title="Jumlah Alert", yaxis_title="Tingkat", yaxis={"categoryorder": "total ascending"})
+        st.plotly_chart(severity_chart, width="stretch")
         st.dataframe(
             severity_counts[["Tingkat", "Jumlah"]],
             width="stretch",
@@ -202,17 +195,9 @@ def _render_alerts_body() -> None:
         )
     with table_col:
         st.markdown("### Device Paling Terdampak")
-        device_chart = (
-            alt.Chart(top_devices)
-            .mark_bar()
-            .encode(
-                x=alt.X("Alerts:Q", title="Jumlah Alert"),
-                y=alt.Y("Device:N", sort="-x", title="Device"),
-                tooltip=[alt.Tooltip("Device:N", title="Device"), alt.Tooltip("Alerts:Q", title="Jumlah")],
-            )
-            .properties(height=260)
-        )
-        st.altair_chart(device_chart, width="stretch")
+        device_chart = px.bar(top_devices, x="Alerts", y="Device", orientation="h", text="Alerts")
+        device_chart.update_layout(height=260, xaxis_title="Jumlah Alert", yaxis_title="Device", yaxis={"categoryorder": "total ascending"})
+        st.plotly_chart(device_chart, width="stretch")
         st.dataframe(
             top_devices,
             width="stretch",
@@ -242,8 +227,10 @@ def _render_alerts_body() -> None:
         file_name="active_alerts.csv",
         key="download_active_alerts",
     )
-    st.dataframe(
+    render_paginated_dataframe(
         detail_frame.head(int(max_rows)),
+        key="alerts_detail_table",
+        label="Detail Alert",
         width="stretch",
         hide_index=True,
         column_config={

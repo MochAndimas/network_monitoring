@@ -80,6 +80,11 @@ class MonitorSettings:
     ping_sample_count: int
     ping_concurrency_limit: int
     task_concurrency_limit: int
+    snmp_concurrency_limit: int
+    collector_retry_attempts: int
+    collector_retry_backoff_seconds: float
+    collector_agent_site: str
+    collector_agent_sites: str
     lock_name: str
     lock_timeout_seconds: int
     server_resource_device_ip: str

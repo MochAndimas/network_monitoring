@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     ping_sample_count: int = 3
     ping_concurrency_limit: int = 32
     monitor_task_concurrency_limit: int = 16
+    snmp_concurrency_limit: int = 4
+    collector_retry_attempts: int = 2
+    collector_retry_backoff_seconds: float = 0.25
+    collector_agent_site: str = ""
+    collector_agent_sites: str = ""
     scheduler_enabled: bool = True
     scheduler_interval_internet_seconds: int = 30
     scheduler_interval_device_seconds: int = 60
@@ -284,6 +289,11 @@ class Settings(BaseSettings):
             ping_sample_count=self.ping_sample_count,
             ping_concurrency_limit=self.ping_concurrency_limit,
             task_concurrency_limit=self.monitor_task_concurrency_limit,
+            snmp_concurrency_limit=self.snmp_concurrency_limit,
+            collector_retry_attempts=self.collector_retry_attempts,
+            collector_retry_backoff_seconds=self.collector_retry_backoff_seconds,
+            collector_agent_site=self.collector_agent_site,
+            collector_agent_sites=self.collector_agent_sites,
             lock_name=self.monitoring_lock_name,
             lock_timeout_seconds=self.monitoring_lock_timeout_seconds,
             server_resource_device_ip=self.server_resource_device_ip,

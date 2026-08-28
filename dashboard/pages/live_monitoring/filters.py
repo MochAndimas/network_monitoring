@@ -28,6 +28,8 @@ def render_history_filters(
     devices: list[dict],
     device_options: dict[str, int | None],
     device_by_id: dict[int, dict],
+    voip_group_label: str | None,
+    voip_device_ids: list[int],
     today: date,
     default_start_date: date,
     auto_refresh: bool,
@@ -51,8 +53,9 @@ def render_history_filters(
         key="history_selected_device",
     )
     selected_device_id = device_options[selected_device]
+    selected_is_voip_group = selected_device == voip_group_label
     selected_device_record = device_by_id.get(int(selected_device_id)) if selected_device_id is not None else None
-    selected_device_type = str(selected_device_record.get("device_type")) if selected_device_record else None
+    selected_device_type = "voip" if selected_is_voip_group else (str(selected_device_record.get("device_type")) if selected_device_record else None)
     status_value = filter_col3.selectbox(
         "Status",
         options=STATUS_OPTIONS,
@@ -62,6 +65,10 @@ def render_history_filters(
     metric_names_path = "/metrics/names"
     if selected_device_id is not None:
         metric_names_path = f"/metrics/names?device_id={selected_device_id}"
+    elif selected_is_voip_group and voip_device_ids:
+        # A representative VoIP keeps the group metric picker focused on metrics
+        # that the group actually collects, rather than every device type's metric.
+        metric_names_path = f"/metrics/names?device_id={voip_device_ids[0]}"
     metric_name_options = _filter_metric_names(
         get_json(metric_names_path, []),
         selected_device_type,
@@ -117,6 +124,8 @@ def render_history_filters(
         "selected_device_id": selected_device_id,
         "selected_device_record": selected_device_record,
         "selected_device_type": selected_device_type,
+        "selected_is_device_group": selected_is_voip_group,
+        "selected_group_device_ids": voip_device_ids if selected_is_voip_group else [],
         "status_value": status_value,
         "selected_metric": selected_metric,
         "metric_name_options": metric_name_options,

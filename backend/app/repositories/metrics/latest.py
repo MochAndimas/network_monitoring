@@ -254,6 +254,32 @@ class MetricLatestMixin(MetricRepositoryBase):
             query = query.where(LatestMetric.device_id == device_id)
         return int(await self.db.scalar(query) or 0)
 
+    async def summarize_collector_health(self, *, checked_from) -> list[dict]:
+        """Aggregate recent collector outcomes by site, device type, and protocol."""
+        collection_names = {"ping_collection_status", "printer_snmp_collection_status", "nas_snmp_collection_status", "mikrotik_api"}
+        collector_name = case(
+            (Metric.metric_name == "ping_collection_status", "icmp"),
+            (Metric.metric_name == "printer_snmp_collection_status", "printer_snmp"),
+            (Metric.metric_name == "nas_snmp_collection_status", "nas_snmp"),
+            (Metric.metric_name == "mikrotik_api", "mikrotik_api"),
+            else_="unknown",
+        ).label("collector")
+        site_name = func.coalesce(func.nullif(Device.site, ""), "Unassigned").label("site")
+        protocol = func.coalesce(func.nullif(Metric.unit, ""), case((Metric.metric_name == "ping_collection_status", "icmp"), (Metric.metric_name == "mikrotik_api", "routeros_api"), else_="unknown")).label("protocol")
+        rows = (await self.db.execute(
+            select(collector_name, site_name, Device.device_type.label("device_type"), protocol,
+                   func.count(Metric.id).label("sample_count"),
+                   func.sum(case((Metric.metric_value == "ok", 1), else_=0)).label("success_count"),
+                   func.sum(case((Metric.metric_value == "timeout", 1), else_=0)).label("timeout_count"),
+                   func.sum(case((Metric.metric_value == "unsupported_oid", 1), else_=0)).label("unsupported_oid_count"),
+                   func.max(Metric.checked_at).label("last_checked_at"))
+            .select_from(Metric).join(Device, Device.id == Metric.device_id)
+            .where(Device.is_active.is_(True), Metric.metric_name.in_(collection_names), Metric.checked_at >= checked_from)
+            .group_by(collector_name, site_name, Device.device_type, protocol)
+            .order_by(collector_name.asc(), site_name.asc(), Device.device_type.asc(), protocol.asc())
+        )).all()
+        return [{"collector": str(row.collector), "site": str(row.site), "device_type": str(row.device_type), "protocol": str(row.protocol), "sample_count": int(row.sample_count or 0), "success_count": int(row.success_count or 0), "timeout_count": int(row.timeout_count or 0), "unsupported_oid_count": int(row.unsupported_oid_count or 0), "last_checked_at": row.last_checked_at} for row in rows]
+
     async def summarize_latest_snapshot_status_counts(self) -> dict[str, int]:
         """Summarize latest metric statuses into device-level health counts."""
         rows = (

@@ -67,9 +67,12 @@ def render_history_body(
     selected_device_id = history_filters["selected_device_id"]
     selected_device_record = history_filters["selected_device_record"]
     selected_device_type = history_filters["selected_device_type"]
+    selected_is_device_group = bool(history_filters.get("selected_is_device_group", False))
+    selected_group_device_ids = [int(device_id) for device_id in history_filters.get("selected_group_device_ids", [])]
     status_value = str(history_filters["status_value"])
     selected_metric = str(history_filters["selected_metric"])
     metric_name_options = list(history_filters.get("metric_name_options", []))
+    group_metric_name_options = list(metric_name_options)
 
     snapshot_page_size = int(st.session_state.get("history_snapshot_page_size", 10))
     snapshot_page = int(st.session_state.get("history_snapshot_page", 1))
@@ -124,10 +127,14 @@ def render_history_body(
             "snapshot_uptime_map": {},
         },
     )
-    metric_name_options = _filter_metric_names(
-        history_context.get("metric_names", []),
-        selected_device_type,
-        selected_device_record.get("name") if selected_device_record else None,
+    metric_name_options = (
+        group_metric_name_options
+        if selected_is_device_group
+        else _filter_metric_names(
+            history_context.get("metric_names", []),
+            selected_device_type,
+            selected_device_record.get("name") if selected_device_record else None,
+        )
     )
     if selected_metric != "All Metrics" and selected_metric not in metric_name_options:
         selected_metric = "All Metrics"
@@ -184,8 +191,35 @@ def render_history_body(
             row for row in full_device_history if str(row.get("metric_name") or "") == selected_metric
         ]
 
+    if selected_is_device_group:
+        # Load a bounded trend for every member so the chart can keep one line per
+        # VoIP device instead of mixing their samples into a single series.
+        group_metric_names = trend_metric_names or metric_name_options
+        full_device_history = []
+        for device_id in selected_group_device_ids:
+            full_device_history.extend(
+                _filter_history_rows(
+                    _fetch_device_history_rows(
+                        device_id=device_id,
+                        checked_from_date=checked_from_date,
+                        checked_to_date=checked_to_date,
+                        metric_names=group_metric_names,
+                        status=status_value,
+                        max_pages=1,
+                    ),
+                    device_type_by_id,
+                    device_name_by_id,
+                )
+            )
+        selected_device_history = full_device_history
+        selected_device_trend = full_device_history
+        history = full_device_history
+        history_meta = {"total": len(full_device_history)}
+
     snapshot_payload = history_context.get("latest_snapshot", {"items": [], "meta": {}})
     snapshot_history = _filter_history_rows(paged_items(snapshot_payload), device_type_by_id, device_name_by_id)
+    if selected_is_device_group:
+        snapshot_history = full_device_history
     snapshot_meta = paged_meta(snapshot_payload)
     st.session_state["history_snapshot_total"] = int(snapshot_meta.get("total", 0) or 0)
     snapshot_uptime_map = history_context.get("snapshot_uptime_map", {})
@@ -251,6 +285,7 @@ def render_history_body(
         interval_seconds=interval_seconds,
         selected_device=selected_device,
         selected_device_id=selected_device_id,
+        selected_is_device_group=selected_is_device_group,
         selected_metric=selected_metric,
         checked_from_date=checked_from_date,
         checked_to_date=checked_to_date,
@@ -271,6 +306,7 @@ def render_history_body(
         device_type_by_id=device_type_by_id,
         device_name_by_id=device_name_by_id,
         selected_device_id=selected_device_id,
+        selected_is_device_group=selected_is_device_group,
         selected_device_type=selected_device_type,
         selected_device_record=selected_device_record,
         selected_metric=selected_metric,

@@ -5,8 +5,8 @@ from collections.abc import Sequence
 from typing import cast
 from urllib.parse import urlencode
 
-import altair as alt
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from shared.device_utils import format_device_label
@@ -14,7 +14,7 @@ from components.auth import require_dashboard_login
 from components.api import get_json, get_json_map, paged_items, paged_meta
 from components.sidebar import collapse_sidebar_on_page_load
 from components.time_utils import format_wib_timestamp, to_wib_timestamp
-from components.ui import render_kpi_cards, render_meta_row, render_page_header, render_section_header_with_download
+from components.ui import render_kpi_cards, render_meta_row, render_page_header, render_paginated_dataframe, render_section_header_with_download
 
 
 st.set_page_config(page_title="Daily Summary", layout="wide", initial_sidebar_state="collapsed")
@@ -209,43 +209,15 @@ if selected_device_id is None:
 chart_col1, chart_col2 = st.columns(2)
 with chart_col1:
     st.markdown("### Uptime Harian")
-    uptime_chart = (
-        alt.Chart(chart_frame)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("rollup_date:T", title="Tanggal"),
-            y=alt.Y("uptime_percentage:Q", title="Uptime (%)"),
-            color=alt.Color("Device:N", title="Device"),
-            tooltip=[
-                alt.Tooltip("rollup_date:T", title="Tanggal", format="%Y-%m-%d"),
-                alt.Tooltip("Device:N", title="Device"),
-                alt.Tooltip("uptime_percentage:Q", title="Uptime", format=".2f"),
-                alt.Tooltip("down_count:Q", title="Down"),
-            ],
-        )
-        .properties(height=320)
-    )
-    st.altair_chart(uptime_chart, width="stretch")
+    uptime_chart = px.line(chart_frame, x="rollup_date", y="uptime_percentage", color="Device", markers=True, hover_data=["down_count"])
+    uptime_chart.update_layout(height=320, xaxis_title="Tanggal", yaxis_title="Uptime (%)")
+    st.plotly_chart(uptime_chart, width="stretch")
 
 with chart_col2:
     st.markdown("### Ping Harian")
-    ping_chart = (
-        alt.Chart(chart_frame)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("rollup_date:T", title="Tanggal"),
-            y=alt.Y("average_ping_ms:Q", title="Avg Ping (ms)"),
-            color=alt.Color("Device:N", title="Device"),
-            tooltip=[
-                alt.Tooltip("rollup_date:T", title="Tanggal", format="%Y-%m-%d"),
-                alt.Tooltip("Device:N", title="Device"),
-                alt.Tooltip("average_ping_ms:Q", title="Avg Ping", format=".2f"),
-                alt.Tooltip("max_ping_ms:Q", title="Max Ping", format=".2f"),
-            ],
-        )
-        .properties(height=320)
-    )
-    st.altair_chart(ping_chart, width="stretch")
+    ping_chart = px.line(chart_frame, x="rollup_date", y="average_ping_ms", color="Device", markers=True, hover_data=["max_ping_ms"])
+    ping_chart.update_layout(height=320, xaxis_title="Tanggal", yaxis_title="Avg Ping (ms)")
+    st.plotly_chart(ping_chart, width="stretch")
 
 detail_columns = [
     "Tanggal",
@@ -269,8 +241,10 @@ render_section_header_with_download(
     file_name="daily_summary.csv",
     key="download_daily_summary",
 )
-st.dataframe(
+render_paginated_dataframe(
     summary_frame[detail_columns],
+    key="daily_summary_detail_table",
+    label="Detail Rollup",
     width="stretch",
     hide_index=True,
     column_config={

@@ -14,7 +14,7 @@ from ...models.device import Device
 from ...repositories.device_repository import DeviceRepository
 from ...repositories.metric_repository import MetricRepository
 from ...core.time import utcnow
-from ..helpers import bounded_gather, build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping
+from ..helpers import bounded_gather, build_ping_check_metrics, collect_ping_probe_samples
 
 
 class HttpGetClient(Protocol):
@@ -65,11 +65,7 @@ def _select_internet_anchor_device(devices: list[Device]) -> Device:
 
 async def _build_device_ping_metrics(device_id: int, ip_address: str) -> list[dict]:
     """Build device ping metrics for monitoring collection."""
-    samples = await collect_ping_samples(ip_address)
-    return [
-        build_ping_metric(device_id, latest_successful_ping(samples)),
-        *build_ping_quality_metrics(device_id, samples),
-    ]
+    return build_ping_check_metrics(device_id, await collect_ping_probe_samples(ip_address))
 
 
 async def _build_dns_metric(device_id: int) -> dict:

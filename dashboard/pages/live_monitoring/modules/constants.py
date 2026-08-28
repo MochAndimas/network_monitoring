@@ -10,6 +10,7 @@ CHART_WINDOW_OPTIONS = {
 }
 METRIC_LABELS = {
     "ping": ("Ping Latency", "Waktu respon ping ke device/target."),
+    "ping_collection_status": ("Status Kolektor ICMP", "Hasil collector ping dari server monitoring; bukan status target device."),
     "packet_loss": ("Packet Loss", "Persentase paket ping yang gagal sampai ke target."),
     "jitter": ("Jitter", "Rata-rata perubahan latency antar sample ping."),
     "dns_resolution_time": ("DNS Resolution", "Waktu yang dibutuhkan untuk resolve hostname DNS check."),
@@ -30,11 +31,15 @@ METRIC_LABELS = {
     "mikrotik_api": ("Mikrotik API Status", "Status koneksi ke API Mikrotik."),
     "printer_uptime_seconds": ("Printer Uptime", "Durasi hidup printer sejak reboot terakhir."),
     "printer_status": ("Printer Status", "Status umum printer dari SNMP Host Resources MIB."),
+    "printer_snmp_collection_status": ("Status Kolektor SNMP", "Hasil koneksi collector SNMP; bukan status hardware printer."),
     "printer_error_state": ("Status Error Printer", "Bitmask error printer yang sudah diterjemahkan ke label operasional."),
     "printer_ink_status": ("Ink Status", "Status tinta overall yang diturunkan dari status/error printer."),
+    "printer_toner_black_percent": ("Toner Black", "Persentase toner hitam yang tersedia dari Printer MIB."),
     "printer_paper_status": ("Paper Status", "Kondisi kertas/tray printer berdasarkan SNMP."),
+    "printer_paper_detail": ("Detail Tray Kertas", "Nama tray serta jumlah kertas yang dilaporkan printer."),
     "printer_total_pages": ("Total Pages", "Counter total halaman yang sudah tercetak."),
     "nas_uptime_seconds": ("NAS Uptime", "Durasi hidup NAS sejak reboot terakhir."),
+    "nas_snmp_collection_status": ("Status Kolektor NAS SNMP", "Hasil koneksi collector NAS SNMP; bukan status hardware NAS."),
     "nas_system_status": ("NAS System Status", "Status sistem Synology dari SNMP."),
     "nas_power_status": ("NAS Power Status", "Status power supply Synology dari SNMP."),
     "nas_system_temperature_c": ("NAS System Temperature", "Suhu sistem NAS dari SNMP."),
@@ -42,9 +47,12 @@ METRIC_LABELS = {
 PRINTER_METRIC_NAMES = [
     "printer_uptime_seconds",
     "printer_status",
+    "printer_snmp_collection_status",
     "printer_error_state",
     "printer_ink_status",
+    "printer_toner_black_percent",
     "printer_paper_status",
+    "printer_paper_detail",
     "printer_total_pages",
 ]
 INTERNET_ONLY_METRICS = {"dns_resolution_time", "http_response_time", "public_ip"}

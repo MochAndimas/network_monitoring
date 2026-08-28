@@ -3,14 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
 from ping3 import ping
 
 from ..core.config import settings
 from ..core.time import utcnow
+from .contracts import collection_metric_status, normalize_collection_status
 
 
 PING_SEMAPHORE = asyncio.Semaphore(max(settings.monitor.ping_concurrency_limit, 1))
+_VENDOR_PROTOCOL_SEMAPHORES: dict[str, asyncio.Semaphore] = {}
+
+
+@dataclass(frozen=True)
+class PingProbeResult:
+    """One ICMP probe result, including whether the local collector worked."""
+
+    latency_seconds: float | None
+    collection_status: str
 
 
 def build_ping_metric(device_id: int, latency_seconds: float | None) -> dict:
@@ -72,6 +84,69 @@ async def collect_ping_samples(ip_address: str) -> list[float | None]:
     return list(await asyncio.gather(*[safe_ping(ip_address) for _ in range(sample_count)]))
 
 
+async def collect_ping_probe_samples(ip_address: str) -> list[PingProbeResult]:
+    """Collect ICMP probes while separating a target timeout from a local failure."""
+    sample_count = max(settings.monitor.ping_sample_count, 1)
+    return list(await asyncio.gather(*[_collect_ping_probe(ip_address) for _ in range(sample_count)]))
+
+
+async def _collect_ping_probe(ip_address: str) -> PingProbeResult:
+    """Run one probe and retain only a safe collector error category."""
+    try:
+        return PingProbeResult(latency_seconds=await safe_ping(ip_address), collection_status="ok")
+    except asyncio.TimeoutError:
+        return PingProbeResult(latency_seconds=None, collection_status="timeout")
+    except OSError:
+        return PingProbeResult(latency_seconds=None, collection_status="connection_failed")
+    except Exception:
+        return PingProbeResult(latency_seconds=None, collection_status="collector_error")
+
+
+def build_ping_check_metrics(device_id: int, probes: list[PingProbeResult]) -> list[dict]:
+    """Build reachability metrics without treating a collector failure as target down."""
+    checked_at = utcnow()
+    collection_status = _ping_collection_status(probes)
+    collection_metric = {
+        "device_id": device_id,
+        "metric_name": "ping_collection_status",
+        "metric_value": normalize_collection_status(collection_status),
+        "status": collection_metric_status(collection_status),
+        "unit": "icmp",
+        "checked_at": checked_at,
+    }
+    if normalize_collection_status(collection_status) != "ok":
+        unavailable = {
+            "device_id": device_id,
+            "metric_value": "unavailable",
+            "status": "warning",
+            "unit": None,
+            "checked_at": checked_at,
+        }
+        return [
+            collection_metric,
+            {**unavailable, "metric_name": "ping"},
+            {**unavailable, "metric_name": "packet_loss"},
+            {**unavailable, "metric_name": "jitter"},
+        ]
+
+    samples = [probe.latency_seconds for probe in probes]
+    return [
+        collection_metric,
+        build_ping_metric(device_id, latest_successful_ping(samples)),
+        *build_ping_quality_metrics(device_id, samples),
+    ]
+
+
+def _ping_collection_status(probes: list[PingProbeResult]) -> str:
+    """Return a canonical collector state; ICMP non-response is still a valid probe."""
+    if any(probe.collection_status == "ok" for probe in probes):
+        return "ok"
+    for category in ("timeout", "connection_failed", "collector_error"):
+        if any(probe.collection_status == category for probe in probes):
+            return category
+    return "collector_error"
+
+
 def latest_successful_ping(samples: list[float | None]) -> float | None:
     """Return latest latest successful ping used by monitoring collection."""
     successful_samples = [sample for sample in samples if sample is not None]
@@ -79,12 +154,9 @@ def latest_successful_ping(samples: list[float | None]) -> float | None:
 
 
 async def safe_ping(ip_address: str) -> float | None:
-    """Safely return safe ping for monitoring collection."""
-    try:
-        async with PING_SEMAPHORE:
-            return await asyncio.to_thread(ping, ip_address, timeout=int(settings.monitor.ping_timeout_seconds))
-    except OSError:
-        return None
+    """Return one raw ping result; callers should use the probe contract for errors."""
+    async with PING_SEMAPHORE:
+        return await asyncio.to_thread(ping, ip_address, timeout=int(settings.monitor.ping_timeout_seconds))
 
 
 async def bounded_gather(coroutines, *, limit: int | None = None) -> list:
@@ -100,6 +172,30 @@ async def bounded_gather(coroutines, *, limit: int | None = None) -> list:
             return await coroutine
 
     return list(await asyncio.gather(*[_run(coroutine) for coroutine in coroutines]))
+
+
+@asynccontextmanager
+async def vendor_protocol_guard(vendor_protocol: str, *, limit: int | None = None):
+    """Bound concurrent requests to one fragile vendor/protocol combination."""
+    key = str(vendor_protocol or "default").strip().lower() or "default"
+    semaphore = _VENDOR_PROTOCOL_SEMAPHORES.get(key)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(max(limit or settings.monitor.snmp_concurrency_limit, 1))
+        _VENDOR_PROTOCOL_SEMAPHORES[key] = semaphore
+    async with semaphore:
+        yield
+
+
+async def retry_transient_collection(operation, *, retryable_statuses: set[str]):
+    """Retry a bounded number of transient collector outcomes with backoff."""
+    attempts = max(settings.monitor.collector_retry_attempts, 1)
+    result = await operation()
+    for attempt in range(1, attempts):
+        if getattr(result, "collection_status", None) not in retryable_statuses:
+            break
+        await asyncio.sleep(settings.monitor.collector_retry_backoff_seconds * attempt)
+        result = await operation()
+    return result
 
 
 def _calculate_jitter_ms(samples: list[float]) -> float | None:

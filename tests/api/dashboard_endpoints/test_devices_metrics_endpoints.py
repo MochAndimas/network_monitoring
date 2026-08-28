@@ -69,6 +69,7 @@ def test_create_update_and_delete_device_endpoint():
                 "ip_address": "192.168.1.77",
                 "device_type": "access_point",
                 "site": "Main Office",
+                "location": "Lobby",
                 "description": "Lobby access point",
                 "is_active": True,
             },
@@ -77,6 +78,8 @@ def test_create_update_and_delete_device_endpoint():
         assert create_response.status_code == 201
         created_payload = create_response.json()
         assert created_payload["name"] == "AP Lobby"
+        assert created_payload["site"] == "Main Office"
+        assert created_payload["location"] == "Lobby"
         assert created_payload["latest_status"] == "unknown"
 
         update_response = client.put(
@@ -84,6 +87,7 @@ def test_create_update_and_delete_device_endpoint():
             headers=API_HEADERS,
             json={
                 "name": "AP Lobby Updated",
+                "location": "Meeting Room",
                 "description": "Updated description",
                 "is_active": False,
             },
@@ -92,6 +96,7 @@ def test_create_update_and_delete_device_endpoint():
         assert update_response.status_code == 200
         updated_payload = update_response.json()
         assert updated_payload["name"] == "AP Lobby Updated"
+        assert updated_payload["location"] == "Meeting Room"
         assert updated_payload["is_active"] is False
 
         async def seed_related_rows():
@@ -154,6 +159,23 @@ def test_device_type_metadata_and_validation():
 
         assert invalid_ip_response.status_code == 422
         assert invalid_type_response.status_code == 422
+
+
+def test_device_site_cannot_be_empty_or_whitespace():
+    with client_context() as (client, _session_factory):
+        missing_site_response = client.post(
+            "/devices",
+            headers=API_HEADERS,
+            json={"name": "No Site", "ip_address": "192.168.1.92", "device_type": "switch"},
+        )
+        blank_site_response = client.post(
+            "/devices",
+            headers=API_HEADERS,
+            json={"name": "Blank Site", "ip_address": "192.168.1.93", "device_type": "switch", "site": "   "},
+        )
+
+        assert missing_site_response.status_code == 422
+        assert blank_site_response.status_code == 422
 
 def test_metrics_history_filters():
     with client_context() as (client, session_factory):
@@ -1251,4 +1273,3 @@ def test_system_performance_budgets_endpoint():
         endpoints = {item["endpoint"] for item in response.json()["items"]}
         assert "/metrics/long-term-explorer" in endpoints
         assert "/metrics/history/live" in endpoints
-

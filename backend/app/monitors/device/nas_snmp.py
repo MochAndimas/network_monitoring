@@ -20,6 +20,7 @@ from pysnmp.hlapi.asyncio import (
 
 from ...core.config import nas_snmp_community_for_ip
 from ...core.time import utcnow
+from ..contracts import classify_snmp_error, collection_metric_status, normalize_collection_status
 
 SNMP_TIMEOUT_SECONDS = 2
 SNMP_RETRIES = 1
@@ -75,13 +76,28 @@ class NasMetric:
     unit: str | None = None
 
 
+@dataclass(slots=True)
+class NasSnmpReadResult:
+    """One NAS SNMP read with a credential-safe collector error category."""
+
+    value: object | None
+    error_category: str | None = None
+
+
+@dataclass(slots=True)
+class NasSnmpFetchResult:
+    """NAS scalar values plus the health of the SNMP collection attempt."""
+
+    values: dict[str, object | None]
+    collection_status: str
+
+
 async def collect_nas_snmp_metrics(device_id: int, ip_address: str) -> list[dict]:
     """Collect Synology NAS SNMP metrics beyond ping reachability."""
     community = nas_snmp_community_for_ip(ip_address)
-    if not community:
-        return []
-
     checked_at = utcnow()
+    if not community:
+        return [_metric_payload(device_id, NasMetric("nas_snmp_collection_status", "configuration_missing", "warning"), checked_at)]
     scalar_oids = {
         "nas_uptime_ticks": SYS_UPTIME_OID,
         "nas_system_status_code": SYNO_SYSTEM_STATUS_OID,
@@ -90,15 +106,22 @@ async def collect_nas_snmp_metrics(device_id: int, ip_address: str) -> list[dict
         "nas_system_fan_status_code": SYNO_SYSTEM_FAN_STATUS_OID,
         "nas_cpu_fan_status_code": SYNO_CPU_FAN_STATUS_OID,
     }
-    raw_values, disk_rows, raid_rows, processor_loads, memory_values = await asyncio.gather(
+    scalar_result, disk_rows, raid_rows, processor_loads, memory_values = await asyncio.gather(
         _fetch_oid_values(ip_address, community, scalar_oids),
         _snmp_walk_table(ip_address, community, SYNO_DISK_TABLE_BASE),
         _snmp_walk_table(ip_address, community, SYNO_RAID_TABLE_BASE),
         _snmp_walk_table(ip_address, community, HR_PROCESSOR_TABLE_BASE),
         _snmp_walk_table(ip_address, community, UCD_MEMORY_BASE),
     )
+    raw_values = scalar_result.values
 
     metrics = [
+        NasMetric(
+            "nas_snmp_collection_status",
+            scalar_result.collection_status,
+            collection_metric_status(scalar_result.collection_status),
+            "snmpv2c",
+        ),
         _build_uptime_metric(raw_values),
         _build_cpu_metric(processor_loads),
         _build_memory_metric(memory_values),
@@ -111,25 +134,32 @@ async def collect_nas_snmp_metrics(device_id: int, ip_address: str) -> list[dict
         *_build_disk_metrics(disk_rows),
     ]
 
-    return [
-        {
-            "device_id": device_id,
-            "metric_name": metric.metric_name,
-            "metric_value": metric.metric_value,
-            "status": metric.status,
-            "unit": metric.unit,
-            "checked_at": checked_at,
-        }
-        for metric in metrics
-    ]
+    return [_metric_payload(device_id, metric, checked_at) for metric in metrics]
 
 
-async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str]) -> dict[str, object | None]:
+def _metric_payload(device_id: int, metric: NasMetric, checked_at) -> dict:
+    """Convert a normalized NAS metric to the common persistence payload."""
+    return {
+        "device_id": device_id,
+        "metric_name": metric.metric_name,
+        "metric_value": metric.metric_value,
+        "status": metric.status,
+        "unit": metric.unit,
+        "checked_at": checked_at,
+    }
+
+
+async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str]) -> NasSnmpFetchResult:
     tasks = {key: asyncio.create_task(_snmp_get_value(ip_address, community, oid)) for key, oid in oids.items()}
-    return {key: await task for key, task in tasks.items()}
+    results = {key: await task for key, task in tasks.items()}
+    uptime_result = results["nas_uptime_ticks"]
+    return NasSnmpFetchResult(
+        values={key: result.value for key, result in results.items()},
+        collection_status="ok" if _safe_int(uptime_result.value) is not None else normalize_collection_status(uptime_result.error_category, fallback="invalid_response"),
+    )
 
 
-async def _snmp_get_value(ip_address: str, community: str, oid: str) -> object | None:
+async def _snmp_get_value(ip_address: str, community: str, oid: str) -> NasSnmpReadResult:
     engine = SnmpEngine()
     try:
         error_indication, error_status, _, var_binds = await get_cmd(
@@ -139,16 +169,27 @@ async def _snmp_get_value(ip_address: str, community: str, oid: str) -> object |
             ContextData(),
             ObjectType(ObjectIdentity(oid)),
         )
-        if error_indication or error_status or not var_binds:
-            return None
-        return cast(object, var_binds[0][1])
+        if error_indication:
+            return NasSnmpReadResult(None, _snmp_error_category(str(error_indication)))
+        if error_status:
+            return NasSnmpReadResult(None, "protocol_error")
+        if not var_binds:
+            return NasSnmpReadResult(None, "invalid_response")
+        return NasSnmpReadResult(cast(object, var_binds[0][1]))
+    except TimeoutError:
+        return NasSnmpReadResult(None, "timeout")
     except Exception:
-        return None
+        return NasSnmpReadResult(None, "collector_error")
     finally:
         try:
             engine.transport_dispatcher.close_dispatcher()
         except Exception:
             pass
+
+
+def _snmp_error_category(error_message: str) -> str:
+    """Map pysnmp transport text to stable, credential-safe categories."""
+    return classify_snmp_error(error_message)
 
 
 async def _snmp_walk_table(ip_address: str, community: str, base_oid: str) -> dict[int, dict[int, str]]:

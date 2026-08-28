@@ -30,6 +30,7 @@ class DeviceRepository:
             "ip_address": row.ip_address,
             "device_type": row.device_type,
             "site": row.site,
+            "location": row.location,
             "description": row.description,
             "is_active": row.is_active,
             "latest_status": row.latest_status or "unknown",
@@ -100,6 +101,7 @@ class DeviceRepository:
             Device.name.ilike(search_term),
             Device.ip_address.ilike(search_term),
             Device.site.ilike(search_term),
+            Device.location.ilike(search_term),
         )
 
     def _device_status_query(
@@ -120,6 +122,7 @@ class DeviceRepository:
             Device.ip_address,
             Device.device_type,
             Device.site,
+            Device.location,
             Device.description,
             Device.is_active,
             latest_ping.status.label("latest_status"),
@@ -182,6 +185,7 @@ class DeviceRepository:
             Device.ip_address,
             Device.device_type,
             Device.site,
+            Device.location,
             Device.is_active,
         )
         if active_only:
@@ -201,6 +205,7 @@ class DeviceRepository:
                 "ip_address": row.ip_address,
                 "device_type": row.device_type,
                 "site": row.site,
+                "location": row.location,
                 "is_active": row.is_active,
             }
             for row in rows
@@ -497,11 +502,23 @@ class DeviceRepository:
         query = query.order_by(Device.name.asc())
         return list((await self.db.scalars(query)).all())
 
-    async def list_by_types(self, device_types: list[str], active_only: bool = True) -> list[Device]:
+    async def list_by_types(
+        self,
+        device_types: list[str],
+        active_only: bool = True,
+        site: str | None = None,
+        excluded_sites: set[str] | None = None,
+    ) -> list[Device]:
         """Query by types from the database."""
         query: Select[tuple[Device]] = select(Device).where(Device.device_type.in_(device_types))
         if active_only:
             query = query.where(Device.is_active.is_(True))
+        normalized_site = str(site or "").strip()
+        if normalized_site:
+            query = query.where(Device.site == normalized_site)
+        normalized_excluded_sites = {str(item).strip() for item in (excluded_sites or set()) if str(item).strip()}
+        if normalized_excluded_sites:
+            query = query.where(~Device.site.in_(normalized_excluded_sites))
         query = query.order_by(Device.name.asc())
         return list((await self.db.scalars(query)).all())
 

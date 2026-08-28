@@ -2,9 +2,14 @@
 
 from typing import Any
 
-import altair as alt
 import pandas as pd
+import plotly.express as px
 import streamlit as st
+
+try:
+    from components.ui import render_paginated_dataframe
+except ModuleNotFoundError:  # pragma: no cover - supports imports outside Streamlit's app root
+    from dashboard.components.ui import render_paginated_dataframe
 
 from .device_common import _format_bytes, _format_mbps, _format_percent, _latest_metric_snapshot_map, _latest_metric_value_from_map
 from .rendering import _render_stat_card
@@ -113,24 +118,31 @@ def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> No
         return
 
     latest_map = _latest_metric_snapshot_map(mikrotik_history_frame)
+    api_status = _latest_metric_value_from_map(latest_map, "mikrotik_api")
     interface_frame = _interface_view(mikrotik_history_frame)
     firewall_frame = _firewall_view(mikrotik_history_frame)
 
     st.markdown("### Metrik Mikrotik")
-    health_col1, health_col2, health_col3, health_col4, health_col5 = st.columns(5)
-    _render_stat_card(health_col1, "CPU Load", _format_percent(_latest_metric_value_from_map(latest_map, "cpu_percent")))
+    if str(api_status or "").lower() not in {"", "ok"}:
+        st.warning(
+            f"Collector RouterOS API bermasalah ({api_status}). Data CPU, client, interface, queue, dan firewall mungkin stale. "
+            "Cek VPN/routing, service API dan port RouterOS, serta username/password read-only."
+        )
+    health_col1, health_col2, health_col3, health_col4, health_col5, health_col6 = st.columns(6)
+    _render_stat_card(health_col1, "RouterOS API", str(api_status or "-"))
+    _render_stat_card(health_col2, "CPU Load", _format_percent(_latest_metric_value_from_map(latest_map, "cpu_percent")))
     _render_stat_card(
-        health_col2,
+        health_col3,
         "Memory Used",
         _format_percent(_latest_metric_value_from_map(latest_map, "memory_percent")),
     )
     _render_stat_card(
-        health_col3,
+        health_col4,
         "Storage Used",
         _format_percent(_latest_metric_value_from_map(latest_map, "disk_percent")),
     )
-    _render_stat_card(health_col4, "DHCP Leases", _latest_metric_value_from_map(latest_map, "dhcp_active_leases"))
-    _render_stat_card(health_col5, "Connected Clients", _latest_metric_value_from_map(latest_map, "connected_clients"))
+    _render_stat_card(health_col5, "DHCP Leases", _latest_metric_value_from_map(latest_map, "dhcp_active_leases"))
+    _render_stat_card(health_col6, "Connected Clients", _latest_metric_value_from_map(latest_map, "connected_clients"))
 
     st.markdown("### Interface Traffic")
     if interface_frame.empty:
@@ -150,25 +162,14 @@ def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> No
                 var_name="Direction",
                 value_name="Mbps",
             )
-            traffic_chart = (
-                alt.Chart(melted)
-                .mark_bar()
-                .encode(
-                    x=alt.X("Mbps:Q", title="Mbps"),
-                    y=alt.Y("Interface:N", sort="-x", title="Interface"),
-                    color=alt.Color("Direction:N", title="Direction"),
-                    tooltip=[
-                        alt.Tooltip("Interface:N", title="Interface"),
-                        alt.Tooltip("Direction:N", title="Direction"),
-                        alt.Tooltip("Mbps:Q", title="Mbps", format=".2f"),
-                    ],
-                )
-                .properties(height=260)
-            )
-            st.altair_chart(traffic_chart, width="stretch")
+            traffic_chart = px.bar(melted, x="Mbps", y="Interface", color="Direction", orientation="h", barmode="group")
+            traffic_chart.update_layout(height=260, xaxis_title="Mbps", yaxis_title="Interface", yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(traffic_chart, width="stretch")
         with traffic_table_col:
-            st.dataframe(
+            render_paginated_dataframe(
                 interface_frame,
+                key="mikrotik_interface_table",
+                label="Interface",
                 width="stretch",
                 hide_index=True,
                 column_config={
@@ -188,8 +189,10 @@ def _render_mikrotik_history_section(mikrotik_history_frame: pd.DataFrame) -> No
             "dan firewall section ada di allowlist."
         )
     else:
-        st.dataframe(
+        render_paginated_dataframe(
             firewall_frame,
+            key="mikrotik_firewall_table",
+            label="Firewall",
             width="stretch",
             hide_index=True,
             column_config={

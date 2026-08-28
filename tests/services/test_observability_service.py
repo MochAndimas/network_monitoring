@@ -43,6 +43,42 @@ def test_scheduler_registration_heartbeat_prevents_stale_alert(monkeypatch):
     assert observability_module.scheduler_job_is_stale(status) is False
 
 
+def test_scheduler_health_row_calculates_lag_and_stale_state(monkeypatch):
+    reference_now = utcnow()
+    monkeypatch.setattr(observability_module, "utcnow", lambda: reference_now)
+    monkeypatch.setattr(observability_module.settings, "scheduler_interval_device_seconds", 60)
+    monkeypatch.setattr(observability_module.settings, "scheduler_job_stale_factor", 3)
+    status = SchedulerJobStatus(
+        job_name="device_checks",
+        last_finished_at=reference_now - timedelta(seconds=90),
+        updated_at=reference_now - timedelta(seconds=90),
+        consecutive_failures=0,
+        is_running=False,
+    )
+
+    row = observability_module.build_scheduler_job_health_rows([status])[0]
+
+    assert row["state"] == "on_schedule"
+    assert row["expected_interval_seconds"] == 60
+    assert row["schedule_lag_seconds"] == 30
+
+
+def test_scheduler_health_row_marks_stale_after_configured_factor(monkeypatch):
+    reference_now = utcnow()
+    monkeypatch.setattr(observability_module, "utcnow", lambda: reference_now)
+    monkeypatch.setattr(observability_module.settings, "scheduler_interval_device_seconds", 60)
+    monkeypatch.setattr(observability_module.settings, "scheduler_job_stale_factor", 3)
+    status = SchedulerJobStatus(
+        job_name="device_checks",
+        last_finished_at=reference_now - timedelta(seconds=181),
+        updated_at=reference_now - timedelta(seconds=181),
+        consecutive_failures=0,
+        is_running=False,
+    )
+
+    assert observability_module.build_scheduler_job_health_rows([status])[0]["state"] == "stale"
+
+
 def test_observability_payload_metrics_cover_paged_endpoints():
     original_payload_request_count = observability_module._api_payload_request_count.copy()
     original_payload_rows = observability_module._api_payload_rows.copy()

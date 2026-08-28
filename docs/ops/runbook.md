@@ -78,6 +78,25 @@ Dokumen evidence drill:
 - Masalah yang ditemukan.
 - Rencana perbaikan + owner + due date.
 
+Gunakan template: `docs/ops/dr-drill-template.md`.
+
+Untuk drill restore lokal yang terisolasi, gunakan script berikut dari root repository:
+
+```bash
+bash scripts/ops/mysql_dr_drill.sh network_monitoring_drill_YYYYMMDD
+```
+
+Script membuat dump konsisten, restore ke database sementara yang namanya wajib berbeda dari database produksi, memvalidasi jumlah `devices` dan `metrics`, menyimpan checksum/evidence di `backup/`, lalu menghapus database sementara otomatis. Jangan commit folder `backup/`.
+
+## 3.1 Restart Service Monitoring
+
+1. Catat incident dan waktu mulai; jangan restart berulang tanpa membaca `System Health` dan log scheduler.
+2. Restart terkontrol: `docker compose up -d --build backend scheduler dashboard`.
+3. Tunggu health backend/dashboard, lalu cek `/health/ready`, `/health/dependencies`, dan `/observability/summary`.
+4. Pastikan scheduler job terdaftar, tidak stale, dan satu monitoring cycle menghasilkan metric baru.
+5. Bila NAS/host restart, verifikasi VPN/site route dulu; jangan membuka SNMP atau Mikrotik API ke internet publik sebagai workaround.
+6. Catat durasi pemulihan dan temuan pada incident/DR evidence.
+
 ## 4. Incident Response SOP
 
 Severity baseline:
@@ -106,6 +125,18 @@ SLA respon (target):
 - Scheduler cycle success rate harian: >= 99.0%
 - Freshness metric utama (latest snapshot): <= 5 menit lag untuk 99% sampel
 - Error rate endpoint kritis (`/auth/*`, `/dashboard/*`, `/metrics/*`): < 1% rolling 15 menit
+
+### SLO Freshness per Domain
+
+| Domain | Interval collector | SLO freshness | Trigger tindakan |
+| --- | ---: | ---: | --- |
+| Internet target | 30 dtk | 99% latest metric <= 2 menit | Cek job `internet_checks`, VPN/uplink, lalu scheduler lag. |
+| Device umum, printer, NAS | 60 dtk | 99% latest metric <= 5 menit | Cek `device_checks`, collector status, ACL/VPN SNMP bila relevan. |
+| Server | 60 dtk | 99% latest metric <= 5 menit | Cek `server_checks`, host monitoring, dan resource lokal. |
+| Mikrotik | 60 dtk | 99% latest metric <= 5 menit | Cek `mikrotik_checks`, API/ACL, dan VPN route. |
+| Alert evaluation | 30 dtk | Alert critical dibuat <= 2 menit setelah metric valid | Cek `alert_evaluation` dan advisory lock alert. |
+
+Jika freshness meleset dua window berturut-turut, buat/ack incident monitoring-degraded. Jika scheduler lag konsisten melebihi interval selama 15 menit atau collector success rate < 90% selama 15 menit, lakukan triage kapasitas dan evaluasi agent per-site sebelum menaikkan concurrency.
 
 ### MTTA/MTTR Target
 

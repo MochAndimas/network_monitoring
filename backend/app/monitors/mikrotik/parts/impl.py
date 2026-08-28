@@ -15,7 +15,7 @@ from ....models.metric import Metric
 from ....repositories.device_repository import DeviceRepository
 from ....repositories.metric_repository import MetricRepository
 from ....core.time import utcnow
-from ...helpers import bounded_gather, build_ping_metric, build_ping_quality_metrics, collect_ping_samples, latest_successful_ping
+from ...helpers import bounded_gather, build_ping_check_metrics, collect_ping_probe_samples
 
 try:
     from librouteros import connect
@@ -240,14 +240,14 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
                     max_items=mikrotik_settings.dynamic_max_queues,
                 )
             )
-    except Exception:
+    except Exception as exc:
         logger.exception("Mikrotik API check failed for host %s", mikrotik_settings.host)
         checked_at = utcnow()
         metrics.append(
             {
                 "device_id": target_device.id,
                 "metric_name": "mikrotik_api",
-                "metric_value": "connection_failed",
+                "metric_value": _mikrotik_api_error_category(exc),
                 "status": "error",
                 "unit": None,
                 "checked_at": checked_at,
@@ -258,6 +258,18 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
             await asyncio.to_thread(api.close)
 
     return metrics
+
+
+def _mikrotik_api_error_category(error: Exception) -> str:
+    """Classify RouterOS API failures without persisting credentials or raw errors."""
+    message = str(error or "").lower()
+    if "timeout" in message or "timed out" in message:
+        return "timeout"
+    if any(keyword in message for keyword in ("auth", "login", "credential", "password", "username")):
+        return "authentication_failed"
+    if any(keyword in message for keyword in ("connection refused", "network is unreachable", "no route", "connection reset")):
+        return "connection_failed"
+    return "collector_error"
 
 
 async def _list_mikrotik_devices(db: AsyncSession) -> list:
@@ -304,11 +316,7 @@ def _fetch_routeros_rows(
 
 async def _build_ping_metrics(device_id: int, ip_address: str) -> list[dict]:
     """Build ping metrics for Mikrotik monitoring."""
-    samples = await collect_ping_samples(ip_address)
-    return [
-        build_ping_metric(device_id, latest_successful_ping(samples)),
-        *build_ping_quality_metrics(device_id, samples),
-    ]
+    return build_ping_check_metrics(device_id, await collect_ping_probe_samples(ip_address))
 
 
 def _mikrotik_memory_percent(resource: dict) -> str:

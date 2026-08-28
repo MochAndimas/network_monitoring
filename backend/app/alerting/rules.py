@@ -3,6 +3,7 @@
 ALERT_RULES = {
     "device_down": {"severity": "critical"},
     "internet_loss": {"severity": "critical"},
+    "ping_collection_degraded": {"severity": "warning"},
     "high_ping_latency_warning": {"severity": "warning"},
     "high_ping_latency_critical": {"severity": "critical"},
     "ping_latency_anomaly": {"severity": "warning"},
@@ -30,6 +31,7 @@ ALERT_RULES = {
     "printer_paper_issue": {"severity": "warning"},
     "printer_ink_low": {"severity": "warning"},
     "printer_ink_empty": {"severity": "critical"},
+    "printer_snmp_collection_degraded": {"severity": "warning"},
     "nas_system_status_problem": {"severity": "critical"},
     "nas_power_status_problem": {"severity": "critical"},
     "nas_fan_status_problem": {"severity": "critical"},
@@ -38,4 +40,5 @@ ALERT_RULES = {
     "nas_disk_status_problem": {"severity": "critical"},
     "nas_system_temperature_high": {"severity": "warning"},
     "nas_disk_temperature_high": {"severity": "warning"},
+    "nas_snmp_collection_degraded": {"severity": "warning"},
 }

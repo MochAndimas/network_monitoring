@@ -6,6 +6,7 @@ from .device import Device
 from .incident import Incident, IncidentTimelineEvent
 from .latest_metric import LatestMetric
 from .metric import Metric
+from .collector_run import CollectorRun
 from .metric_cold_archive import MetricColdArchive
 from .metric_daily_rollup import MetricDailyRollup
 from .metric_site_type_daily_summary import MetricSiteTypeDailySummary
@@ -24,6 +25,7 @@ __all__ = [
     "IncidentTimelineEvent",
     "LatestMetric",
     "Metric",
+    "CollectorRun",
     "MetricColdArchive",
     "MaintenanceWindow",
     "MetricDailyRollup",

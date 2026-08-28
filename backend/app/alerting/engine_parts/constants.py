@@ -19,6 +19,7 @@ TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE = {
 TELEGRAM_NOTIFICATION_DEDUPE_TTL = timedelta(minutes=5)
 ALERT_EXACT_METRIC_NAMES = {
     "ping",
+    "ping_collection_status",
     "packet_loss",
     "jitter",
     "dns_resolution_time",
@@ -34,9 +35,11 @@ ALERT_EXACT_METRIC_NAMES = {
     "printer_error_state",
     "printer_paper_status",
     "printer_ink_status",
+    "printer_snmp_collection_status",
     "nas_system_status",
     "nas_power_status",
     "nas_system_temperature_c",
+    "nas_snmp_collection_status",
 }
 ALERT_DYNAMIC_METRIC_NAME_PATTERNS = (
     "interface:%:rx_mbps",
@@ -55,6 +58,7 @@ ALERT_PRIMARY_METRIC_BY_TYPE = {
     "high_ping_latency_warning": "ping",
     "high_ping_latency_critical": "ping",
     "ping_latency_anomaly": "ping",
+    "ping_collection_degraded": "ping_collection_status",
     "high_packet_loss_warning": "packet_loss",
     "high_packet_loss_critical": "packet_loss",
     "high_jitter_warning": "jitter",
@@ -70,6 +74,8 @@ ALERT_PRIMARY_METRIC_BY_TYPE = {
     "mikrotik_api_failed": "mikrotik_api",
     "mikrotik_connected_clients_high": "connected_clients",
     "mikrotik_interface_traffic_anomaly": "connected_clients",
+    "printer_snmp_collection_degraded": "printer_snmp_collection_status",
+    "nas_snmp_collection_degraded": "nas_snmp_collection_status",
 }
 
 __all__ = [

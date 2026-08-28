@@ -61,3 +61,22 @@ async def check_database_connection() -> bool:
         return True
     except Exception:
         return False
+
+
+def database_pool_health() -> dict[str, int | None]:
+    """Return safe SQLAlchemy pool counters for System Health."""
+    pool = engine.pool
+    for attribute in ("size", "checkedout", "overflow"):
+        if not hasattr(pool, attribute):
+            return {"size": None, "checked_out": None, "overflow": None, "capacity": None}
+    size = int(pool.size())
+    checked_out = int(pool.checkedout())
+    # QueuePool reports a negative overflow while fewer than pool_size
+    # connections have been created; expose usage, not that implementation detail.
+    overflow = max(int(pool.overflow()), 0)
+    return {
+        "size": size,
+        "checked_out": checked_out,
+        "overflow": overflow,
+        "capacity": size + max(settings.database.max_overflow, 0),
+    }

@@ -18,25 +18,22 @@ from pysnmp.hlapi.asyncio import (
 
 from ...core.config import printer_snmp_community_for_ip
 from ...core.time import utcnow
+from ..contracts import classify_snmp_error, collection_metric_status, normalize_collection_status
+from ..helpers import retry_transient_collection, vendor_protocol_guard
 
 SNMP_TIMEOUT_SECONDS = 2
 SNMP_RETRIES = 1
+SNMP_MAX_CONCURRENT_REQUESTS = 4
 
 SYS_UPTIME_OID = "1.3.6.1.2.1.1.3.0"
 HR_PRINTER_STATUS_OID = "1.3.6.1.2.1.25.3.5.1.1.1"
 HR_PRINTER_ERROR_STATE_OID = "1.3.6.1.2.1.25.3.5.1.2.1"
 PRT_INPUT_STATUS_OID = "1.3.6.1.2.1.43.8.2.1.10.1.1"
+PRT_INPUT_MAX_CAPACITY_OID = "1.3.6.1.2.1.43.8.2.1.9.1.1"
+PRT_INPUT_NAME_OID = "1.3.6.1.2.1.43.8.2.1.13.1.1"
 PRT_MARKER_LIFE_COUNT_OID = "1.3.6.1.2.1.43.10.2.1.4.1.1"
 PRT_MARKER_SUPPLIES_LEVEL_BASE_OID = "1.3.6.1.2.1.43.11.1.1.9.1"
-PRT_MARKER_SUPPLIES_MAX_BASE_OID = "1.3.6.1.2.1.43.11.1.1.8.1"
 PRT_MARKER_COLORANT_BASE_OID = "1.3.6.1.2.1.43.12.1.1.4.1"
-
-COLOR_INDEX_TO_NAME = {
-    1: "black",
-    2: "cyan",
-    3: "magenta",
-    4: "yellow",
-}
 
 PRINTER_STATUS_LABELS = {
     1: "other",
@@ -103,79 +100,152 @@ class SnmpPrinterMetric:
     unit: str | None = None
 
 
+@dataclass(slots=True)
+class SnmpReadResult:
+    """One SNMP read with a credential-safe operational outcome category."""
+
+    value: object | None
+    error_category: str | None = None
+
+
+@dataclass(slots=True)
+class SnmpFetchResult:
+    """Printer SNMP values plus collector health metadata."""
+
+    values: dict[str, object | None]
+    collection_status: str
+    protocol: str
+
+
 async def collect_printer_snmp_metrics(device_id: int, ip_address: str) -> list[dict]:
     """Collect printer snmp metrics for monitoring collection."""
     community = printer_snmp_community_for_ip(ip_address)
-    if not community:
-        return []
-
     checked_at = utcnow()
+    if not community:
+        return [_metric_payload(device_id, SnmpPrinterMetric("printer_snmp_collection_status", "configuration_missing", "warning"), checked_at)]
     oids = {
         "printer_uptime_ticks": SYS_UPTIME_OID,
         "printer_status_code": HR_PRINTER_STATUS_OID,
         "printer_error_state_raw": HR_PRINTER_ERROR_STATE_OID,
         "printer_input_status_code": PRT_INPUT_STATUS_OID,
+        "printer_input_max_capacity": PRT_INPUT_MAX_CAPACITY_OID,
+        "printer_input_name": PRT_INPUT_NAME_OID,
         "printer_total_pages": PRT_MARKER_LIFE_COUNT_OID,
     }
-    for color_index, color_name in COLOR_INDEX_TO_NAME.items():
-        oids[f"printer_ink_{color_name}_level_raw"] = f"{PRT_MARKER_SUPPLIES_LEVEL_BASE_OID}.{color_index}"
-        oids[f"printer_ink_{color_name}_max_raw"] = f"{PRT_MARKER_SUPPLIES_MAX_BASE_OID}.{color_index}"
-        oids[f"printer_ink_{color_name}_colorant_raw"] = f"{PRT_MARKER_COLORANT_BASE_OID}.{color_index}"
+    # Query only the black supply. It is enough for monochrome printers such
+    # as the Canon iR-ADV 4551 and avoids overloading legacy SNMPv1 agents
+    # with unsupported CMYK supply OIDs.
+    oids["printer_ink_black_level_raw"] = f"{PRT_MARKER_SUPPLIES_LEVEL_BASE_OID}.1"
+    oids["printer_ink_black_colorant_raw"] = f"{PRT_MARKER_COLORANT_BASE_OID}.1"
 
-    raw_values = await _fetch_oid_values(ip_address, community, oids)
+    async with vendor_protocol_guard("printer-snmp"):
+        fetch_result = await retry_transient_collection(
+            lambda: _fetch_oid_values(ip_address, community, oids),
+            retryable_statuses={"timeout", "connection_failed", "collector_error"},
+        )
+    raw_values = fetch_result.values
 
     metrics = [
+        SnmpPrinterMetric(
+            "printer_snmp_collection_status",
+            fetch_result.collection_status,
+            collection_metric_status(fetch_result.collection_status),
+            fetch_result.protocol,
+        ),
         _build_uptime_metric(raw_values),
         _build_printer_status_metric(raw_values),
         _build_error_state_metric(raw_values),
         _build_ink_status_metric(raw_values),
+        _build_black_toner_metric(raw_values),
         _build_paper_status_metric(raw_values),
+        _build_paper_detail_metric(raw_values),
         _build_total_pages_metric(raw_values),
     ]
 
-    return [
-        {
-            "device_id": device_id,
-            "metric_name": metric.metric_name,
-            "metric_value": metric.metric_value,
-            "status": metric.status,
-            "unit": metric.unit,
-            "checked_at": checked_at,
-        }
-        for metric in metrics
-    ]
+    return [_metric_payload(device_id, metric, checked_at) for metric in metrics]
 
 
-async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str]) -> dict[str, object | None]:
-    """Fetch oid values for monitoring collection."""
-    tasks = {
-        key: asyncio.create_task(_snmp_get_value(ip_address, community, oid))
-        for key, oid in oids.items()
+def _metric_payload(device_id: int, metric: SnmpPrinterMetric, checked_at) -> dict:
+    """Convert a normalized printer metric to the common persistence payload."""
+    return {
+        "device_id": device_id,
+        "metric_name": metric.metric_name,
+        "metric_value": metric.metric_value,
+        "status": metric.status,
+        "unit": metric.unit,
+        "checked_at": checked_at,
     }
-    return {key: await task for key, task in tasks.items()}
 
 
-async def _snmp_get_value(ip_address: str, community: str, oid: str) -> object | None:
+async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str]) -> SnmpFetchResult:
+    """Fetch OID values, preferring SNMPv1 for legacy printer fleets."""
+    # Canon imageRUNNER devices commonly expose v1 only. Starting with v1
+    # avoids an initial burst of v2c timeouts before every collection cycle.
+    first_result = await _fetch_oid_values_for_version(ip_address, community, oids, mp_model=0)
+    # sysUpTime is a required, stable scalar for every supported printer.  Some
+    # devices return no-such placeholders for optional OIDs over the wrong SNMP
+    # version, so an arbitrary non-empty response is not enough to select v2c.
+    if _safe_int(first_result.values.get("printer_uptime_ticks")) is not None:
+        return first_result
+    return await _fetch_oid_values_for_version(ip_address, community, oids, mp_model=1)
+
+
+async def _fetch_oid_values_for_version(
+    ip_address: str,
+    community: str,
+    oids: dict[str, str],
+    *,
+    mp_model: int,
+) -> SnmpFetchResult:
+    """Fetch all printer OIDs concurrently for one SNMP protocol version."""
+    semaphore = asyncio.Semaphore(SNMP_MAX_CONCURRENT_REQUESTS)
+
+    async def _read_one(oid: str) -> SnmpReadResult:
+        async with semaphore:
+            return await _snmp_get_value(ip_address, community, oid, mp_model=mp_model)
+
+    tasks = {key: asyncio.create_task(_read_one(oid)) for key, oid in oids.items()}
+    results = {key: await task for key, task in tasks.items()}
+    uptime_result = results["printer_uptime_ticks"]
+    return SnmpFetchResult(
+        values={key: result.value for key, result in results.items()},
+        collection_status="ok" if _safe_int(uptime_result.value) is not None else normalize_collection_status(uptime_result.error_category, fallback="invalid_response"),
+        protocol=f"snmpv{1 if mp_model == 0 else '2c'}",
+    )
+
+
+async def _snmp_get_value(ip_address: str, community: str, oid: str, *, mp_model: int) -> SnmpReadResult:
     """Run snmp get value for device inventory and status."""
     engine = SnmpEngine()
     try:
         error_indication, error_status, _, var_binds = await get_cmd(
             engine,
-            CommunityData(community, mpModel=1),
+            CommunityData(community, mpModel=mp_model),
             await UdpTransportTarget.create((ip_address, 161), timeout=SNMP_TIMEOUT_SECONDS, retries=SNMP_RETRIES),
             ContextData(),
             ObjectType(ObjectIdentity(oid)),
         )
-        if error_indication or error_status or not var_binds:
-            return None
-        return cast(object, var_binds[0][1])
+        if error_indication:
+            return SnmpReadResult(None, _snmp_error_category(str(error_indication)))
+        if error_status:
+            return SnmpReadResult(None, "protocol_error")
+        if not var_binds:
+            return SnmpReadResult(None, "invalid_response")
+        return SnmpReadResult(cast(object, var_binds[0][1]))
+    except TimeoutError:
+        return SnmpReadResult(None, "timeout")
     except Exception:
-        return None
+        return SnmpReadResult(None, "collector_error")
     finally:
         try:
             engine.transport_dispatcher.close_dispatcher()
         except Exception:
             pass
+
+
+def _snmp_error_category(error_message: str) -> str:
+    """Map pysnmp transport text to a stable credential-safe category."""
+    return classify_snmp_error(error_message)
 
 
 def _build_uptime_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
@@ -213,6 +283,21 @@ def _build_ink_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinte
     return SnmpPrinterMetric("printer_ink_status", "ok", "ok")
 
 
+def _build_black_toner_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
+    """Build an optional black-toner percentage from the standard Printer MIB."""
+    toner_level = _safe_int(raw_values.get("printer_ink_black_level_raw"))
+    colorant = str(raw_values.get("printer_ink_black_colorant_raw") or "").strip().lower()
+    if toner_level is None or colorant not in {"", "black"} or not 0 <= toner_level <= 100:
+        return SnmpPrinterMetric("printer_toner_black_percent", "unavailable", "warning", "%")
+    if toner_level <= 5:
+        status = "error"
+    elif toner_level <= 20:
+        status = "warning"
+    else:
+        status = "ok"
+    return SnmpPrinterMetric("printer_toner_black_percent", str(toner_level), status, "%")
+
+
 def _build_paper_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
     """Build paper status metric for monitoring collection."""
     flags = set(_decode_error_state(raw_values.get("printer_error_state_raw")))
@@ -226,6 +311,27 @@ def _build_paper_status_metric(raw_values: dict[str, object | None]) -> SnmpPrin
     metric_status = "ok" if input_status_label in {"available", "ok"} else "warning"
     normalized_label = "ok" if input_status_label == "available" else input_status_label
     return SnmpPrinterMetric("printer_paper_status", normalized_label, metric_status)
+
+
+def _build_paper_detail_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
+    """Build a human-readable explanation of the input tray that needs attention."""
+    tray_name = str(raw_values.get("printer_input_name") or "Input tray").strip() or "Input tray"
+    current_level = _safe_int(raw_values.get("printer_input_status_code"))
+    max_capacity = _safe_int(raw_values.get("printer_input_max_capacity"))
+    if current_level is None:
+        return SnmpPrinterMetric("printer_paper_detail", "unavailable", "warning")
+    if max_capacity and max_capacity > 0:
+        level_description = f"{current_level}/{max_capacity} lembar"
+    else:
+        level_description = f"{current_level} lembar"
+    if current_level <= 0:
+        condition = "kosong"
+    elif max_capacity and current_level / max_capacity <= 0.2:
+        condition = "menipis"
+    else:
+        condition = "tersedia"
+    status = "warning" if condition in {"kosong", "menipis"} else "ok"
+    return SnmpPrinterMetric("printer_paper_detail", f"{tray_name}: {condition} ({level_description})", status)
 
 
 def _build_total_pages_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:

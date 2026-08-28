@@ -17,6 +17,11 @@ from .evaluation_context import AlertEvaluationContext
 from .utils import _build_alert_payload, _metric_numeric_value
 
 RuleEvaluator = Callable[[AlertEvaluationContext], None]
+COLLECTION_DEGRADATION_RULES = (
+    ("ping_collection_status", "ping_collection_degraded", "ICMP collector; check monitoring host, VPN, and network route"),
+    ("nas_snmp_collection_status", "nas_snmp_collection_degraded", "NAS SNMP collector; check VPN/ACL UDP 161, community, and SNMP version"),
+    ("printer_snmp_collection_status", "printer_snmp_collection_degraded", "printer SNMP collector; check VPN/ACL UDP 161, community, and SNMP version"),
+)
 
 
 def evaluate_expected_alerts_for_device(context: AlertEvaluationContext) -> None:
@@ -25,9 +30,30 @@ def evaluate_expected_alerts_for_device(context: AlertEvaluationContext) -> None
         evaluator(context)
 
 
+def evaluate_collection_degradation_alerts(context: AlertEvaluationContext) -> None:
+    """Create one safe monitoring-degraded alert for each unhealthy collector."""
+    for metric_name, alert_type, guidance in COLLECTION_DEGRADATION_RULES:
+        metric = context.latest_metrics.get((context.device.id, metric_name))
+        if metric is None or str(metric.metric_value or "").lower() == "ok":
+            continue
+        context.expected_alerts[(context.device.id, alert_type)] = _build_alert_payload(
+            device_id=context.device.id,
+            alert_type=alert_type,
+            message=f"{context.device.name} {guidance}: {metric.metric_value}",
+        )
+
+
+def _collection_is_degraded(context: AlertEvaluationContext, metric_name: str) -> bool:
+    """Return whether a collector status makes dependent business metrics invalid."""
+    metric = context.latest_metrics.get((context.device.id, metric_name))
+    return metric is not None and str(metric.metric_value or "").lower() != "ok"
+
+
 def evaluate_reachability_alerts(context: AlertEvaluationContext) -> None:
     """Evaluate ping reachability and latency alerts."""
     device = context.device
+    if _collection_is_degraded(context, "ping_collection_status"):
+        return
     ping_metric = context.latest_metrics.get((device.id, "ping"))
     if ping_metric is not None and ping_metric.status == "down":
         if not _recent_status_values_match(context, metric_name="ping", status="down"):
@@ -70,6 +96,8 @@ def evaluate_reachability_alerts(context: AlertEvaluationContext) -> None:
 def evaluate_quality_alerts(context: AlertEvaluationContext) -> None:
     """Evaluate packet loss and jitter alerts."""
     device = context.device
+    if _collection_is_degraded(context, "ping_collection_status"):
+        return
     for metric_name, warning_alert, critical_alert, warning_key, critical_key in QUALITY_METRIC_ALERTS:
         metric = context.latest_metrics.get((device.id, metric_name))
         if metric is None:
@@ -100,6 +128,8 @@ def evaluate_quality_alerts(context: AlertEvaluationContext) -> None:
 def evaluate_baseline_anomaly_alerts(context: AlertEvaluationContext) -> None:
     """Evaluate simple baseline anomalies for latency and Mikrotik interface traffic."""
     device = context.device
+    if _collection_is_degraded(context, "ping_collection_status"):
+        return
     ping_metric = context.latest_metrics.get((device.id, "ping"))
     ping_value = _metric_numeric_value(ping_metric) if ping_metric is not None else None
     ping_baseline = _recent_numeric_average(context, metric_name="ping", skip_latest=True)
@@ -287,6 +317,8 @@ def evaluate_nas_domain_alerts(context: AlertEvaluationContext) -> None:
     device = context.device
     if device.device_type != "nas":
         return
+    if _collection_is_degraded(context, "nas_snmp_collection_status"):
+        return
     _evaluate_nas_alerts(
         device=device,
         latest_metrics=context.latest_metrics,
@@ -299,6 +331,9 @@ def evaluate_printer_domain_alerts(context: AlertEvaluationContext) -> None:
     """Evaluate printer-specific SNMP alert rules."""
     device = context.device
     if device.device_type != "printer":
+        return
+
+    if _collection_is_degraded(context, "printer_snmp_collection_status"):
         return
 
     uptime_metric = context.latest_metrics.get((device.id, "printer_uptime_seconds"))
@@ -375,6 +410,7 @@ RESOURCE_METRIC_ALERTS = (
     ("disk_percent", "high_disk", "disk_warning"),
 )
 ALERT_RULE_EVALUATORS: tuple[RuleEvaluator, ...] = (
+    evaluate_collection_degradation_alerts,
     evaluate_reachability_alerts,
     evaluate_quality_alerts,
     evaluate_baseline_anomaly_alerts,

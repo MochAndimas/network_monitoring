@@ -41,6 +41,10 @@ test-slow:
 test-mysql:
   pytest -q -m mysql
 
+migration-check:
+  test "$(alembic heads | grep -c '(head)' || true)" -eq 1
+  alembic check
+
 ci:
   just lint
   just typecheck

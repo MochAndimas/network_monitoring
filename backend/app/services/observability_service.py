@@ -352,6 +352,82 @@ def scheduler_job_is_stale(job: SchedulerJobStatus) -> bool:
     return last_reference <= utcnow() - timedelta(seconds=stale_after_seconds)
 
 
+def build_scheduler_job_health_rows(job_statuses: list[SchedulerJobStatus]) -> list[dict]:
+    """Return scheduler timing health derived from configured job intervals."""
+    now = utcnow()
+    rows: list[dict] = []
+    for job in job_statuses:
+        expected_interval_seconds = _expected_scheduler_interval_seconds(job.job_name)
+        references = [
+            timestamp
+            for timestamp in (job.last_finished_at, job.last_started_at, job.updated_at)
+            if timestamp is not None
+        ]
+        last_heartbeat_at = max(references) if references else None
+        heartbeat_age_seconds = (
+            max((now - last_heartbeat_at).total_seconds(), 0.0) if last_heartbeat_at is not None else None
+        )
+        schedule_lag_seconds = (
+            max(heartbeat_age_seconds - expected_interval_seconds, 0.0)
+            if heartbeat_age_seconds is not None and expected_interval_seconds is not None
+            else None
+        )
+        stale_after_seconds = (
+            max(expected_interval_seconds * max(settings.scheduler.job_stale_factor, 1), 60)
+            if expected_interval_seconds is not None
+            else None
+        )
+        consecutive_failures = int(job.consecutive_failures or 0)
+        if consecutive_failures > 0:
+            state = "failing"
+        elif scheduler_job_is_stale(job):
+            state = "stale"
+        elif job.is_running:
+            state = "running"
+        elif last_heartbeat_at is None:
+            state = "no_data"
+        else:
+            state = "on_schedule"
+        rows.append(
+            {
+                "job_name": job.job_name,
+                "state": state,
+                "expected_interval_seconds": expected_interval_seconds,
+                "stale_after_seconds": stale_after_seconds,
+                "last_heartbeat_at": last_heartbeat_at,
+                "heartbeat_age_seconds": heartbeat_age_seconds,
+                "schedule_lag_seconds": schedule_lag_seconds,
+                "consecutive_failures": consecutive_failures,
+                "last_duration_ms": job.last_duration_ms,
+            }
+        )
+    return rows
+
+
+def build_collector_health_rows(rows: list[dict]) -> list[dict]:
+    """Add success-rate and actionable health state to collector rollups."""
+    result: list[dict] = []
+    for row in rows:
+        samples = int(row.get("sample_count") or 0)
+        success = int(row.get("success_count") or 0)
+        timeouts = int(row.get("timeout_count") or 0)
+        unsupported = int(row.get("unsupported_oid_count") or 0)
+        rate = round((success / samples) * 100, 2) if samples else 0.0
+        state = "healthy" if rate >= 99 else "degraded" if rate >= 90 else "failing"
+        if unsupported:
+            action = "OID tidak didukung; cek MIB/vendor dan capability device."
+        elif timeouts:
+            action = "Timeout; cek VPN/routing, ACL, dan reachability dari server monitoring."
+        elif str(row.get("collector")) in {"printer_snmp", "nas_snmp"}:
+            action = "Cek ACL UDP 161, community read-only, dan versi SNMP."
+        elif str(row.get("collector")) == "mikrotik_api":
+            action = "Cek VPN/routing, ACL API, dan credential RouterOS."
+        else:
+            action = "Cek host monitoring, VPN/routing, dan konfigurasi collector."
+        result.append({**row, "success_rate_percent": rate, "state": state, "action": action})
+    return result
+
+
 def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -> list[dict]:
     """Build operational alerts for stale or repeatedly failing scheduler jobs."""
     alerts: list[dict] = []

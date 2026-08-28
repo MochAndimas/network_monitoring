@@ -1,7 +1,7 @@
 """Streamlit overview page for high-level monitoring status."""
 
-import altair as alt
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from components.auth import is_admin, require_dashboard_login, session_expiry_label
@@ -211,17 +211,9 @@ def _render_overview_body() -> None:
         if severity_counts.empty:
             st.success("Tidak ada alert aktif. Sistem dalam kondisi normal.")
         else:
-            severity_chart = (
-                alt.Chart(severity_counts)
-                .mark_bar()
-                .encode(
-                    x=alt.X("count:Q", title="Jumlah"),
-                    y=alt.Y("severity:N", sort="-x", title="Tingkat"),
-                    tooltip=[alt.Tooltip("severity:N", title="Tingkat"), alt.Tooltip("count:Q", title="Jumlah")],
-                )
-                .properties(height=220)
-            )
-            st.altair_chart(severity_chart, width="stretch")
+            severity_chart = px.bar(severity_counts, x="count", y="severity", orientation="h", text="count")
+            severity_chart.update_layout(height=220, xaxis_title="Jumlah", yaxis_title="Tingkat", yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(severity_chart, width="stretch")
             st.dataframe(
                 severity_counts[["severity", "count"]].rename(columns={"severity": "Tingkat", "count": "Jumlah"}),
                 width="stretch",
