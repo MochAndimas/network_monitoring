@@ -209,27 +209,5 @@ services:
       retries: 5
       start_period: 30s
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    profiles: ["nextjs"]
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
-    ports:
-      - "127.0.0.1:3000:3000"
-    healthcheck:
-      # The Node runtime is guaranteed to exist in the image; using its native
-      # fetch also avoids depending on BusyBox wget behaviour in Alpine.
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-
 volumes:
   mysql_data:
