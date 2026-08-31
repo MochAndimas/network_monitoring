@@ -1,0 +1,29 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { AppShell } from "@/components/app-shell";
+import { StatusBadge } from "@/components/status-badge";
+import { ApiError, apiRequest } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { downloadCsv, formatWib } from "@/lib/presentation";
+
+const PAGE_SIZE = 25;
+type Incident = { id: number; device_id?: number | null; device_name?: string | null; site?: string | null; status: string; summary: string; owner?: string | null; assignee?: string | null; effective_severity?: string | null; acknowledged_at?: string | null; acknowledged_by?: string | null; started_at: string; ended_at?: string | null; updated_at?: string | null };
+type Page = { items: Incident[]; meta: { total: number; limit: number; offset: number } };
+
+export function IncidentsDashboard() {
+  const { ready, user, token } = useAuth(); const router = useRouter(); const pathname = usePathname(); const params = useSearchParams();
+  const [page, setPage] = useState<Page | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState<ApiError | null>(null);
+  const status = params.get("status") || ""; const site = params.get("site") || ""; const search = params.get("search") || ""; const offset = Math.max(0, Number(params.get("offset") || 0));
+  const update = (changes: Record<string, string | null>) => { const next = new URLSearchParams(params.toString()); Object.entries(changes).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key)); router.replace(`${pathname}?${next}`); };
+  const load = useCallback(async () => { if (!token) return; setError(null); try { const query = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) }); if (status) query.set("status", status); if (site) query.set("site", site); if (search) query.set("search", search); setPage(await apiRequest<Page>(`/incidents/paged?${query}`, { cache: "no-store" }, token)); } catch (caught) { setError(caught instanceof ApiError ? caught : new ApiError(0, "Koneksi ke backend gagal.")); } finally { setLoading(false); } }, [token, offset, status, site, search]);
+  useEffect(() => { if (ready && token) void load(); }, [ready, token, load]);
+  if (!ready || !user) return <div className="login">Memulihkan sesi…</div>;
+  const rows = page?.items || [], total = page?.meta.total || 0;
+  return <AppShell><header className="page-header"><div><h1 className="page-title">Incidents</h1><p className="page-description">Workflow incident, ownership, acknowledgement, dan eskalasi yang tercatat di backend.</p></div><button className="button button-secondary button-inline" onClick={() => void load()} disabled={loading}>{loading ? "Memuat…" : "Refresh"}</button></header>
+    <section className="panel filters"><label className="field"><span>Status</span><select value={status} onChange={(event) => update({ status: event.target.value || null, offset: "0" })}><option value="">Semua status</option><option value="open">Open</option><option value="acknowledged">Acknowledged</option><option value="resolved">Resolved</option></select></label><label className="field"><span>Site</span><input placeholder="Contoh: Jakarta" value={site} onChange={(event) => update({ site: event.target.value || null, offset: "0" })} /></label><label className="field"><span>Cari incident/device</span><input value={search} onChange={(event) => update({ search: event.target.value || null, offset: "0" })} /></label><button className="button button-secondary button-inline filter-reset" onClick={() => update({ status: null, site: null, search: null, offset: "0" })}>Reset filter</button></section>
+    {error && <div className="alert-box error-box"><span>{error.message}</span><button className="button button-secondary button-inline" onClick={() => void load()}>Coba lagi</button></div>}
+    {loading && !page ? <section className="panel">Memuat incident…</section> : <section className="panel table-panel"><div className="section-heading"><h2>{total} incident</h2><button className="button button-secondary button-inline" onClick={() => downloadCsv("incidents.csv", ["ID", "Mulai (WIB)", "Severity", "Status", "Device", "Site", "Summary", "Owner", "Assignee", "Acknowledged (WIB)", "Selesai (WIB)"], rows.map((r) => [r.id, formatWib(r.started_at), r.effective_severity || "-", r.status, r.device_name || "-", r.site || "-", r.summary, r.owner || "-", r.assignee || "-", formatWib(r.acknowledged_at), formatWib(r.ended_at)]))}>Download CSV</button></div>{rows.length ? <><div className="table-scroll"><table><thead><tr><th>Mulai</th><th>Severity</th><th>Status</th><th>Device</th><th>Site</th><th>Summary</th><th>Owner</th><th>Assignee</th><th>Ack</th></tr></thead><tbody>{rows.map((r) => <tr key={r.id}><td>{formatWib(r.started_at)}</td><td><StatusBadge value={r.effective_severity} /></td><td><StatusBadge value={r.status} /></td><td>{r.device_name || "-"}</td><td>{r.site || "-"}</td><td><Link href={`/incidents/${r.id}`}>{r.summary}</Link></td><td>{r.owner || "-"}</td><td>{r.assignee || "-"}</td><td>{r.acknowledged_at ? formatWib(r.acknowledged_at) : "Belum"}</td></tr>)}</tbody></table></div><div className="pagination"><span>{total ? `${offset + 1}–${Math.min(offset + PAGE_SIZE, total)} dari ${total}` : "0 data"}</span><button className="button button-secondary button-inline" disabled={offset === 0} onClick={() => update({ offset: String(Math.max(0, offset - PAGE_SIZE)) })}>Sebelumnya</button><button className="button button-secondary button-inline" disabled={offset + PAGE_SIZE >= total} onClick={() => update({ offset: String(offset + PAGE_SIZE) })}>Berikutnya</button></div></> : <p className="empty-state">Tidak ada incident untuk filter ini.</p>}</section>}</AppShell>;
+}

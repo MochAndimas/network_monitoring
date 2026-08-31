@@ -1,12 +1,26 @@
 # PRD — Refactor Frontend Streamlit ke Next.js
 
-**Status:** Proposed
+**Status:** In progress — Tahap 1 (foundation) selesai diimplementasikan, feature parity masih berjalan.
 
 **Tanggal:** 2026-08-28
 
 **Produk:** Network Monitoring
 
 **Scope:** Penggantian frontend Streamlit dengan Next.js tanpa mengurangi fitur, menu, policy, atau kemampuan operasional yang sudah tersedia.
+
+## Status Implementasi
+
+- Legenda: `[x]` feature parity dan acceptance criteria selesai; `[~]` implementasi tersedia tetapi masih perlu endpoint/acceptance/UAT; `[ ]` belum dimulai.
+- [x] Foundation: Next.js App Router, Docker standalone, auth restore/login/logout, route guard, sidebar, dan CORS origin lokal.
+- [x] Overview: read-only overview payload, KPI/drill-down, auto refresh sadar visibility, CSV export, dan chart Plotly severity.
+- [~] System Health: health/observability, freshness, capacity, collector/scheduler triage, refresh, dan CSV export sudah tersedia; pagination server-side untuk tabel observability serta UAT masih tersisa.
+- [~] Daily Summary: filter tanggal/device, pagination server-side, KPI, chart Plotly, dan CSV export sudah tersedia; filter site/device type memerlukan perluasan endpoint FastAPI dan UAT masih tersisa.
+- [~] Alerts: filter severity/site/search, pagination server-side, drill-down device, status context, dan CSV export sudah tersedia; direct link incident/policy freshness serta UAT masih tersisa.
+- [~] Incidents: list/filter/pagination/export, detail/timeline, serta acknowledge/resolve/reopen khusus admin sudah tersedia; workflow owner/assignee/severity override, escalation view, dan UAT masih tersisa.
+- [~] Devices: inventory filter/pagination/export, device type dari metadata backend, serta CRUD admin dengan validasi site sudah tersedia; filter inactive eksplisit, CSV dry-run import, dan UAT masih tersisa.
+- [~] Thresholds: global threshold, override, maintenance window, read-only policy context, dan nonaktifkan override/window admin sudah tersedia; form create override/window, CSV export, dan UAT masih tersisa.
+- [~] Live Monitoring: pilihan device/metric dari backend, deep link, snapshot, trend Plotly, dan refresh manual sudah tersedia; aggregate/device-specific UI, range waktu, export/pagination, collector context, serta UAT masih tersisa.
+- [ ] Profile/admin, test component/E2E, UAT, dan cutover/decommission Streamlit.
 
 ## 1. Latar Belakang
 
@@ -103,6 +117,26 @@ Sidebar harus mendukung status active route, collapse untuk layar kecil, informa
 
 ## 7. Feature Parity per Halaman
 
+### 7.0 Aturan Parity Wajib
+
+- Tidak boleh ada pengurangan fitur informasi operasional dari Streamlit saat dipindahkan ke Next.js.
+- Untuk setiap halaman, seluruh filter, metric card/KPI, chart Plotly, tabel, pagination, export, empty/loading/error/stale state, drill-down, dan aksi yang tersedia di Streamlit harus memiliki padanan fungsional di frontend baru.
+- Jika kontrak API belum menyuplai data yang dipakai Streamlit, pekerjaan frontend **tidak dianggap selesai**; tambahkan endpoint FastAPI yang backward-compatible sebelum menutup checklist parity.
+- Status `[~]` berarti fondasi UI sudah tersedia, bukan pengganti atau pengurangan fitur Streamlit. Status `[x]` hanya diberikan setelah checklist parity halaman dan UAT per-role lulus.
+
+#### Checklist parity seluruh frontend Streamlit
+
+- [ ] **Authentication / session / profile / administration:** login, restore/expired session, logout/logout-all, change password, identitas/role user, user management, reset password, session management, audit log, dan seluruh state loading/error/permission yang ada di Streamlit.
+- [ ] **Overview:** seluruh KPI, insight/prioritas operasional, problem device, alert/incident ringkasan, snapshot, drill-down, auto refresh, chart Plotly, CSV export, dan state kosong/error.
+- [ ] **Daily Summary:** semua filter, KPI availability/quality, tabel rollup, chart Plotly, pagination, export, timezone WIB, dan long-term/summary view yang tersedia di Streamlit.
+- [ ] **Live Monitoring:** seluruh checklist rinci pada §7.4, termasuk device-specific card/chart/table dan mode VoIP aggregate.
+- [ ] **Devices:** search/filter seluruh kolom dan active state, metadata type, inventory/pagination/export, create/edit/delete role admin, confirmation, validation error 409/422, CSV dry-run/import error per baris, serta state kosong/error.
+- [ ] **Alerts:** active alert list, seluruh filter, severity/lifecycle/policy/freshness context, pagination/export, drill-down device/incident, serta pembedaan monitoring degraded dari alert bisnis.
+- [ ] **Incidents:** board/list/filter/export, detail alert+timeline+escalation, deep link, owner/assignee/workflow fields, acknowledge/resolve/reopen/update role admin, dan cache refresh tanpa full reload.
+- [ ] **Thresholds / maintenance:** global threshold, precedence override site/type/device, semua form create/edit/deactivate, maintenance window validation, dampak suppress alert, pagination/export bila tabel besar, dan role admin.
+- [ ] **System Health:** backend/DB/scheduler, collector health/freshness/run performance, capacity/pool/queue/lock/write-rate, safe runbook context, pagination/export, unit+WIB, dan unavailable-vs-device-failure semantics.
+- [ ] **Shared shell/design system:** sidebar/menu active state, responsive collapse, user/role/logout, dark operational token, badge berlabel, focus/keyboard/ARIA, dialog/toast/tooltip/skeleton, API error mapping, query cache/invalidation, dan URL state yang setara.
+
 ### 7.1 Authentication dan Session
 
 Route: `/login`, `/restore`, `/profile`, `/admin/*`
@@ -178,6 +212,20 @@ Acceptance criteria:
 - Tidak ada pilihan device VoIP satuan pada mode agregat yang memang diminta disembunyikan.
 - `unknown`/`unavailable` harus punya alasan/action bila collection status tersedia.
 - Printer low paper menunjukkan tray/lokasi bila MIB mengirim detailnya.
+
+#### Checklist parity Streamlit — Live Monitoring
+
+- [ ] Filter: device termasuk opsi agregat VoIP, metric yang difilter menurut capability device, status, rentang/waktu chart, limit, refresh otomatis/manual, dan URL query yang dapat dibagikan.
+- [ ] Ringkasan umum: health score/status, jumlah device/metric aktif, latest snapshot status, freshness, dan status collection yang membedakan device failure dari degraded monitoring.
+- [ ] Metric card generik: nilai terbaru, sample count, rata-rata, min/max bila tersedia, status, unit, waktu pemeriksaan WIB, trend direction, dan alasan unavailable/stale.
+- [ ] Chart Plotly generik: garis per metric/device yang tidak mencampur unit, tooltip nilai+unit+timestamp, legend interaktif, axis/unit yang benar, serta empty/non-numeric timeline.
+- [ ] Tabel history/snapshot: kolom yang setara Streamlit, pagination server-side, status/freshness, sort/filter yang tersedia, dan CSV export dengan WIB.
+- [ ] VoIP aggregate: opsi grup tanpa device VoIP individual, KPI average/aggregate, multi-line Plotly yang dapat dibedakan, dan tabel snapshot agregat.
+- [ ] MikroTik: card API health, CPU, RAM, disk/storage, uptime, DHCP lease, connected clients; chart resource; tabel/interface, firewall, queue dynamic metric sesuai allowlist.
+- [ ] Printer: card health/status/error, toner black, uptime, page count; status paper/tray/lokasi; chart yang relevan; dan collector stale/error explanation.
+- [ ] NAS: card system/power/fan, volume/RAID/disk/temperature; capacity/status table; chart metric numerik yang valid; dan warning aman ketika SNMP gagal/stale.
+- [ ] Device umum (internet target, server, switch, AP, NVR): ping, packet loss, jitter, uptime, freshness, dan metric capability lain yang tersedia.
+- [ ] Semua variasi: loading skeleton, empty state, retry error, 401/403 handling, accessibility keyboard/label, responsive desktop/tablet, serta UAT viewer/admin.
 
 ### 7.5 Devices
 
