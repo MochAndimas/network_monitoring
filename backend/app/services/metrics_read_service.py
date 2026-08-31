@@ -80,6 +80,8 @@ async def get_metrics_history(
     *,
     limit: int,
     device_id: int | None = None,
+    site: str | None = None,
+    device_type: str | None = None,
     metric_name: str | None = None,
     status: str | None = None,
     checked_from: datetime | None = None,
@@ -89,6 +91,8 @@ async def get_metrics_history(
     metrics = await MetricRepository(db).list_recent_metric_rows(
         limit=limit,
         device_id=device_id,
+        site=site,
+        device_type=device_type,
         metric_name=metric_name,
         status=status,
         checked_from=checked_from,
@@ -428,6 +432,8 @@ async def get_metrics_daily_summary(
     limit: int,
     offset: int,
     device_id: int | None = None,
+    site: str | None = None,
+    device_type: str | None = None,
     rollup_from: date | None = None,
     rollup_to: date | None = None,
 ) -> MetricDailySummaryPage:
@@ -436,6 +442,8 @@ async def get_metrics_daily_summary(
         limit=limit,
         offset=offset,
         device_id=device_id,
+        site=site,
+        device_type=device_type,
         rollup_from=rollup_from,
         rollup_to=rollup_to,
     )

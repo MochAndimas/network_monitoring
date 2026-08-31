@@ -187,6 +187,7 @@ class MetricDailySummaryItem(BaseModel):
     device_id: int
     device_name: str
     device_type: str | None = None
+    site: str | None = None
     rollup_date: date
     total_samples: int
     ping_samples: int

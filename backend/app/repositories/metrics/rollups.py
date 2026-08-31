@@ -29,6 +29,8 @@ class MetricRollupMixin(MetricRepositoryBase):
         self,
         *,
         device_id: int | None = None,
+        site: str | None = None,
+        device_type: str | None = None,
         rollup_from: date | None = None,
         rollup_to: date | None = None,
     ) -> Select[Any]:
@@ -57,6 +59,10 @@ class MetricRollupMixin(MetricRepositoryBase):
         )
         if device_id is not None:
             query = query.where(MetricDailyRollup.device_id == device_id)
+        if str(site or "").strip():
+            query = query.where(Device.site == str(site).strip())
+        if str(device_type or "").strip():
+            query = query.where(Device.device_type == str(device_type).strip())
         if rollup_from is not None:
             query = query.where(MetricDailyRollup.rollup_date >= rollup_from)
         if rollup_to is not None:
@@ -69,6 +75,8 @@ class MetricRollupMixin(MetricRepositoryBase):
         limit: int = 100,
         offset: int = 0,
         device_id: int | None = None,
+        site: str | None = None,
+        device_type: str | None = None,
         rollup_from: date | None = None,
         rollup_to: date | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
@@ -77,6 +85,8 @@ class MetricRollupMixin(MetricRepositoryBase):
             await self.db.execute(
                 self._daily_summary_query(
                     device_id=device_id,
+                    site=site,
+                    device_type=device_type,
                     rollup_from=rollup_from,
                     rollup_to=rollup_to,
                 )
@@ -111,6 +121,8 @@ class MetricRollupMixin(MetricRepositoryBase):
             return payload, len(payload)
         return payload, await self.count_daily_summary_rows(
             device_id=device_id,
+            site=site,
+            device_type=device_type,
             rollup_from=rollup_from,
             rollup_to=rollup_to,
         )
@@ -119,13 +131,19 @@ class MetricRollupMixin(MetricRepositoryBase):
         self,
         *,
         device_id: int | None = None,
+        site: str | None = None,
+        device_type: str | None = None,
         rollup_from: date | None = None,
         rollup_to: date | None = None,
     ) -> int:
         """Count daily summary rows for metric repository queries."""
-        query = select(func.count()).select_from(MetricDailyRollup)
+        query = select(func.count()).select_from(MetricDailyRollup).outerjoin(Device, Device.id == MetricDailyRollup.device_id)
         if device_id is not None:
             query = query.where(MetricDailyRollup.device_id == device_id)
+        if str(site or "").strip():
+            query = query.where(Device.site == str(site).strip())
+        if str(device_type or "").strip():
+            query = query.where(Device.device_type == str(device_type).strip())
         if rollup_from is not None:
             query = query.where(MetricDailyRollup.rollup_date >= rollup_from)
         if rollup_to is not None:

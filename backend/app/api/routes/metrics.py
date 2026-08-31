@@ -162,6 +162,8 @@ async def get_metrics_daily_summary(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     device_id: int | None = Query(default=None),
+    site: str | None = Query(default=None, max_length=100),
+    device_type: str | None = Query(default=None, max_length=50),
     rollup_from: date | None = Query(default=None),
     rollup_to: date | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
@@ -172,6 +174,8 @@ async def get_metrics_daily_summary(
         limit=limit,
         offset=offset,
         device_id=device_id,
+        site=site,
+        device_type=device_type,
         rollup_from=rollup_from,
         rollup_to=rollup_to,
     )
