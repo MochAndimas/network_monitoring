@@ -169,6 +169,14 @@ class MetricHistorySection(BaseModel):
     meta: MetricPayloadMeta
 
 
+class DeviceMonitoringContext(BaseModel):
+    """Safe device-specific monitoring context for operational UIs."""
+    state: str
+    reason: str
+    capabilities: list[str]
+    latest_checked_at: datetime | None = None
+
+
 class MetricHistoryContextPayload(BaseModel):
     """Pydantic schema for composite metric history dashboard payloads."""
     metric_names: list[str]
@@ -178,6 +186,7 @@ class MetricHistoryContextPayload(BaseModel):
     latest_snapshot: MetricHistorySection
     selected_device_snapshot: MetricHistorySection
     latest_snapshot_status_summary: dict[str, int]
+    device_context: DeviceMonitoringContext | None = None
     snapshot_uptime_map: dict[str, str]
 
 

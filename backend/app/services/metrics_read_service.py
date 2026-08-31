@@ -12,6 +12,7 @@ from ..api.schemas import (
     CursorPageMeta,
     MetricDailySummaryItem,
     MetricDailySummaryPage,
+    DeviceMonitoringContext,
     MetricColdArchiveItem,
     MetricColdArchivePage,
     MetricFreshnessItem,
@@ -53,6 +54,30 @@ def metric_history_dicts(metrics: list[dict]) -> list[dict]:
 def metric_history_items(metrics: list[dict]) -> list[MetricHistoryItem]:
     """Convert repository metric rows into typed MetricHistoryItem objects."""
     return [MetricHistoryItem(**metric) for metric in metric_history_dicts(metrics)]
+
+
+def _device_monitoring_context(items: list[dict]) -> DeviceMonitoringContext:
+    """Build safe per-device capability and freshness context from latest metrics."""
+    if not items:
+        return DeviceMonitoringContext(
+            state="unavailable",
+            reason="Tidak ada snapshot metric untuk device ini. Periksa collector, konektivitas, dan konfigurasi perangkat.",
+            capabilities=[],
+        )
+    statuses = {str(item.get("status") or "unknown").lower() for item in items}
+    state = "degraded" if statuses & {"down", "error", "warning", "stale"} else "healthy"
+    latest = max((item.get("checked_at") for item in items if item.get("checked_at") is not None), default=None)
+    reason = (
+        "Metric terakhir mengindikasikan monitoring degraded; periksa collector/freshness sebelum menyimpulkan perangkat gagal."
+        if state == "degraded"
+        else "Snapshot metric tersedia dari collector."
+    )
+    return DeviceMonitoringContext(
+        state=state,
+        reason=reason,
+        capabilities=sorted({str(item.get("metric_name")) for item in items}),
+        latest_checked_at=latest,
+    )
 
 
 def _history_section(
@@ -256,6 +281,7 @@ async def get_metrics_history_context(
     selected_device_trend_items = metric_history_dicts(selected_device_trend_rows)
     latest_snapshot_items = metric_history_dicts(latest_snapshot_rows)
     selected_device_snapshot_items = metric_history_dicts(selected_device_snapshot_rows)
+    device_context = _device_monitoring_context(selected_device_snapshot_items) if device_id is not None else None
     _record_context_payload_sections(
         endpoint="/metrics/history/context",
         device_id=device_id,
@@ -299,6 +325,7 @@ async def get_metrics_history_context(
             offset=0,
         ),
         latest_snapshot_status_summary=latest_snapshot_status_summary,
+        device_context=device_context,
         snapshot_uptime_map=await repository.latest_snapshot_uptime_map_for_rows(latest_snapshot_rows),
     )
 
@@ -422,6 +449,7 @@ async def get_metrics_history_live(
             sampled=True,
         ),
         latest_snapshot_status_summary=latest_snapshot_status_summary,
+        device_context=_device_monitoring_context(selected_device_snapshot_items) if device_id is not None else None,
         snapshot_uptime_map=await repository.latest_snapshot_uptime_map_for_rows(latest_snapshot_rows),
     )
 

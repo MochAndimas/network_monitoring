@@ -70,11 +70,14 @@ class IncidentRepository:
         offset: int = 0,
         search: str | None = None,
         site: str | None = None,
+        device_id: int | None = None,
     ) -> list[dict]:
         """Query incident rows from the database."""
         query = select(Incident, Device.name, Device.site).outerjoin(Device, Device.id == Incident.device_id)
         if status:
             query = query.where(Incident.status == status)
+        if device_id is not None:
+            query = query.where(Incident.device_id == device_id)
         normalized_site = str(site or "").strip().lower()
         if normalized_site:
             query = query.where(func.lower(Device.site) == normalized_site)
@@ -125,12 +128,13 @@ class IncidentRepository:
         offset: int = 0,
         search: str | None = None,
         site: str | None = None,
+        device_id: int | None = None,
     ) -> tuple[list[dict], int]:
         """Query incident rows paged from the database."""
-        rows = await self.list_incident_rows(status=status, limit=limit, offset=offset, search=search, site=site)
+        rows = await self.list_incident_rows(status=status, limit=limit, offset=offset, search=search, site=site, device_id=device_id)
         if offset == 0 and len(rows) < limit:
             return rows, len(rows)
-        return rows, await self.count_incident_rows(status=status, search=search, site=site)
+        return rows, await self.count_incident_rows(status=status, search=search, site=site, device_id=device_id)
 
     async def get_incident_row(self, incident_id: int) -> dict:
         """Return one incident row with derived summary and severity."""
@@ -161,11 +165,13 @@ class IncidentRepository:
             "updated_at": incident.updated_at,
         }
 
-    async def count_incident_rows(self, *, status: str | None = None, search: str | None = None, site: str | None = None) -> int:
+    async def count_incident_rows(self, *, status: str | None = None, search: str | None = None, site: str | None = None, device_id: int | None = None) -> int:
         """Query incident rows from the database."""
         query = select(func.count()).select_from(Incident)
         if status:
             query = query.where(Incident.status == status)
+        if device_id is not None:
+            query = query.where(Incident.device_id == device_id)
         normalized_site = str(site or "").strip().lower()
         if normalized_site:
             query = query.join(Device, Device.id == Incident.device_id, isouter=True).where(func.lower(Device.site) == normalized_site)

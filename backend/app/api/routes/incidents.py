@@ -62,6 +62,7 @@ async def list_incidents_paged(
     offset: int = Query(default=0, ge=0),
     search: str | None = Query(default=None),
     site: str | None = Query(default=None),
+    device_id: int | None = Query(default=None, ge=1),
     db: AsyncSession = Depends(get_db),
 ) -> IncidentPage:
     """Handle the incidents paged endpoint."""
@@ -71,6 +72,7 @@ async def list_incidents_paged(
         offset=offset,
         search=search,
         site=site,
+        device_id=device_id,
     )
     payload_scope = str(status or "all")
     if str(search or "").strip():
