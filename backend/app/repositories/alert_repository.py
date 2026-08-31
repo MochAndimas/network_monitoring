@@ -40,6 +40,8 @@ class AlertRepository:
         offset: int = 0,
         severity: str | None = None,
         site: str | None = None,
+        alert_type: str | None = None,
+        device_id: int | None = None,
         search: str | None = None,
     ) -> list[dict]:
         """Query active alert rows from the database."""
@@ -55,6 +57,11 @@ class AlertRepository:
         normalized_site = str(site or "").strip().lower()
         if normalized_site:
             query = query.where(func.lower(Device.site) == normalized_site)
+        normalized_type = str(alert_type or "").strip().lower()
+        if normalized_type:
+            query = query.where(func.lower(Alert.alert_type) == normalized_type)
+        if device_id is not None:
+            query = query.where(Alert.device_id == device_id)
         normalized_search = str(search or "").strip().lower()
         if normalized_search:
             query = query.where(
@@ -91,6 +98,8 @@ class AlertRepository:
         offset: int = 0,
         severity: str | None = None,
         site: str | None = None,
+        alert_type: str | None = None,
+        device_id: int | None = None,
         search: str | None = None,
     ) -> tuple[list[dict], int]:
         """Query active alert rows paged from the database."""
@@ -99,11 +108,13 @@ class AlertRepository:
             offset=offset,
             severity=severity,
             site=site,
+            alert_type=alert_type,
+            device_id=device_id,
             search=search,
         )
         if offset == 0 and len(rows) < limit:
             return rows, len(rows)
-        total = await self.count_active_alerts(severity=severity, site=site, search=search)
+        total = await self.count_active_alerts(severity=severity, site=site, alert_type=alert_type, device_id=device_id, search=search)
         return rows, total
 
     async def summarize_active_alert_severity_counts(self) -> dict[str, int]:
@@ -122,6 +133,8 @@ class AlertRepository:
         *,
         severity: str | None = None,
         site: str | None = None,
+        alert_type: str | None = None,
+        device_id: int | None = None,
         search: str | None = None,
     ) -> int:
         """Query active alerts from the database."""
@@ -132,6 +145,11 @@ class AlertRepository:
         normalized_site = str(site or "").strip().lower()
         if normalized_site:
             query = query.join(Device, Device.id == Alert.device_id, isouter=True).where(func.lower(Device.site) == normalized_site)
+        normalized_type = str(alert_type or "").strip().lower()
+        if normalized_type:
+            query = query.where(func.lower(Alert.alert_type) == normalized_type)
+        if device_id is not None:
+            query = query.where(Alert.device_id == device_id)
         normalized_search = str(search or "").strip().lower()
         needs_device_join = bool(normalized_search) and not normalized_site
         if normalized_search:

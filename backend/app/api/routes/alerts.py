@@ -30,6 +30,8 @@ async def get_active_alerts_paged(
     offset: int = Query(default=0, ge=0),
     severity: str | None = Query(default=None),
     site: str | None = Query(default=None),
+    alert_type: str | None = Query(default=None),
+    device_id: int | None = Query(default=None, ge=1),
     search: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> AlertPage:
@@ -39,6 +41,8 @@ async def get_active_alerts_paged(
         offset=offset,
         severity=severity,
         site=site,
+        alert_type=alert_type,
+        device_id=device_id,
         search=search,
     )
     scope_parts = ["active"]
@@ -48,6 +52,10 @@ async def get_active_alerts_paged(
         scope_parts.append("site")
     if str(search or "").strip():
         scope_parts.append("search")
+    if str(alert_type or "").strip():
+        scope_parts.append("type")
+    if device_id is not None:
+        scope_parts.append("device")
     payload_scope = "+".join(scope_parts)
     record_api_payload_request(endpoint="/alerts/active/paged", scope=payload_scope)
     record_api_payload_section(
