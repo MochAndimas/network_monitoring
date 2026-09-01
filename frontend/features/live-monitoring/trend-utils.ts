@@ -8,6 +8,7 @@ const LABELS: Record<string, string> = {
 
 const MIKROTIK_DEFAULTS = ["ping", "packet_loss", "jitter", "cpu_percent"];
 const NAS_DEFAULTS = ["ping", "packet_loss", "jitter", "cpu_percent", "memory_percent", "disk_percent"];
+const PRINTER_CARD_ONLY = new Set(["printer_uptime_seconds", "printer_total_pages"]);
 
 export function isMikrotikDevice(deviceType: string | undefined, deviceName: string | undefined) {
   return deviceType?.toLowerCase() === "mikrotik" || deviceName?.toLowerCase().includes("mikrotik") === true;
@@ -18,9 +19,9 @@ export function metricLabel(metricName: string) {
 }
 
 export function trendMetricNames(deviceType: string | undefined, metricNames: readonly string[], selectedMetric: string) {
-  if (selectedMetric) return selectedMetric.startsWith("interface:") || selectedMetric.startsWith("queue:") || selectedMetric.startsWith("firewall:") ? [] : [selectedMetric];
+  if (selectedMetric) return selectedMetric.startsWith("interface:") || selectedMetric.startsWith("queue:") || selectedMetric.startsWith("firewall:") || (deviceType === "printer" && PRINTER_CARD_ONLY.has(selectedMetric)) ? [] : [selectedMetric];
   const preferred = deviceType === "mikrotik" ? MIKROTIK_DEFAULTS : deviceType === "nas" ? NAS_DEFAULTS : metricNames;
-  return preferred.filter((metric) => metricNames.includes(metric) && !metric.startsWith("interface:") && !metric.startsWith("queue:") && !metric.startsWith("firewall:"));
+  return preferred.filter((metric) => metricNames.includes(metric) && !metric.startsWith("interface:") && !metric.startsWith("queue:") && !metric.startsWith("firewall:") && !(deviceType === "printer" && PRINTER_CARD_ONLY.has(metric)));
 }
 
 export function numericSamplesByMetric(samples: readonly MetricSample[], windowHours: number) {

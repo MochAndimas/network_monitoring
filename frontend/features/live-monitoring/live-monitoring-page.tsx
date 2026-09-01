@@ -14,6 +14,7 @@ import { formatWib } from "@/lib/formatters";
 import { LiveInsights } from "./live-insights";
 import { MikrotikDetail } from "./mikrotik-detail";
 import { NasDetail } from "./nas-detail";
+import { PrinterDetail } from "./printer-detail";
 import { LiveTrends } from "./live-trends";
 import { isMikrotikDevice, trendMetricNames } from "./trend-utils";
 import type { DeviceOption, LiveMonitoringContext, MetricSample } from "./types";
@@ -35,6 +36,7 @@ export function LiveMonitoringPage() {
   const selectedDevice = devices.data?.find((device) => String(device.id) === deviceId);
   const selectedIsMikrotik = isMikrotikDevice(selectedDevice?.device_type, selectedDevice?.name);
   const selectedIsNas = selectedDevice?.device_type === "nas";
+  const selectedIsPrinter = selectedDevice?.device_type === "printer";
   const deviceMetrics = useQuery({
     queryKey: ["metrics", "names", deviceId],
     queryFn: () => apiFetch<string[]>(withQuery("/metrics/names", { device_id: deviceId })),
@@ -51,7 +53,7 @@ export function LiveMonitoringPage() {
       snapshot_limit: SNAPSHOT_LIMIT,
       snapshot_offset: snapshotOffset,
       include_selected_device_trend: Boolean(deviceId),
-      include_selected_device_snapshot: selectedIsMikrotik || selectedIsNas,
+      include_selected_device_snapshot: selectedIsMikrotik || selectedIsNas || selectedIsPrinter,
       trend_metric_names: selectedTrendMetrics,
       trend_limit: 500
     })),
@@ -104,6 +106,7 @@ export function LiveMonitoringPage() {
 
     {selectedIsMikrotik ? <MikrotikDetail samples={data.selected_device_snapshot.items} /> : null}
     {selectedIsNas ? <NasDetail samples={data.selected_device_snapshot.items} /> : null}
+    {selectedIsPrinter ? <PrinterDetail samples={data.selected_device_snapshot.items} /> : null}
     <LiveTrends deviceName={selectedDevice?.name} selectedMetric={metric} samples={data.selected_device_trend.items} windowHours={chartWindowHours} />
 
     <section>
