@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { CsvExport } from "@/components/ui/csv-export";
 import { DataTable } from "@/components/ui/data-table";
@@ -15,6 +15,7 @@ import { LiveInsights } from "./live-insights";
 import { MikrotikDetail } from "./mikrotik-detail";
 import { NasDetail } from "./nas-detail";
 import { PrinterDetail } from "./printer-detail";
+import { VoipDetail } from "./voip-detail";
 import { LiveTrends } from "./live-trends";
 import { isMikrotikDevice, trendMetricNames } from "./trend-utils";
 import type { DeviceOption, LiveMonitoringContext, MetricSample } from "./types";
@@ -33,16 +34,25 @@ export function LiveMonitoringPage() {
   const [chartWindowHours, setChartWindowHours] = useState(6);
   const [snapshotOffset, setSnapshotOffset] = useState(0);
   const devices = useQuery({ queryKey: ["devices", "options"], queryFn: () => apiFetch<DeviceOption[]>("/devices/options?active_only=true") });
+  const isVoipGroup = deviceId === "__voip__";
+  const voipDevices = devices.data?.filter((device) => device.device_type === "voip") ?? [];
   const selectedDevice = devices.data?.find((device) => String(device.id) === deviceId);
   const selectedIsMikrotik = isMikrotikDevice(selectedDevice?.device_type, selectedDevice?.name);
   const selectedIsNas = selectedDevice?.device_type === "nas";
   const selectedIsPrinter = selectedDevice?.device_type === "printer";
+  const voipMetricNames = useQuery({ queryKey: ["metrics", "names", "voip"], queryFn: () => apiFetch<string[]>(withQuery("/metrics/names", { device_id: voipDevices[0]?.id })), enabled: isVoipGroup && voipDevices.length > 0 });
   const deviceMetrics = useQuery({
     queryKey: ["metrics", "names", deviceId],
     queryFn: () => apiFetch<string[]>(withQuery("/metrics/names", { device_id: deviceId })),
-    enabled: Boolean(deviceId)
+    enabled: Boolean(deviceId) && !isVoipGroup
   });
-  const selectedTrendMetrics = trendMetricNames(selectedIsMikrotik ? "mikrotik" : selectedDevice?.device_type, deviceMetrics.data ?? [], metric);
+  const selectedTrendMetrics = isVoipGroup ? (metric ? [metric] : voipMetricNames.data ?? []) : trendMetricNames(selectedIsMikrotik ? "mikrotik" : selectedDevice?.device_type, deviceMetrics.data ?? [], metric);
+  const voipHistory = useQueries({ queries: voipDevices.map((device) => ({
+    queryKey: ["live-monitoring", "voip", device.id, metric, status, selectedTrendMetrics],
+    queryFn: () => apiFetch<LiveMonitoringContext>(withQuery("/metrics/history/live", { device_id: device.id, metric_name: metric || undefined, status: status || undefined, include_selected_device_trend: true, trend_metric_names: selectedTrendMetrics, trend_limit: 500, limit: 500 })),
+    enabled: isVoipGroup && selectedTrendMetrics.length > 0,
+    refetchInterval: 15_000
+  })) });
   const monitoring = useQuery({
     queryKey: ["live-monitoring", deviceId, metric, status, chartWindowHours, selectedTrendMetrics, snapshotOffset],
     queryFn: () => apiFetch<LiveMonitoringContext>(withQuery("/metrics/history/live", {
@@ -60,11 +70,12 @@ export function LiveMonitoringPage() {
     refetchInterval: 15_000
   });
 
-  if (monitoring.isPending || devices.isPending || (deviceMetrics.isPending && Boolean(deviceId))) return <LoadingState />;
-  if (monitoring.isError || devices.isError || deviceMetrics.isError) return <ErrorState message="Live monitoring tidak dapat dimuat." onRetry={() => { void monitoring.refetch(); void devices.refetch(); void deviceMetrics.refetch(); }} />;
+  if (monitoring.isPending || devices.isPending || (deviceMetrics.isPending && Boolean(deviceId) && !isVoipGroup) || (isVoipGroup && voipMetricNames.isPending)) return <LoadingState />;
+  if (monitoring.isError || devices.isError || deviceMetrics.isError || voipMetricNames.isError || voipHistory.some((query) => query.isError)) return <ErrorState message="Live monitoring tidak dapat dimuat." onRetry={() => { void monitoring.refetch(); void devices.refetch(); void deviceMetrics.refetch(); void voipMetricNames.refetch(); voipHistory.forEach((query) => void query.refetch()); }} />;
 
   const data = monitoring.data;
-  const metricOptions = deviceId ? deviceMetrics.data ?? [] : data.metric_names;
+  const metricOptions = isVoipGroup ? voipMetricNames.data ?? [] : deviceId ? deviceMetrics.data ?? [] : data.metric_names;
+  const voipSamples = voipHistory.flatMap((query) => query.data?.selected_device_trend.items ?? []);
   const anomalies = data.latest_snapshot.items.filter((item) => ["warning", "down", "error"].includes(String(item.status))).length;
   const monitoredDevices = new Set(data.latest_snapshot.items.map((item) => item.device_name)).size;
   const snapshotColumns = [
@@ -96,7 +107,7 @@ export function LiveMonitoringPage() {
     </MetricGrid>
 
     <div className="filter-panel">
-      <label>Device<select value={deviceId} onChange={(event) => { setDeviceId(event.target.value); resetSnapshot(); }}><option value="">Semua device</option>{devices.data.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.ip_address}</option>)}</select></label>
+      <label>Device<select value={deviceId} onChange={(event) => { setDeviceId(event.target.value); resetSnapshot(); }}><option value="">Semua device</option>{voipDevices.length ? <option value="__voip__">Semua VoIP</option> : null}{devices.data.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.ip_address}</option>)}</select></label>
       <label>Metrik<select value={metric} onChange={(event) => { setMetric(event.target.value); resetSnapshot(); }}><option value="">Semua metrik</option>{metricOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
       <label>Status<select value={status} onChange={(event) => { setStatus(event.target.value); resetSnapshot(); }}><option value="">Semua status</option>{["ok", "warning", "down", "error"].map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
       <label>Window chart<select value={chartWindowHours} onChange={(event) => setChartWindowHours(Number(event.target.value))}><option value={1}>1 jam</option><option value={6}>6 jam</option><option value={12}>12 jam</option><option value={24}>24 jam</option></select></label>
@@ -107,7 +118,7 @@ export function LiveMonitoringPage() {
     {selectedIsMikrotik ? <MikrotikDetail samples={data.selected_device_snapshot.items} /> : null}
     {selectedIsNas ? <NasDetail samples={data.selected_device_snapshot.items} /> : null}
     {selectedIsPrinter ? <PrinterDetail samples={data.selected_device_snapshot.items} /> : null}
-    <LiveTrends deviceName={selectedDevice?.name} selectedMetric={metric} samples={data.selected_device_trend.items} windowHours={chartWindowHours} />
+    {isVoipGroup ? <VoipDetail samples={voipSamples} selectedMetric={metric} windowHours={chartWindowHours} /> : <LiveTrends deviceName={selectedDevice?.name} selectedMetric={metric} samples={data.selected_device_trend.items} windowHours={chartWindowHours} />}
 
     <section>
       <div className="section-header"><h2>Snapshot Terbaru</h2><CsvExport filename="live-snapshot.csv" columns={["Device", "Metrik", "Nilai", "Uptime", "Status", "Dicek WIB"]} rows={data.latest_snapshot.items.map((item) => [item.device_name, item.metric_name, displayValue(item), data.snapshot_uptime_map[item.device_name], item.status, formatWib(item.checked_at)])} /></div>
