@@ -14,6 +14,7 @@ Project ini cocok untuk:
 - Python 3.12
 - FastAPI untuk backend API
 - Streamlit untuk dashboard internal
+- Next.js untuk frontend refactor (berjalan paralel selama cutover)
 - MySQL 8.4 untuk database utama
 - SQLAlchemy async + Alembic untuk persistence dan migration
 - APScheduler untuk worker monitoring periodik
@@ -95,7 +96,7 @@ BOOTSTRAP_ADMIN_USERNAME=admin
 BOOTSTRAP_ADMIN_FULL_NAME=Monitoring Admin
 BOOTSTRAP_ADMIN_PASSWORD=replace-with-a-strong-admin-password
 INTERNAL_API_KEYS=operator:replace-with-ops-key:read,write,ops
-CORS_ORIGINS=http://localhost:8501,http://127.0.0.1:8501
+  CORS_ORIGINS=http://localhost:8501,http://127.0.0.1:8501,http://localhost:3000,http://127.0.0.1:3000
 TRUSTED_HOSTS=localhost,127.0.0.1,backend
 DASHBOARD_PUBLIC_API_URL=http://localhost:8000
 AUTH_COOKIE_SECURE=false
@@ -125,6 +126,7 @@ Service default:
 - MySQL: `127.0.0.1:3306`
 - Backend API: `http://localhost:8000`
 - Dashboard: `http://localhost:8501`
+- Frontend Next.js: `http://localhost:3000` (fondasi refactor; Streamlit tetap aktif sampai cutover)
 - Scheduler: service `scheduler`, tidak expose port
 
 Login dashboard memakai akun bootstrap admin dari `BOOTSTRAP_ADMIN_USERNAME` dan `BOOTSTRAP_ADMIN_PASSWORD`.

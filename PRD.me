@@ -1,229 +1,279 @@
-# Product Requirements Document — Network Monitoring
+# PRD — Refactor Frontend Network Monitoring ke Next.js
 
-**Status:** Active baseline
+**Status:** Draft implementasi
 
-**Tanggal:** 2026-08-28
+**Tanggal:** 2026-08-31
+**Scope:** Penggantian penuh frontend Streamlit menjadi Next.js.
 
-## 1. Ringkasan Produk
+## Status Implementasi (2026-09-01)
 
-Network Monitoring adalah aplikasi internal untuk memantau jaringan dan perangkat penting kantor dari satu tempat. Sistem dirancang untuk penggunaan internal IT/ops, berjalan di NAS/server lokal, memakai alamat private device, dan menghubungkan beberapa kantor lewat site-to-site VPN.
+Status ini hanya menandai hasil yang sudah tersedia di codebase; parity penuh terhadap Streamlit masih berlangsung.
 
-Komponen utama:
+| Area | Status | Cakupan yang sudah selesai |
+| --- | --- | --- |
+| Foundation | Selesai untuk batch awal | Next.js App Router, TypeScript strict, TanStack Query, Docker frontend, typed API client, formatter WIB, dan lockfile dependency. |
+| Shell, auth, dan RBAC UX | Selesai untuk read-only/mutation gate awal | Route guard, login, restore session, logout, AppShell navigasi, informasi akun/role/kedaluwarsa sesi, serta `PermissionGate` admin. |
+| Primitives bersama | Selesai untuk batch awal | Page header, metadata strip, metric grid/card, status badge, loading/error, responsive table, pagination, dan CSV export. |
+| Overview | Sebagian | KPI, metadata, tabel prioritas/alert/incident, snapshot metric terbaru, CSV terkait, serta tombol run-cycle khusus admin. Chart alert, freshness label lengkap, dan parity visual akhir belum selesai. |
+| Daily Summary | Sebagian | Fetch daily rollup server-side, filter, pagination, tabel detail lengkap, dan CSV. Filter option backend serta chart uptime/ping masih belum selesai. |
+| Live Monitoring | Belum dimulai | — |
+| Devices | Belum dimulai | — |
+| Alerts | Belum dimulai | — |
+| Incidents | Belum dimulai | — |
+| Thresholds | Belum dimulai | — |
+| System Health | Belum dimulai | — |
+| Test automation/E2E dan cutover | Belum dimulai | Build/typecheck frontend sudah lulus; unit/component/E2E parity belum tersedia. |
 
-- FastAPI sebagai API, authentication, authorization, dan business logic.
-- Scheduler terpisah untuk menjalankan collector dan alert engine.
-- MySQL sebagai persistence device, metric, alert, incident, auth, audit, dan telemetry.
-- Streamlit sebagai frontend saat ini.
-- Telegram sebagai channel notification aktif.
-- Optional collector agent per site untuk scale-out polling melalui VPN.
+## 1. Keputusan Produk
+
+Frontend baru wajib mencapai feature, data, visual, dan interaction parity terhadap frontend Streamlit lama. Semua halaman, chart, tabel, metric card, filter, pagination, export CSV, role behavior, dan layout informasi yang ada saat ini harus tersedia di Next.js.
+
+Prinsipnya adalah **parity before redesign**: perbaikan responsivitas, aksesibilitas, dan konsistensi boleh dilakukan, tetapi tidak boleh mengurangi informasi, mengubah alur operator, atau menyederhanakan tampilan sebelum parity disetujui.
+
+FastAPI tetap pemilik authentication, authorization, business logic, validation, workflow, dan data shaping. MySQL tidak boleh diakses langsung dari frontend. Scheduler, collector, alert engine, dan Telegram tidak dipindahkan ke Next.js.
 
 ## 2. Tujuan
 
-1. Menampilkan health, kualitas koneksi, dan freshness perangkat secara cepat.
-2. Memberikan inventory device dengan site wajib dan lokasi fisik opsional.
-3. Memisahkan gangguan device nyata dari kegagalan collector/VPN/credential/OID.
-4. Membuat alert dan incident yang actionable, dapat diacknowledge, resolve, dan diaudit.
-5. Menjaga deployment tetap private-network-first serta dapat berkembang ke multi-site.
+1. Menggantikan seluruh UI Streamlit dengan aplikasi Next.js production-ready.
+2. Mempertahankan semua kemampuan operasional FE lama di setiap halaman.
+3. Membuat code frontend type-safe, modular, testable, maintainable, dan scalable.
+4. Mempertahankan format data operator: WIB, unit metric, severity/status, freshness, dan CSV export.
+5. Mendukung desktop-wide sebagai prioritas, lalu tablet/mobile tanpa menyembunyikan data penting.
 
-## 3. Batasan Produk
+## 3. Inventaris Halaman yang Wajib Diparitas
 
-- Bukan pengganti ITSM/helpdesk atau NMS enterprise dengan auto-discovery/configuration backup penuh.
-- Tidak membuka SNMP, MikroTik API, MySQL, atau management device ke internet publik.
-- Tidak melakukan remote command ke perangkat.
-- Availability awal adalah single-node; HA/failover hanya dievaluasi jika SLO tidak tercapai.
+Audit dilakukan terhadap seluruh folder `dashboard/`. Semua route berikut wajib ada:
 
-## 4. Pengguna dan Hak Akses
+| Route Next.js | FE lama | Kewajiban |
+| --- | --- | --- |
+| `/` | Overview | KPI global, prioritas masalah, action run cycle admin |
+| `/daily-summary` | Daily Summary | rollup harian, chart uptime/ping, detail/export |
+| `/live-monitoring` | Live Monitoring | filter, snapshot/history, trend, detail device |
+| `/devices` | Devices | inventory, CRUD, import/export |
+| `/alerts` | Alerts | active alert analytics/detail |
+| `/incidents` | Incidents | analytics, board, detail/timeline, workflow |
+| `/thresholds` | Thresholds | global, override, maintenance |
+| `/system-health` | System Health | observability backend, scheduler, collector |
 
-| Persona | Kemampuan |
-| --- | --- |
-| Viewer/Operator | Membaca dashboard, metric, alert, incident, dan history |
-| Admin IT | Mengelola device, threshold, maintenance window, user, serta workflow incident |
-| Network Engineer | Menentukan VPN, ACL, SNMP/API, site, dan melakukan triage |
-| Maintainer | Mengubah collector/rule/schema dan menjalankan quality/release gate |
+Login, session restore/refresh, logout, informasi akun/role/kedaluwarsa sesi, serta pembatasan admin/viewer berlaku lintas halaman.
 
-Backend menerapkan session/JWT, API key scope, RBAC, login rate limit, dan admin audit log. Viewer tidak boleh menjalankan mutation admin.
+## 4. Standar UI dan Visual Parity
 
-## 5. Arsitektur
+- Setiap halaman memakai page header (judul + deskripsi), layout lebar, metadata strip, dan urutan section seperti FE lama.
+- Metadata strip menampilkan auto refresh, last rendered, serta konteks page/filter yang relevan.
+- Metric card berbentuk card berbingkai; jumlah kolom mengikuti halaman lama (3/4/5/6/8) dan responsif pada layar kecil.
+- Status `Up`, `OK`, `Warning`, `Down`, `Error`, `Unknown`, `Active`, `Resolved`, severity, dan freshness memiliki label, urutan prioritas, ikon/warna yang konsisten dan tidak hanya mengandalkan warna.
+- Tabel mempertahankan kolom, urutan, label, format angka, unit, timestamp WIB, dan relative width dari FE lama. Pada layar kecil tabel dapat scroll horizontal.
+- Chart mempertahankan tipe (line/bar), orientasi, title, axis label, unit, legend, tooltip, urutan severity, dan tinggi visual setara Plotly lama.
+- Header section yang lama memiliki export wajib memiliki tombol `Download CSV` di kanan.
+- Filter utama berada di atas; filter lanjutan tetap collapsible. Perubahan filter me-reset pagination ke halaman pertama.
+- Semua page memiliki loading, empty, error, retry, stale, forbidden, dan mutation-pending state yang jelas.
+- Auto refresh default 15 detik pada page real-time; polling harus visibility-aware dan tidak menimpa form/modal yang sedang diedit.
 
-```mermaid
-flowchart LR
-  Browser --> Dashboard[Streamlit Dashboard]
-  Dashboard --> API[FastAPI]
-  API --> DB[(MySQL)]
-  Scheduler --> Collectors[Internet / Ping / SNMP / MikroTik]
-  Collectors --> Devices[Device melalui LAN/VPN]
-  Scheduler --> DB
-  Scheduler --> AlertEngine[Alert & Incident Engine]
-  AlertEngine --> Telegram[Telegram]
-  Agent[Optional Site Agent] -->|VPN private| DB
-  Agent --> Branch[Device Site Cabang]
+## 5. Kebutuhan per Halaman
+
+### 5.1 Overview
+
+- Metadata refresh, pemeriksaan terakhir WIB, dan tombol **Jalankan Monitoring Cycle** untuk admin. Viewer melihat informasi role dan masa sesi.
+- Empat KPI Status Global: Internet, MikroTik, Server, Alert Aktif.
+- Lima KPI Snapshot Operasional: Total Device, Device Aktif, Device Down, Device Warning, Insiden Aktif.
+- Layout dua kolom: tabel **Device Perlu Perhatian** (device, IP, type, site, status, freshness, last check WIB + CSV) dan chart horizontal **Distribusi Tingkat Alert** dengan tabel ringkasan.
+- Dua tabel insight: **Alert Aktif Terbaru** dan **Insiden Aktif**.
+- Tabel **Snapshot Metric Terbaru** (checked at, device, metric, value, status, freshness) dan CSV.
+
+### 5.2 Daily Summary
+
+- Filter tanggal, device, site, dan device type dari data backend.
+- Menggunakan daily rollup, bukan raw history; pagination harus server-side.
+- KPI cakupan rollup/kualitas koneksi yang sama dengan FE lama.
+- Dua chart berdampingan: tren uptime dan rata-rata ping.
+- Tabel detail rollup: tanggal, device, tipe, sample, ping sample, down, uptime, avg/min/max ping, packet loss, avg/max jitter, terakhir update; CSV dan kontrol page/page-size.
+
+### 5.3 Live Monitoring
+
+- Filter utama: device, nama metric yang dependent pada device, status. Filter lanjutan: batas baris, chart window, tanggal mulai/akhir.
+- Live mode mengunci range 24 jam terakhir; mode manual memperbolehkan range tanggal. Metadata menampilkan device, range, chart window, refresh, dan total sample.
+- Mendukung Semua Device, satu device, dan grup **Semua VoIP**. Untuk VoIP setiap warna chart adalah satu device; card menggunakan agregasi, tanpa mencampur series.
+
+#### 5.3.1 Card dan tabel yang selalu ada
+
+1. **Ringkasan Eksekutif** — lima metric card dalam satu baris:
+   - Total Data;
+   - Device Terpantau;
+   - Metrik Aktif;
+   - Anomali Aktif;
+   - Skor Kesehatan (%).
+   Di bawah card tampil timestamp **Pengecekan terakhir (WIB)**.
+2. **Snapshot Terbaru** — tabel paginated + CSV dengan kolom: Device, Metrik, Nilai Terakhir, Uptime, Status, Dicek (WIB). Tampilkan juga jumlah baris snapshot yang sedang tampil dari total snapshot.
+3. **Insight Analisis**:
+   - chart donut/pie distribusi status (nilai = jumlah metric/status);
+   - tabel ringkas di samping chart: Status, Jumlah;
+   - tabel **Device Paling Aktif**: Device, Jumlah (maksimal 6);
+   - bila satu metric dipilih: tabel **Status Terbanyak**: Status, Jumlah (maksimal 6);
+   - bila `All Metrics`: tabel **Metrik Paling Sering Muncul**: Metrik, Jumlah (maksimal 6).
+4. **Anomali Terbaru** — hanya tampil bila ada warning/down/error; tabel paginated + CSV dengan kolom Dicek (WIB), Device, Metrik, Nilai, Status.
+
+#### 5.3.2 Trend dan detail metric
+
+1. Untuk satu device dengan metric numerik, render satu line chart per metric dalam urutan vertikal. Chart memuat waktu check WIB pada sumbu X, nilai numerik + unit pada sumbu Y, tooltip timestamp/nilai/status, serta window yang dipilih pengguna.
+2. Saat pengguna memilih satu metric, sebelum chart tampil enam metric card:
+   - Nilai Terakhir;
+   - Arah Tren;
+   - Rata-rata;
+   - Minimum;
+   - Maksimum;
+   - Status Terakhir.
+3. Saat `All Metrics`, chart yang tampil hanya metric relevan terhadap device dan tidak menampilkan dynamic metric MikroTik sebagai chart generik.
+4. Metric non-numerik wajib memakai tabel **Timeline Nilai Non-Numerik** + CSV: Dicek (WIB), Nilai, Status, Device, Metrik.
+5. Semua trend diakhiri tabel **Riwayat Detail** + CSV, paginated, dengan kolom: Dicek (WIB), Nilai, Nilai Numerik, Perubahan, Status, Device, Metrik, Catatan.
+
+#### 5.3.3 Detail MikroTik
+
+1. **Metrik MikroTik** memiliki enam health card:
+   - RouterOS API;
+   - CPU Load;
+   - Memory Used;
+   - Storage Used;
+   - DHCP Leases;
+   - Connected Clients.
+   Bila RouterOS API tidak `ok`, tampilkan warning bahwa data CPU/client/interface/queue/firewall bisa stale.
+2. **Interface Traffic** memiliki layout dua kolom:
+   - chart horizontal grouped bar RX Mbps vs TX Mbps per Interface;
+   - tabel Interface Traffic paginated: Interface, RX Bytes, TX Bytes, RX Mbps, TX Mbps, Status.
+3. **Firewall / NAT Counters** adalah tabel paginated: Rule, Packets, Bytes, PPS, Mbps, Spike. Tampilkan maksimal 12 rule teratas berdasarkan PPS/Mbps/Packets.
+4. Trend generic default ketika `All Metrics`: Ping, Packet Loss, Jitter, CPU Percent (hanya bila tersedia). Dynamic metric berprefix `interface:`, `queue:`, dan `firewall:` tidak dirender sebagai line chart generic.
+
+#### 5.3.4 Detail NAS
+
+1. **Kesehatan NAS** memiliki tujuh metric card dalam dua baris:
+   - Kolektor SNMP;
+   - CPU;
+   - Memory;
+   - Volume Used;
+   - System Temp;
+   - System;
+   - Uptime.
+   Jika status kolektor bukan `ok`, tampilkan warning data volume/RAID/disk/temperatur mungkin stale.
+2. **Kapasitas Volume** adalah tabel paginated: Volume, Status, Total, Terpakai, Sisa, Used, Dicek (WIB).
+3. Dua tabel berdampingan:
+   - **Status Hardware**: Komponen, Nilai, Status, Dicek (WIB);
+   - **Temperatur Disk**: Disk, Temperature, Status, Dicek (WIB).
+4. Metric stabil/card-only tidak dibuat line chart. Saat metric tersebut dipilih, tampilkan tiga card: nama metric/nilai terakhir, Status, Dicek (WIB). Default trend NAS hanya memakai metric yang memang dapat ditrendkan.
+
+#### 5.3.5 Detail Printer
+
+**Kesehatan Printer** wajib menampilkan delapan metric card dalam dua baris:
+
+1. Kolektor SNMP (dengan metadata protokol);
+2. Status Keseluruhan;
+3. Status Error;
+4. Status Kertas (dengan lokasi/detail bila tersedia);
+5. Status Tinta;
+6. Toner Black;
+7. Uptime;
+8. Total Halaman.
+
+Jika kolektor SNMP tidak `ok`, tampilkan warning bahwa status kertas, toner, dan counter mungkin stale. Riwayat printer tetap menggunakan chart/tabel generic hanya untuk metric yang relevan dan numerik; card di atas wajib tetap ada.
+
+#### 5.3.6 Detail grup VoIP
+
+Untuk setiap metric yang dipilih (atau seluruh metric yang tersedia), tampilkan:
+
+- empat metric card: Rata-rata Terkini, Minimum, Maksimum, Device dengan Data;
+- satu line chart berjudul `Tren <Metric> - Semua VoIP`, dengan satu series/warna per device, legend Device, dan tooltip nilai/display value/status;
+- caption eksplisit bahwa card memakai agregasi terbaru antar-device sedangkan tiap warna chart adalah device individual.
+
+### 5.4 Devices
+
+- Tab **Inventory**: search nama/IP/site/lokasi, filter status terakhir/aktif saja/tipe, KPI, tabel dan CSV, pagination server-side.
+- Kolom: nama, IP, tipe, site, lokasi, status terakhir, freshness, status aktif.
+- Tab **Kelola** untuk admin: create device (nama, IP, tipe, site, lokasi, deskripsi, aktif), error/success backend, search/filter, KPI active/inactive, tabel dan export.
+- Import CSV: upload, dry-run, preview data valid, tabel error per baris, import valid, laporan partial success. Kolom wajib: `name`, `ip_address`, `device_type`, `site`; opsional: `location`, `description`, `is_active`.
+- Pemilih device, modal edit, dan modal hapus dengan konfirmasi wajib tersedia.
+
+### 5.5 Alerts
+
+- Menampilkan active alerts dengan filter severity, site, pencarian device/pesan; advanced filter sort, max detail row, dan page size.
+- Menampilkan metadata filter/cakupan serta pagination server-side.
+- KPI: Total Alert Aktif, Critical/High, Device Terdampak, Alert Tertua WIB.
+- Dua kolom analytics: chart/tabel **Distribusi Tingkat Alert** dan chart/tabel **Device Paling Terdampak**.
+- Tabel detail dan CSV mempertahankan created/resolved time, device, site, severity, pesan, dan kolom operasional lama.
+
+### 5.6 Incidents
+
+- Filter status, severity, search, advanced filter, pagination dan CSV.
+- KPI dan analytics status/severity/device dengan chart + tabel.
+- Tab **Analytics** serta **Incident Board**; board mempertahankan lane status, lane limit, card incident, severity, summary, dan akses detail.
+- Detail dibuka sebagai modal/drawer besar berisi metadata, escalation context, dan timeline timestamp WIB.
+- Admin dapat menyimpan owner/assignee/severity override dan melakukan acknowledge, resolve, reopen. Viewer read-only.
+
+### 5.7 Thresholds
+
+- Tiga tab: **Global**, **Overrides**, **Maintenance**.
+- Global: filter kategori/search/sort, KPI total/kategori/rata-rata/maksimum, chart+tabel ringkasan kategori, tabel detail paginated, editor update admin.
+- Overrides: tabel status, form create berdasarkan key/value/scope/description, deactivate override aktif.
+- Maintenance: tabel window, form create scope/waktu/deskripsi, deactivate window aktif.
+- Semua mutation hanya admin; viewer tetap dapat melihat policy context.
+
+### 5.8 System Health
+
+- Metadata refresh/database/scheduler/operational alert.
+- KPI operational: device, latest metric, alert, incident, job running/failing/stale, max lag.
+- KPI capacity/antrian: DB pool, overflow, job lag, misfire, lock contention, metric write rate.
+- Seluruh section lama harus tersedia: Operational Alerts, Scheduler Timing, Kesehatan Collector, Performa Collector 24 Jam, Scheduler Jobs, Freshness per Collector/Site, Auth Observability, Runtime.
+- Semua tabel mempertahankan pagination/export/empty state dan data triage: success rate, timeout, unsupported OID, freshness, heartbeat, lag, duration, runtime key/value.
+
+## 6. API, Auth, dan Security
+
+- Gunakan endpoint FastAPI yang ada untuk dashboard, metrics, devices, alerts, incidents, thresholds, observability, health, system, dan auth.
+- Satu typed API client menangani auth header, parsing, error normalization, abort/cancellation, pagination, dan retry read-only.
+- Token tidak boleh hadir di URL, log, CSV, error UI, atau telemetry.
+- Route guard dipakai untuk UX; FastAPI tetap source of truth authorization.
+- Semua mutation memakai endpoint backend dan invalidate cache domain terkait setelah sukses.
+
+## 7. Arsitektur yang Maintainable dan Scalable
+
+- Next.js App Router dan TypeScript strict.
+- Server component untuk shell/initial read bila tepat; client component untuk filter, polling, chart, table, form, dan dialog.
+- Gunakan query/cache layer mature (misalnya TanStack Query) untuk cache key, dedupe, stale time, invalidation, polling sadar visibility, dan request cancellation.
+- Gunakan schema validation/form library (misalnya Zod + React Hook Form), lazy-loaded Plotly wrapper, serta table abstraction server-side.
+- Struktur minimum:
+
+```
+app/                    # routes dan layout
+features/<domain>/      # api, types, hooks, schemas, components per domain
+components/ui/          # primitives bersama
+components/charts/      # chart wrappers dan config
+components/tables/      # table/pagination/export
+lib/                    # api, auth, formatters, constants
+tests/                  # unit, component, E2E
 ```
 
-Aturan arsitektur:
+- Page hanya composition layer. Tidak ada fetch ad-hoc dalam page component.
+- Reuse komponen: AppShell, PageHeader, MetaStrip, MetricCard/Grid, StatusBadge, FreshnessLabel, FilterPanel, AdvancedFilter, DataTable, Pagination, CsvExport, Empty/Error/LoadingState, ConfirmDialog, PermissionGate, WIB formatter.
+- Transformasi data, summary, status priority, query builder, dan chart-series dipisahkan dari rendering dan diberi unit test.
+- Live Monitoring memakai module/registry per device type agar penambahan tipe perangkat tidak menjadikan halaman monolith.
+- List besar selalu menggunakan filter/pagination API; search di-debounce dan request lama dibatalkan.
+- Filter/page disimpan di URL query parameter agar deep-link dan reload aman.
 
-- FastAPI adalah pemilik policy, authorization, validation, dan data shaping.
-- Dashboard hanya menampilkan state dan memanggil API.
-- Scheduler tetap berjalan ketika dashboard/browser ditutup.
-- MySQL adalah source of truth.
-- Semua device management menggunakan IP private/VPN.
+## 8. Quality dan Acceptance Criteria
 
-## 6. Domain Data
+1. Seluruh delapan route tersedia dan terlindungi autentikasi.
+2. Setiap card, chart, table, filter, tab, dialog, action, export, serta role behavior FE lama tersedia dan berfungsi.
+3. Screenshot comparison desktop memperlihatkan urutan section, layout, kepadatan informasi, jumlah/jenis visual setara dengan FE lama.
+4. Pada fixture data sama, tabel, format WIB/unit/status, summary dan jumlah record sama dengan FE lama.
+5. Series/axis/tooltip/legend chart serta group VoIP dan variasi MikroTik/NAS/Printer menghasilkan data setara.
+6. Pagination server-side benar, reset saat filter berubah, dan menampilkan range/total.
+7. CSV export memiliki kolom/urutan sesuai view lama dan mengikuti filter aktif.
+8. Viewer tidak dapat melakukan mutation; seluruh mutation admin berjalan melalui FastAPI.
+9. Unit test mencakup formatter/transformer/query/permission; component test mencakup filter/table/dialog; E2E mencakup login, navigasi semua page, refresh, export, dan alur admin utama.
+10. TypeScript strict, lint, production build, test suite, dan E2E critical path lulus sebelum cutover.
 
-| Entitas | Deskripsi |
-| --- | --- |
-| Device | Nama, IP, tipe, site, location, deskripsi, active state |
-| Metric / LatestMetric | Sampel raw dan snapshot terbaru untuk alert/UI |
-| Rollup / Cold Archive | Agregasi dan retention historis |
-| Alert | Kondisi warning/critical aktif atau resolved |
-| Incident / Timeline | Workflow open, ack, resolve, reopen, dan timeline |
-| Threshold / Override / MaintenanceWindow | Policy runtime dan suppress terjadwal |
-| SchedulerJobStatus / CollectorRun | Health scheduler dan performa collector |
-| User / Session / Audit Log | Identity, session, rate-limit, mutation audit |
+## 9. Tahapan Implementasi
 
-Aturan inventory:
-
-- Device type: internet target, MikroTik, server, NAS, NVR, switch, access point, VoIP, printer.
-- IP wajib valid dan unik.
-- Site wajib untuk create/import; location opsional.
-- Device nonaktif tidak dipoll.
-
-## 7. Kebutuhan Fungsional
-
-### 7.1 Authentication dan Administration
-
-- Login, restore session, logout, logout-all, dan change password.
-- Admin user management, reset password, session management, dan audit log.
-- Cookie/session security mengikuti environment production/development.
-
-### 7.2 Device Inventory
-
-- CRUD device dengan role admin.
-- Search/filter nama, IP, tipe, site, location, status dan active state.
-- CSV export, pagination, dan dry-run CSV import.
-- Error duplicate IP atau validation harus actionable.
-
-### 7.3 Monitoring Collector
-
-| Domain | Metric/Capability |
-| --- | --- |
-| General device | Ping, packet loss, jitter, ping collection status |
-| Internet | Ping target, DNS latency, HTTP latency, public IP |
-| Server | Ping, CPU, memory, disk, boot time untuk server resource target |
-| MikroTik | Ping, API health, CPU/RAM/disk, clients, DHCP, interface, firewall, queue |
-| Printer | Ping, SNMP v1/v2c, paper/tray, toner, status, uptime, page count, error state |
-| NAS | Ping dan SNMP health/volume/RAID/disk/temperature bila MIB tersedia |
-
-Canonical collection status: `ok`, `timeout`, `authentication_failed`, `connection_failed`, `unsupported_oid`, `protocol_error`, `invalid_response`, `rate_limited`, `configuration_missing`, `collector_error`.
-
-Kegagalan collection tidak boleh dimaknai sebagai hardware failure. Metric bisnis dependent harus stale/unavailable dan alert bisnisnya ditekan sampai data valid kembali.
-
-### 7.4 Alert, Incident, dan Telegram
-
-- Alert untuk device down, internet loss, ping/packet loss/jitter, DNS/HTTP, public IP, resource server/MikroTik, printer, NAS, dan collection degraded.
-- Threshold global dan override per type/site/device.
-- Grace period, cooldown, flap suppression, reminder, recovery, dan maintenance window.
-- Incident open/acknowledge/resolve/reopen dengan timeline dan escalation data.
-- Telegram batch/group per site/action/severity dengan dedupe; payload mencantumkan site/lokasi bila tersedia.
-- Notifier memakai contract agar channel lain dapat ditambah di masa depan.
-
-### 7.5 Dashboard dan Menu Saat Ini
-
-| Menu | Fungsi |
-| --- | --- |
-| Overview | KPI health dan prioritas masalah |
-| Daily Summary | Uptime dan quality harian |
-| Live Monitoring | Filter, metric card, chart Plotly, snapshot/history dan detail device |
-| Devices | Inventory, CRUD, import/export |
-| Alerts | Daftar alert aktif dan konteks policy |
-| Incidents | Board, detail/timeline dan workflow |
-| Thresholds | Threshold, override, maintenance window |
-| System Health | Backend/DB/scheduler/collector/capacity observability |
-
-Ketentuan UI:
-
-- Semua tabel besar memakai pagination dan CSV export.
-- Semua line/bar/pie chart memakai Plotly.
-- Timestamp UI memakai WIB dan unit/status harus konsisten.
-- Empty, loading, stale, unavailable, dan API error state harus jelas.
-- Live Monitoring mendukung aggregate VoIP dan detail printer/NAS/MikroTik.
-
-## 8. Scheduler, Lock, dan Scale-Out
-
-Interval default:
-
-- Internet dan alert evaluation: 30 detik.
-- Device, server, MikroTik: 60 detik.
-- Retention cleanup: 24 jam.
-
-Scheduler memakai coalescing, max instance, scheduler status, dan MySQL advisory lock untuk mencegah job overlap.
-
-Scale-out tersedia melalui collector agent per site:
-
-- Central scheduler mengisi `COLLECTOR_AGENT_SITES` untuk mengecualikan site yang didelegasikan.
-- Agent memakai `COLLECTOR_AGENT_SITE` dan hanya menjalankan `device_checks` untuk site lokal.
-- Agent menulis metric ke MySQL pusat melalui VPN private.
-- Jangan menjalankan central polling dan agent pada site yang sama.
-- Panduan ada di `docs/ops/collector-agent.md`.
-
-## 9. Security Requirements
-
-- `.env` ignored; `.env.example` hanya placeholder.
-- Secret dapat memakai environment/file-backed secret; tidak boleh masuk log, CSV, test fixture, screenshot, atau source.
-- SNMP menggunakan community read-only dan ACL monitoring/VPN bila tersedia.
-- CORS, trusted hosts, security headers, cookie secure, dan HTTPS wajib disesuaikan pada production.
-- MySQL dibatasi localhost/VPN; bukan public endpoint.
-- Perubahan schema wajib memakai Alembic migration.
-
-## 10. Observability dan Operasi
-
-System Health harus menampilkan:
-
-- Backend/database health dan runtime mode.
-- Scheduler heartbeat, interval, lag, stale/failing state, dan duration.
-- Collector health/success rate/timeout/OID unsupported/actionable triage.
-- Collector run duration, writes, success rate.
-- DB pool usage, missed-window/queue risk, pipeline lock contention, raw metric write rate.
-- Freshness per collector/site.
-
-Target awal:
-
-| Area | Target |
-| --- | --- |
-| API availability | >= 99.5% per bulan |
-| Scheduler success | >= 99.0% harian |
-| Internet freshness | 99% <= 2 menit |
-| Device/printer/NAS freshness | 99% <= 5 menit |
-| RPO | <= 24 jam untuk backup harian |
-| RTO awal | <= 120 menit |
-
-Backup/restore drill menggunakan dump konsisten, restore database temporary, validation count/checksum, evidence aman, dan cleanup database temporary. Drill diulang minimal per kuartal dan pada NAS production.
-
-## 11. Quality, Release, dan Definition of Done
-
-Quality gate wajib mencakup Ruff, mypy/Pyright, pytest, Alembic check/upgrade, Docker build, pip-audit/Bandit/Semgrep/Gitleaks, serta benchmark/smoke yang relevan.
-
-Sebuah perubahan selesai bila:
-
-1. Requirement dan acceptance criteria jelas.
-2. Business logic/authorization berada di backend.
-3. Collector baru memakai contract status aman dan fixture test.
-4. Perubahan schema memiliki Alembic upgrade/downgrade.
-5. Tabel/visual UI baru punya pagination/export/loading/error state.
-6. Alert baru memiliki severity, grace, dedupe, recovery behavior, dan test.
-7. README/runbook/changelog diubah bila perilaku ops/security berubah.
-8. Test, migration, build, security gate, health check, dan monitoring smoke lulus.
-
-## 12. Status Implementasi
-
-Legenda: `[x]` tersedia; `[~]` perlu validasi production/operasional; `[ ]` belum diperlukan saat ini.
-
-- [x] Compose runtime, FastAPI, scheduler, MySQL, Streamlit, Alembic.
-- [x] Auth/RBAC/API key/audit log/security middleware.
-- [x] Inventory site/location, CRUD, CSV dry-run import, pagination/export.
-- [x] Internet/ping/server/MikroTik/printer/NAS collectors dengan collection taxonomy.
-- [x] Alert/incident/threshold/maintenance/Telegram grouping dan recovery.
-- [x] Plotly monitoring, daily summary, System Health, retention, collector run telemetry.
-- [x] Backup/restore drill script, evidence workflow, dan collector agent site.
-- [~] Full quality gate perlu dijalankan dari environment dev/CI dengan dependency test lengkap sebelum release.
-- [~] DR drill harus diulang di NAS/host production dan disimpan off-host.
-- [ ] Notifier tambahan, distributed queue, HA/failover hanya dievaluasi bila metrics/SLO benar-benar membutuhkan.
+1. Foundation: Next.js, Docker, environment config, API client typed, auth/session, AppShell, design primitives, query/cache.
+2. Read-only parity: Overview, Daily Summary, Alerts, System Health, Devices Inventory; lakukan visual/data comparison.
+3. Complex parity: Live Monitoring, termasuk MikroTik, NAS, Printer, VoIP, dan edge case history.
+4. Mutation parity: Device CRUD/import, Incident workflow, Threshold/Override/Maintenance.
+5. Hardening: responsive/accessibility/performance, test automation, observability, UAT.
+6. Cutover: Next.js berjalan paralel dengan Streamlit, hasil dibandingkan pada data produksi, lalu switch setelah sign-off. Decommission Streamlit dilakukan terpisah dan reversible.

@@ -23,6 +23,8 @@ bin/
 etc/
 include/
 lib/
+!frontend/lib/
+!frontend/lib/**
 scripts/
 share/
 pyvenv.cfg
