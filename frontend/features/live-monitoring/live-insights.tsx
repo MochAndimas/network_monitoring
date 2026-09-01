@@ -20,10 +20,11 @@ export function LiveInsights({ samples, statusSummary }: { samples: MetricSample
     <h2>Insight Analisis</h2>
     <div className="two-column">
       <section className="insight-distribution">
+        <h3>Distribusi Status</h3>
         <PlotlyChart
           ariaLabel="Distribusi status snapshot"
-          data={[{ type: "pie", labels: statuses.map(([status]) => status), values: statuses.map(([, total]) => total), marker: { colors: statuses.map(([status]) => statusChartColor(status)) }, textinfo: "label+value" }]}
-          layout={{ title: { text: "Distribusi Status" }, showlegend: true }}
+          data={[{ type: "pie", labels: statuses.map(([status]) => status), values: statuses.map(([, total]) => total), marker: { colors: statuses.map(([status]) => statusChartColor(status)) }, textinfo: "none", hovertemplate: "%{label}: %{value}<extra></extra>" }]}
+          layout={{ showlegend: true, margin: { l: 24, r: 24, t: 24, b: 24 } }}
         />
         <DataTable columns={[{ key: "status", label: "Status", render: ([status]) => <StatusBadge value={status} /> }, { key: "total", label: "Jumlah", render: ([, total]) => total }]} rows={statuses} />
       </section>
