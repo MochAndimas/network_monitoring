@@ -11,15 +11,15 @@ Status ini hanya menandai hasil yang sudah tersedia di codebase; parity penuh te
 
 | Area | Status | Cakupan yang sudah selesai |
 | --- | --- | --- |
-| Foundation | Selesai untuk batch awal | Next.js App Router, TypeScript strict, TanStack Query, Docker frontend, typed API client, formatter WIB, dan lockfile dependency. |
+| Foundation | Selesai untuk batch awal | Next.js App Router, TypeScript strict, TanStack Query, Docker frontend dengan `.dockerignore`, typed API client, formatter WIB, lockfile dependency, serta wrapper Plotly lazy-loaded. |
 | Shell, auth, dan RBAC UX | Selesai untuk read-only/mutation gate awal | Route guard, login, restore session, logout, AppShell navigasi, informasi akun/role/kedaluwarsa sesi, serta `PermissionGate` admin. |
-| Primitives bersama | Selesai untuk batch awal | Page header, metadata strip, metric grid/card, status badge, loading/error, responsive table, pagination, dan CSV export. |
-| Overview | Sebagian | KPI, metadata, tabel prioritas/alert/incident, snapshot metric terbaru, CSV terkait, serta tombol run-cycle khusus admin. Chart alert, freshness label lengkap, dan parity visual akhir belum selesai. |
+| Primitives bersama | Selesai untuk batch awal | Page header, metadata strip, metric grid/card, status badge, loading/error, responsive table, pagination, CSV export, freshness label, confirm dialog, dan chart wrapper. |
+| Overview | Sebagian | KPI, metadata, tabel prioritas/alert/incident, snapshot metric terbaru, CSV terkait, tombol run-cycle khusus admin, serta chart horizontal distribusi alert dengan palette status konsisten. Freshness label lengkap dan parity visual akhir belum selesai. |
 | Daily Summary | Sebagian | Fetch daily rollup server-side, filter, pagination, tabel detail lengkap, dan CSV. Filter option backend serta chart uptime/ping masih belum selesai. |
 | Live Monitoring | Belum dimulai | — |
-| Devices | Belum dimulai | — |
-| Alerts | Belum dimulai | — |
-| Incidents | Belum dimulai | — |
+| Devices | Sebagian | Inventory paginated dengan filter/status/freshness/KPI/CSV, serta tab Kelola untuk admin: create, edit, dan delete dengan konfirmasi serta error backend. Import CSV dan sinkronisasi filter ke URL belum selesai. |
+| Alerts | Sebagian | Active alert paginated dengan filter severity/site/search, auto-refresh, KPI, tabel detail, dan CSV. Analytics chart distribusi severity/device terdampak serta advanced filter belum selesai. |
+| Incidents | Sebagian | Daftar incident paginated dengan filter status/pencarian, auto-refresh, KPI, tabel, dan CSV sudah tersedia. Analytics/board, detail/timeline drawer, serta workflow admin acknowledge/resolve/reopen masih belum selesai. |
 | Thresholds | Belum dimulai | — |
 | System Health | Belum dimulai | — |
 | Test automation/E2E dan cutover | Belum dimulai | Build/typecheck frontend sudah lulus; unit/component/E2E parity belum tersedia. |
