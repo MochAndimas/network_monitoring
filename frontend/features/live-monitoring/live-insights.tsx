@@ -19,7 +19,7 @@ export function LiveInsights({ samples, statusSummary }: { samples: MetricSample
   return <section>
     <h2>Insight Analisis</h2>
     <div className="two-column">
-      <section>
+      <section className="insight-distribution">
         <PlotlyChart
           ariaLabel="Distribusi status snapshot"
           data={[{ type: "pie", labels: statuses.map(([status]) => status), values: statuses.map(([, total]) => total), marker: { colors: statuses.map(([status]) => statusChartColor(status)) }, textinfo: "label+value" }]}
@@ -27,7 +27,7 @@ export function LiveInsights({ samples, statusSummary }: { samples: MetricSample
         />
         <DataTable columns={[{ key: "status", label: "Status", render: ([status]) => <StatusBadge value={status} /> }, { key: "total", label: "Jumlah", render: ([, total]) => total }]} rows={statuses} />
       </section>
-      <section>
+      <section className="insight-stack">
         <h3>Device Paling Aktif</h3>
         <DataTable columns={[{ key: "device", label: "Device", render: ([device]) => device }, { key: "total", label: "Jumlah", render: ([, total]) => total }]} rows={activeDevices} />
         <h3>Metrik Paling Sering Muncul</h3>
