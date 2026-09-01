@@ -35,6 +35,8 @@ export function LiveMonitoringPage() {
   const [snapshotOffset, setSnapshotOffset] = useState(0);
   const devices = useQuery({ queryKey: ["devices", "options"], queryFn: () => apiFetch<DeviceOption[]>("/devices/options?active_only=true") });
   const isVoipGroup = deviceId === "__voip__";
+  // `__voip__` is a client-side grouping option, not an API device identifier.
+  const apiDeviceId = isVoipGroup ? undefined : deviceId || undefined;
   const voipDevices = devices.data?.filter((device) => device.device_type === "voip") ?? [];
   const selectedDevice = devices.data?.find((device) => String(device.id) === deviceId);
   const selectedIsMikrotik = isMikrotikDevice(selectedDevice?.device_type, selectedDevice?.name);
@@ -56,13 +58,13 @@ export function LiveMonitoringPage() {
   const monitoring = useQuery({
     queryKey: ["live-monitoring", deviceId, metric, status, chartWindowHours, selectedTrendMetrics, snapshotOffset],
     queryFn: () => apiFetch<LiveMonitoringContext>(withQuery("/metrics/history/live", {
-      device_id: deviceId || undefined,
+      device_id: apiDeviceId,
       metric_name: metric || undefined,
       status: status || undefined,
       limit: HISTORY_LIMIT,
       snapshot_limit: SNAPSHOT_LIMIT,
       snapshot_offset: snapshotOffset,
-      include_selected_device_trend: Boolean(deviceId),
+      include_selected_device_trend: Boolean(apiDeviceId),
       include_selected_device_snapshot: selectedIsMikrotik || selectedIsNas || selectedIsPrinter,
       trend_metric_names: selectedTrendMetrics,
       trend_limit: 500
