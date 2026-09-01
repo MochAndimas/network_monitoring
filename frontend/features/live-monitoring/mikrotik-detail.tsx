@@ -62,7 +62,7 @@ export function MikrotikDetail({ samples }: { samples: MetricSample[] }) {
       <PlotlyChart ariaLabel="Traffic interface MikroTik" data={[
         { type: "bar", orientation: "h", name: "RX Mbps", x: interfaces.map((item) => Number(item.rx_mbps ?? 0)), y: interfaces.map((item) => item.name) },
         { type: "bar", orientation: "h", name: "TX Mbps", x: interfaces.map((item) => Number(item.tx_mbps ?? 0)), y: interfaces.map((item) => item.name) }
-      ]} layout={{ barmode: "group", xaxis: { title: { text: "Mbps" } }, yaxis: { title: { text: "Interface" }, categoryorder: "total ascending" }, showlegend: true }} />
+      ]} layout={{ xaxis: { title: { text: "Mbps" } }, yaxis: { title: { text: "Interface" }, categoryorder: "total ascending" }, showlegend: true }} />
       <DataTable
         emptyLabel="Belum ada data interface traffic."
         columns={[
