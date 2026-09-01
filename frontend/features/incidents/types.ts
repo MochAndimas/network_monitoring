@@ -1,0 +1,2 @@
+export type Incident = { id: number; device_name: string | null; site: string | null; status: string; summary: string; owner: string | null; assignee: string | null; effective_severity: string | null; acknowledged_at: string | null; started_at: string; ended_at: string | null };
+export type IncidentTimelineEvent = { id: number; event_type: string; actor: string | null; message: string; created_at: string };
