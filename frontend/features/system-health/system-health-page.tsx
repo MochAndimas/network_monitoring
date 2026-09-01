@@ -1,0 +1,10 @@
+"use client";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/api/client";
+import { formatWib } from "@/lib/formatters";
+import { PageHeader } from "@/components/ui/page-header";
+import { MetricCard, MetricGrid } from "@/components/ui/metric-card";
+import { DataTable } from "@/components/ui/data-table";
+import { LoadingState, ErrorState } from "@/components/ui/page-state";
+type Summary={database:string;devices_total:number;metrics_latest_snapshot:number;alerts_active:number;incidents_active:number;scheduler_jobs:Array<{job_name:string;is_running:boolean;consecutive_failures:number;last_succeeded_at:string|null}>;collector_health:Array<Record<string,unknown>>;operational_alerts:Array<Record<string,unknown>>;runtime:Record<string,unknown>};
+export function SystemHealthPage(){const q=useQuery({queryKey:["observability"],queryFn:()=>apiFetch<Summary>("/observability/summary"),refetchInterval:15000});if(q.isPending)return <LoadingState/>;if(q.isError)return <ErrorState message="System health tidak dapat dimuat." onRetry={()=>void q.refetch()}/>;const d=q.data;return <main className="app-page"><PageHeader title="System Health" description="Kesehatan backend, scheduler, collector, dan pipeline monitoring."/><MetricGrid>{[["Database",d.database],["Device",d.devices_total],["Latest metric",d.metrics_latest_snapshot],["Alert aktif",d.alerts_active],["Insiden aktif",d.incidents_active]].map(([l,v])=><MetricCard key={String(l)} label={String(l)} value={String(v)}/>)}</MetricGrid><h2>Scheduler Jobs</h2><DataTable columns={[{key:"name",label:"Job",render:x=>x.job_name},{key:"running",label:"Running",render:x=>x.is_running?"Ya":"Tidak"},{key:"fail",label:"Failure beruntun",render:x=>x.consecutive_failures},{key:"last",label:"Sukses terakhir",render:x=>formatWib(x.last_succeeded_at)}]} rows={d.scheduler_jobs}/><h2>Kesehatan Collector</h2><DataTable columns={[{key:"collector",label:"Collector",render:x=>String(x.collector??"-")},{key:"status",label:"Status",render:x=>String(x.status??"-")},{key:"success",label:"Success rate",render:x=>String(x.success_rate??"-")}]} rows={d.collector_health}/></main>}
