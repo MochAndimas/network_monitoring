@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext } from "react";
-import { apiFetch } from "@/lib/api/client";
+import { apiFetch, setAccessToken } from "@/lib/api/client";
 
 type SessionUser = {
   username: string;
@@ -13,6 +13,7 @@ type SessionUser = {
 
 type SessionResponse = {
   user: SessionUser;
+  access_token: string;
 };
 
 type AuthContextValue = {
@@ -26,7 +27,11 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const session = useQuery({
     queryKey: ["auth", "session"],
-    queryFn: () => apiFetch<SessionResponse>("/auth/restore", { method: "POST" }),
+    queryFn: async () => {
+      const response = await apiFetch<SessionResponse>("/auth/restore", { method: "POST" });
+      setAccessToken(response.access_token);
+      return response;
+    },
     retry: false,
     staleTime: 5 * 60_000
   });

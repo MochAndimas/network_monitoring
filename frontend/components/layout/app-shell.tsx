@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "@/lib/api/client";
+import { apiFetch, setAccessToken } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { useAuth } from "@/features/auth/auth-provider";
 
@@ -21,6 +21,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
   async function logout() {
     await apiFetch<void>("/auth/logout", { method: "POST" }).catch(() => undefined);
+    setAccessToken(undefined);
     queryClient.clear();
     router.replace("/login");
   }

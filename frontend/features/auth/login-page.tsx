@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { apiFetch, ApiError } from "@/lib/api/client";
+import { apiFetch, ApiError, setAccessToken } from "@/lib/api/client";
 
 type LoginResponse = { user: { username: string; role: string }; access_token: string };
 
@@ -14,10 +14,11 @@ export function LoginPage() {
     const data = new FormData(event.currentTarget);
     setPending(true); setError(undefined);
     try {
-      await apiFetch<LoginResponse>("/auth/login", {
+      const response = await apiFetch<LoginResponse>("/auth/login", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: data.get("username"), password: data.get("password"), remember: data.get("remember") === "on" })
       });
+      setAccessToken(response.access_token);
       window.location.assign("/");
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Login gagal. Coba lagi.");

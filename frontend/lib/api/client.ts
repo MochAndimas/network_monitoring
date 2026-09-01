@@ -1,4 +1,10 @@
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+let accessToken: string | undefined;
+
+/** Keep the session token in memory only; browser cookies remain the refresh mechanism. */
+export function setAccessToken(token: string | undefined) {
+  accessToken = token;
+}
 
 export class ApiError extends Error {
   constructor(message: string, public readonly status: number, public readonly detail?: unknown) {
@@ -10,7 +16,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
-    headers: { Accept: "application/json", ...init.headers }
+    headers: { Accept: "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), ...init.headers }
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { detail?: string | { msg?: string }[] } | null;
