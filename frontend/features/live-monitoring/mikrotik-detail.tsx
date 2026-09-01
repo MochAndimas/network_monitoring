@@ -48,11 +48,13 @@ export function MikrotikDetail({ samples }: { samples: MetricSample[] }) {
   return <section>
     <h2>Metrik MikroTik</h2>
     {apiStatus.toLowerCase() !== "ok" ? <p className="form-error">Collector RouterOS API bermasalah ({apiStatus}). Data CPU, client, interface, queue, dan firewall mungkin stale.</p> : null}
-    <MetricGrid columns={6}>
+    <MetricGrid columns={4}>
       <MetricCard label="RouterOS API" value={apiStatus} />
       <MetricCard label="CPU Load" value={percent(latest.get("cpu_percent"))} />
       <MetricCard label="Memory Used" value={percent(latest.get("memory_percent"))} />
       <MetricCard label="Storage Used" value={percent(latest.get("disk_percent"))} />
+    </MetricGrid>
+    <MetricGrid columns={2}>
       <MetricCard label="DHCP Leases" value={latest.get("dhcp_active_leases")?.metric_value ?? "-"} />
       <MetricCard label="Connected Clients" value={latest.get("connected_clients")?.metric_value ?? "-"} />
     </MetricGrid>
