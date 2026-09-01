@@ -14,7 +14,7 @@ import { formatWib } from "@/lib/formatters";
 import { LiveInsights } from "./live-insights";
 import { MikrotikDetail } from "./mikrotik-detail";
 import { LiveTrends } from "./live-trends";
-import { trendMetricNames } from "./trend-utils";
+import { isMikrotikDevice, trendMetricNames } from "./trend-utils";
 import type { DeviceOption, LiveMonitoringContext, MetricSample } from "./types";
 
 const SNAPSHOT_LIMIT = 10;
@@ -32,12 +32,13 @@ export function LiveMonitoringPage() {
   const [snapshotOffset, setSnapshotOffset] = useState(0);
   const devices = useQuery({ queryKey: ["devices", "options"], queryFn: () => apiFetch<DeviceOption[]>("/devices/options?active_only=true") });
   const selectedDevice = devices.data?.find((device) => String(device.id) === deviceId);
+  const selectedIsMikrotik = isMikrotikDevice(selectedDevice?.device_type, selectedDevice?.name);
   const deviceMetrics = useQuery({
     queryKey: ["metrics", "names", deviceId],
     queryFn: () => apiFetch<string[]>(withQuery("/metrics/names", { device_id: deviceId })),
     enabled: Boolean(deviceId)
   });
-  const selectedTrendMetrics = trendMetricNames(selectedDevice?.device_type, deviceMetrics.data ?? [], metric);
+  const selectedTrendMetrics = trendMetricNames(selectedIsMikrotik ? "mikrotik" : selectedDevice?.device_type, deviceMetrics.data ?? [], metric);
   const monitoring = useQuery({
     queryKey: ["live-monitoring", deviceId, metric, status, chartWindowHours, selectedTrendMetrics, snapshotOffset],
     queryFn: () => apiFetch<LiveMonitoringContext>(withQuery("/metrics/history/live", {
@@ -48,7 +49,7 @@ export function LiveMonitoringPage() {
       snapshot_limit: SNAPSHOT_LIMIT,
       snapshot_offset: snapshotOffset,
       include_selected_device_trend: Boolean(deviceId),
-      include_selected_device_snapshot: selectedDevice?.device_type === "mikrotik",
+      include_selected_device_snapshot: selectedIsMikrotik,
       trend_metric_names: selectedTrendMetrics,
       trend_limit: 500
     })),
@@ -99,7 +100,7 @@ export function LiveMonitoringPage() {
 
     <LiveInsights samples={data.latest_snapshot.items} statusSummary={data.latest_snapshot_status_summary} />
 
-    {selectedDevice?.device_type === "mikrotik" ? <MikrotikDetail samples={data.selected_device_snapshot.items} /> : null}
+    {selectedIsMikrotik ? <MikrotikDetail samples={data.selected_device_snapshot.items} /> : null}
     <LiveTrends deviceName={selectedDevice?.name} selectedMetric={metric} samples={data.selected_device_trend.items} windowHours={chartWindowHours} />
 
     <section>

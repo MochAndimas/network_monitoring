@@ -9,6 +9,10 @@ const LABELS: Record<string, string> = {
 const MIKROTIK_DEFAULTS = ["ping", "packet_loss", "jitter", "cpu_percent"];
 const NAS_DEFAULTS = ["ping", "packet_loss", "jitter", "cpu_percent", "memory_percent", "disk_percent"];
 
+export function isMikrotikDevice(deviceType: string | undefined, deviceName: string | undefined) {
+  return deviceType?.toLowerCase() === "mikrotik" || deviceName?.toLowerCase().includes("mikrotik") === true;
+}
+
 export function metricLabel(metricName: string) {
   return LABELS[metricName] ?? metricName.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
