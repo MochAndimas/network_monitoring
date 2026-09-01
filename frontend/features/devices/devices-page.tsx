@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, ApiError, withQuery } from "@/lib/api/client";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { formatWib } from "@/lib/formatters";
 import { PageHeader } from "@/components/ui/page-header";
 import { MetaStrip } from "@/components/ui/meta-strip";
@@ -33,7 +34,8 @@ export function DevicesPage() {
   const [tab, setTab] = useState<"inventory" | "manage">(() => searchParams.get("tab") === "manage" ? "manage" : "inventory");
   const [search, setSearch] = useState(() => searchParams.get("q") ?? ""); const [type, setType] = useState(() => searchParams.get("type") ?? ""); const [status, setStatus] = useState(() => searchParams.get("status") ?? ""); const [activeOnly, setActiveOnly] = useState(() => searchParams.get("active") === "true"); const [offset, setOffset] = useState(() => initialOffset(searchParams.get("offset")));
   const [editing, setEditing] = useState<Device | null | "new">(null); const [deleting, setDeleting] = useState<Device | null>(null); const [mutationError, setMutationError] = useState<string>();
-  const devices = useQuery({ queryKey: ["devices", { search, type, status, activeOnly, offset }], queryFn: () => apiFetch<DevicePage>(withQuery("/devices/paged", { search, device_type: type, latest_status: status, active_only: activeOnly, limit: LIMIT, offset })) });
+  const debouncedSearch = useDebouncedValue(search);
+  const devices = useQuery({ queryKey: ["devices", { search: debouncedSearch, type, status, activeOnly, offset }], queryFn: () => apiFetch<DevicePage>(withQuery("/devices/paged", { search: debouncedSearch, device_type: type, latest_status: status, active_only: activeOnly, limit: LIMIT, offset })) });
   const types = useQuery({ queryKey: ["device-types"], queryFn: () => apiFetch<DeviceTypeOption[]>("/devices/meta/types"), staleTime: Infinity });
   const summary = useQuery({ queryKey: ["device-summary"], queryFn: () => apiFetch<Record<string, number>>("/devices/status-summary") });
   const allDevices = useQuery({ queryKey: ["devices", "import-options"], queryFn: () => apiFetch<DevicePage>(withQuery("/devices/paged", { limit: 500, offset: 0 })) });
