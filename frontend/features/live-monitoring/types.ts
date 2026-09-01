@@ -17,6 +17,7 @@ export type LiveMonitoringContext = {
   metric_names: string[];
   history: MetricSection;
   selected_device_trend: MetricSection;
+  selected_device_snapshot: MetricSection;
   latest_snapshot: MetricSection;
   latest_snapshot_status_summary: Record<string, number>;
   snapshot_uptime_map: Record<string, string>;

@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { apiFetch, withQuery } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { LiveInsights } from "./live-insights";
+import { MikrotikDetail } from "./mikrotik-detail";
 import { LiveTrends } from "./live-trends";
 import { trendMetricNames } from "./trend-utils";
 import type { DeviceOption, LiveMonitoringContext, MetricSample } from "./types";
@@ -47,6 +48,7 @@ export function LiveMonitoringPage() {
       snapshot_limit: SNAPSHOT_LIMIT,
       snapshot_offset: snapshotOffset,
       include_selected_device_trend: Boolean(deviceId),
+      include_selected_device_snapshot: selectedDevice?.device_type === "mikrotik",
       trend_metric_names: selectedTrendMetrics,
       trend_limit: 500
     })),
@@ -97,6 +99,7 @@ export function LiveMonitoringPage() {
 
     <LiveInsights samples={data.latest_snapshot.items} statusSummary={data.latest_snapshot_status_summary} />
 
+    {selectedDevice?.device_type === "mikrotik" ? <MikrotikDetail samples={data.selected_device_snapshot.items} /> : null}
     <LiveTrends deviceName={selectedDevice?.name} selectedMetric={metric} samples={data.selected_device_trend.items} windowHours={chartWindowHours} />
 
     <section>
