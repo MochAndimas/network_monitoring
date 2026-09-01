@@ -49,6 +49,7 @@ export function LiveMonitoringPage() {
   const [rangeTo, setRangeTo] = useState(() => wibDateInput());
   const [chartWindowHours, setChartWindowHours] = useState(6);
   const [snapshotOffset, setSnapshotOffset] = useState(0);
+  const [historyOffset, setHistoryOffset] = useState(0);
   const devices = useQuery({ queryKey: ["devices", "options"], queryFn: () => apiFetch<DeviceOption[]>("/devices/options?active_only=true") });
   const isVoipGroup = deviceId === "__voip__";
   // `__voip__` is a client-side grouping option, not an API device identifier.
@@ -95,10 +96,11 @@ export function LiveMonitoringPage() {
     enabled: hasValidRange,
     refetchInterval: refreshInterval
   });
+  const historyPage = useQuery({ queryKey: ["live-history-page", apiDeviceId, metric, status, monitoringMode, rangeFrom, rangeTo, historyOffset], queryFn: () => apiFetch<{ items: MetricSample[]; meta: { total: number; limit: number; offset: number } }>(withQuery("/metrics/history/paged", { device_id: apiDeviceId, metric_name: metric || undefined, status: status || undefined, checked_from: isRangeMode ? wibRangeBoundary(rangeFrom) : undefined, checked_to: isRangeMode ? wibRangeBoundary(rangeTo, true) : undefined, limit: 50, offset: historyOffset })), enabled: !isVoipGroup && hasValidRange });
 
   if (!hasValidRange) return <ErrorState message="Tanggal mulai harus diisi dan tidak boleh melewati tanggal akhir." onRetry={() => undefined} />;
   if (monitoring.isPending || devices.isPending || (deviceMetrics.isPending && Boolean(deviceId) && !isVoipGroup) || (isVoipGroup && voipMetricNames.isPending)) return <LoadingState />;
-  if (monitoring.isError || devices.isError || deviceMetrics.isError || voipMetricNames.isError || voipHistory.some((query) => query.isError)) return <ErrorState message="Live monitoring tidak dapat dimuat." onRetry={() => { void monitoring.refetch(); void devices.refetch(); void deviceMetrics.refetch(); void voipMetricNames.refetch(); voipHistory.forEach((query) => void query.refetch()); }} />;
+  if (monitoring.isError || historyPage.isError || devices.isError || deviceMetrics.isError || voipMetricNames.isError || voipHistory.some((query) => query.isError)) return <ErrorState message="Live monitoring tidak dapat dimuat." onRetry={() => { void monitoring.refetch(); void historyPage.refetch(); void devices.refetch(); void deviceMetrics.refetch(); void voipMetricNames.refetch(); voipHistory.forEach((query) => void query.refetch()); }} />;
 
   const data = monitoring.data;
   const metricOptions = isVoipGroup ? voipMetricNames.data ?? [] : deviceId ? deviceMetrics.data ?? [] : data.metric_names;
@@ -122,7 +124,7 @@ export function LiveMonitoringPage() {
     { key: "status", label: "Status", render: (item: MetricSample) => <StatusBadge value={item.status} /> }
   ];
 
-  function resetSnapshot() { setSnapshotOffset(0); }
+  function resetSnapshot() { setSnapshotOffset(0); setHistoryOffset(0); }
   return <main className="app-page">
     <PageHeader title="Live Monitoring" description={isRangeMode ? `Riwayat metric untuk rentang ${rangeFrom} s.d. ${rangeTo}.` : "Snapshot 24 jam terakhir, riwayat metric, dan trend perangkat secara real-time."} />
     <MetricGrid columns={5}>
@@ -161,8 +163,9 @@ export function LiveMonitoringPage() {
     </section>
 
     <section>
-      <div className="section-header"><h2>Riwayat Detail</h2><CsvExport filename="live-history.csv" columns={["Dicek WIB", "Device", "Metrik", "Nilai", "Nilai numerik", "Status"]} rows={data.history.items.map((item) => [formatWib(item.checked_at), item.device_name, item.metric_name, displayValue(item), item.metric_value_numeric, item.status])} /></div>
-      <DataTable columns={historyColumns} rows={data.history.items} />
+      <div className="section-header"><h2>Riwayat Detail</h2><CsvExport filename="live-history.csv" columns={["Dicek WIB", "Device", "Metrik", "Nilai", "Nilai numerik", "Status"]} rows={(historyPage.data?.items ?? data.history.items).map((item) => [formatWib(item.checked_at), item.device_name, item.metric_name, displayValue(item), item.metric_value_numeric, item.status])} /></div>
+      <DataTable columns={historyColumns} rows={historyPage.data?.items ?? data.history.items} pageSize={null} />
+      {historyPage.data ? <Pagination offset={historyOffset} limit={historyPage.data.meta.limit} total={historyPage.data.meta.total} onChange={setHistoryOffset} /> : null}
     </section>
   </main>;
 }
