@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, ApiError, withQuery } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { PageHeader } from "@/components/ui/page-header";
@@ -21,9 +22,15 @@ import type { Device, DeviceDraft, DevicePage, DeviceTypeOption } from "./types"
 const LIMIT = 50;
 const invalidateDevices = (client: ReturnType<typeof useQueryClient>) => client.invalidateQueries({ queryKey: ["devices"] });
 
+function initialOffset(value: string | null) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
 export function DevicesPage() {
-  const queryClient = useQueryClient(); const [tab, setTab] = useState<"inventory" | "manage">("inventory");
-  const [search, setSearch] = useState(""); const [type, setType] = useState(""); const [status, setStatus] = useState(""); const [activeOnly, setActiveOnly] = useState(false); const [offset, setOffset] = useState(0);
+  const queryClient = useQueryClient(); const router = useRouter(); const pathname = usePathname(); const searchParams = useSearchParams();
+  const [tab, setTab] = useState<"inventory" | "manage">(() => searchParams.get("tab") === "manage" ? "manage" : "inventory");
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? ""); const [type, setType] = useState(() => searchParams.get("type") ?? ""); const [status, setStatus] = useState(() => searchParams.get("status") ?? ""); const [activeOnly, setActiveOnly] = useState(() => searchParams.get("active") === "true"); const [offset, setOffset] = useState(() => initialOffset(searchParams.get("offset")));
   const [editing, setEditing] = useState<Device | null | "new">(null); const [deleting, setDeleting] = useState<Device | null>(null); const [mutationError, setMutationError] = useState<string>();
   const devices = useQuery({ queryKey: ["devices", { search, type, status, activeOnly, offset }], queryFn: () => apiFetch<DevicePage>(withQuery("/devices/paged", { search, device_type: type, latest_status: status, active_only: activeOnly, limit: LIMIT, offset })) });
   const types = useQuery({ queryKey: ["device-types"], queryFn: () => apiFetch<DeviceTypeOption[]>("/devices/meta/types"), staleTime: Infinity });
@@ -31,6 +38,17 @@ export function DevicesPage() {
   const save = useMutation({ mutationFn: ({ device, draft }: { device: Device | null | "new"; draft: DeviceDraft }) => apiFetch<Device>(device && device !== "new" ? `/devices/${device.id}` : "/devices", { method: device && device !== "new" ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) }), onSuccess: async () => { await invalidateDevices(queryClient); setEditing(null); }, onError: (error) => setMutationError(error instanceof ApiError ? error.message : "Gagal menyimpan device.") });
   const remove = useMutation({ mutationFn: (device: Device) => apiFetch<void>(`/devices/${device.id}`, { method: "DELETE" }), onSuccess: async () => { await invalidateDevices(queryClient); setDeleting(null); }, onError: (error) => setMutationError(error instanceof ApiError ? error.message : "Gagal menghapus device.") });
   const resetPage = () => setOffset(0);
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (tab !== "inventory") params.set("tab", tab);
+    if (search) params.set("q", search);
+    if (type) params.set("type", type);
+    if (status) params.set("status", status);
+    if (activeOnly) params.set("active", "true");
+    if (offset) params.set("offset", String(offset));
+    const next = params.toString();
+    if (next !== searchParams.toString()) router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+  }, [activeOnly, offset, pathname, router, search, searchParams, status, tab, type]);
   if (devices.isPending || types.isPending) return <LoadingState />; if (devices.isError) return <ErrorState message="Inventaris device tidak dapat dimuat." onRetry={() => void devices.refetch()} />;
   const rows = devices.data.items; const counts = summary.data ?? {}; const deviceTypes = types.data ?? [];
   const saveDevice = async (draft: DeviceDraft) => { setMutationError(undefined); await save.mutateAsync({ device: editing, draft }); };
