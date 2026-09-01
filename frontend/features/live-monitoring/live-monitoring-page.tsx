@@ -38,6 +38,7 @@ export function LiveMonitoringPage() {
   // `__voip__` is a client-side grouping option, not an API device identifier.
   const apiDeviceId = isVoipGroup ? undefined : deviceId || undefined;
   const voipDevices = devices.data?.filter((device) => device.device_type === "voip") ?? [];
+  const selectableDevices = devices.data?.filter((device) => device.device_type !== "voip") ?? [];
   const selectedDevice = devices.data?.find((device) => String(device.id) === deviceId);
   const selectedIsMikrotik = isMikrotikDevice(selectedDevice?.device_type, selectedDevice?.name);
   const selectedIsNas = selectedDevice?.device_type === "nas";
@@ -109,7 +110,7 @@ export function LiveMonitoringPage() {
     </MetricGrid>
 
     <div className="filter-panel">
-      <label>Device<select value={deviceId} onChange={(event) => { setDeviceId(event.target.value); resetSnapshot(); }}><option value="">Semua device</option>{voipDevices.length ? <option value="__voip__">Semua VoIP</option> : null}{devices.data.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.ip_address}</option>)}</select></label>
+      <label>Device<select value={deviceId} onChange={(event) => { setDeviceId(event.target.value); resetSnapshot(); }}><option value="">Semua device</option>{voipDevices.length ? <option value="__voip__">Semua VoIP</option> : null}{selectableDevices.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.ip_address}</option>)}</select></label>
       <label>Metrik<select value={metric} onChange={(event) => { setMetric(event.target.value); resetSnapshot(); }}><option value="">Semua metrik</option>{metricOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
       <label>Status<select value={status} onChange={(event) => { setStatus(event.target.value); resetSnapshot(); }}><option value="">Semua status</option>{["ok", "warning", "down", "error"].map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
       <label>Window chart<select value={chartWindowHours} onChange={(event) => setChartWindowHours(Number(event.target.value))}><option value={1}>1 jam</option><option value={6}>6 jam</option><option value={12}>12 jam</option><option value={24}>24 jam</option></select></label>
