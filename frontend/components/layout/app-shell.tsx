@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { apiFetch, setAccessToken } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { useAuth } from "@/features/auth/auth-provider";
@@ -18,6 +19,19 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    setIsSidebarOpen(window.localStorage.getItem("network-monitoring:sidebar") !== "hidden");
+  }, []);
+
+  function toggleSidebar() {
+    setIsSidebarOpen((current) => {
+      const next = !current;
+      window.localStorage.setItem("network-monitoring:sidebar", next ? "shown" : "hidden");
+      return next;
+    });
+  }
 
   async function logout() {
     await apiFetch<void>("/auth/logout", { method: "POST" }).catch(() => undefined);
@@ -26,9 +40,9 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     router.replace("/login");
   }
 
-  return <div className="app-shell">
+  return <div className={isSidebarOpen ? "app-shell" : "app-shell app-shell-sidebar-hidden"}>
     <aside className="app-sidebar">
-      <Link className="app-brand" href="/">Network Monitoring</Link>
+      <div className="sidebar-heading"><Link className="app-brand" href="/">Network Monitoring</Link><button className="sidebar-close" type="button" onClick={toggleSidebar} aria-label="Sembunyikan sidebar">‹</button></div>
       <nav aria-label="Navigasi utama">{NAVIGATION.map(([href, label]) =>
         <Link key={href} href={href} className={pathname === href ? "nav-link nav-link-active" : "nav-link"}>{label}</Link>
       )}</nav>
@@ -39,6 +53,6 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         <button className="button-secondary" type="button" onClick={() => void logout()}>Keluar</button>
       </div>
     </aside>
-    <div className="app-content">{children}</div>
+    <div className="app-content"><button className="sidebar-toggle button-secondary" type="button" onClick={toggleSidebar} aria-expanded={isSidebarOpen}>{isSidebarOpen ? "Sembunyikan menu" : "Tampilkan menu"}</button>{children}</div>
   </div>;
 }
