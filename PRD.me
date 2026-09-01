@@ -12,7 +12,7 @@ Status ini hanya menandai hasil yang sudah tersedia di codebase; parity penuh te
 | Area | Status | Cakupan yang sudah selesai |
 | --- | --- | --- |
 | Foundation | Selesai untuk batch awal | Next.js App Router, TypeScript strict, TanStack Query, Docker frontend dengan `.dockerignore`, typed API client, formatter WIB, lockfile dependency, serta wrapper Plotly lazy-loaded. |
-| Shell, auth, dan RBAC UX | Selesai untuk read-only/mutation gate awal | Route guard, login, restore session, logout, AppShell navigasi, informasi akun/role/kedaluwarsa sesi, serta `PermissionGate` admin. |
+| Shell, auth, dan RBAC UX | Selesai untuk read-only/mutation gate awal | Route guard, login, restore session, logout, AppShell navigasi, informasi akun/role/kedaluwarsa sesi, `PermissionGate` admin, serta redirect otomatis ke login saat sesi/API token berakhir. |
 | Primitives bersama | Selesai untuk batch awal | Page header, metadata strip, metric grid/card, status badge, loading/error, responsive table, pagination, CSV export, freshness label, confirm dialog, dan chart wrapper. |
 | Overview | Sebagian | KPI, metadata, tabel prioritas/alert/incident, snapshot metric terbaru, CSV terkait, tombol run-cycle khusus admin, serta chart horizontal distribusi alert dengan palette status konsisten. Freshness label lengkap dan parity visual akhir belum selesai. |
 | Daily Summary | Sebagian | Fetch daily rollup server-side, filter, pagination, tabel detail lengkap, dan CSV. Filter option backend serta chart uptime/ping masih belum selesai. |
@@ -20,7 +20,7 @@ Status ini hanya menandai hasil yang sudah tersedia di codebase; parity penuh te
 | Devices | Sebagian | Inventory paginated dengan filter/status/freshness/KPI/CSV, serta tab Kelola untuk admin: create, edit, dan delete dengan konfirmasi serta error backend. Import CSV dan sinkronisasi filter ke URL belum selesai. |
 | Alerts | Sebagian | Active alert paginated dengan filter severity/site/search, auto-refresh, KPI, tabel detail, dan CSV. Analytics chart distribusi severity/device terdampak serta advanced filter belum selesai. |
 | Incidents | Sebagian | Daftar incident paginated dengan filter status/pencarian, detail dialog dengan timeline, serta workflow admin acknowledge/resolve/reopen sudah tersedia. Analytics/board, editor owner/assignee/severity override, dan parity visual akhir masih belum selesai. |
-| Thresholds | Belum dimulai | — |
+| Thresholds | Sebagian | Tiga tab read-only Global, Overrides, dan Maintenance sudah mengambil policy context dari FastAPI. Editor global, create/deactivate override dan maintenance window, KPI/analytics, serta filter/sort masih belum selesai. |
 | System Health | Belum dimulai | — |
 | Test automation/E2E dan cutover | Belum dimulai | Build/typecheck frontend sudah lulus; unit/component/E2E parity belum tersedia. |
 

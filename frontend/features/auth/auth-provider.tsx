@@ -1,7 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { createContext, useContext } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { createContext, useContext, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch, setAccessToken } from "@/lib/api/client";
 
 type SessionUser = {
@@ -25,6 +26,8 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: Readonly<{ children: React.ReactNode }>) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const session = useQuery({
     queryKey: ["auth", "session"],
     queryFn: async () => {
@@ -35,6 +38,16 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
     retry: false,
     staleTime: 5 * 60_000
   });
+
+  useEffect(() => {
+    const handleExpiredSession = () => {
+      setAccessToken(undefined);
+      queryClient.removeQueries({ queryKey: ["auth", "session"] });
+      router.replace("/login?reason=session-expired");
+    };
+    window.addEventListener("network-monitoring:auth-expired", handleExpiredSession);
+    return () => window.removeEventListener("network-monitoring:auth-expired", handleExpiredSession);
+  }, [queryClient, router]);
 
   return (
     <AuthContext.Provider value={{

@@ -19,6 +19,10 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     headers: { Accept: "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), ...init.headers }
   });
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined") {
+      setAccessToken(undefined);
+      window.dispatchEvent(new Event("network-monitoring:auth-expired"));
+    }
     const body = await response.json().catch(() => null) as { detail?: string | { msg?: string }[] } | null;
     const detail = body?.detail;
     const message = typeof detail === "string" ? detail : Array.isArray(detail) ? detail.map((item) => item.msg ?? "Input tidak valid").join(", ") : `Request gagal (HTTP ${response.status})`;

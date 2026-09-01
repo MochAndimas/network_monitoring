@@ -1,11 +1,13 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch, ApiError, setAccessToken } from "@/lib/api/client";
 
 type LoginResponse = { user: { username: string; role: string }; access_token: string };
 
 export function LoginPage() {
+  const searchParams = useSearchParams();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
 
@@ -27,6 +29,7 @@ export function LoginPage() {
 
   return <main className="login-page"><form className="login-card" onSubmit={submit}>
     <h1>Masuk Dashboard</h1><p>Masuk dengan akun backend monitoring untuk membuka dashboard.</p>
+    {searchParams.get("reason") === "session-expired" ? <p className="form-error" role="status">Sesi berakhir. Silakan masuk kembali.</p> : null}
     {error ? <p className="form-error" role="alert">{error}</p> : null}
     <label>Username<input name="username" autoComplete="username" required /></label>
     <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
