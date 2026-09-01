@@ -32,9 +32,12 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return response.json() as Promise<T>;
 }
 
-export function withQuery(path: string, values: Record<string, string | number | boolean | null | undefined>) {
+export function withQuery(path: string, values: Record<string, string | number | boolean | readonly string[] | null | undefined>) {
   const query = new URLSearchParams();
-  Object.entries(values).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== "") query.set(key, String(value)); });
+  Object.entries(values).forEach(([key, value]) => {
+    if (Array.isArray(value)) value.filter(Boolean).forEach((item) => query.append(key, item));
+    else if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
+  });
   const serialized = query.toString();
   return serialized ? `${path}?${serialized}` : path;
 }
