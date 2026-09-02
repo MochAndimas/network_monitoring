@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch, withQuery } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { PageHeader } from "@/components/ui/page-header";
@@ -13,13 +14,15 @@ import { CsvExport } from "@/components/ui/csv-export";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ErrorState, LoadingState } from "@/components/ui/page-state";
 import { PlotlyChart, statusChartColor } from "@/components/charts/plotly-chart";
+import { initialOffset, useUrlQuerySync } from "@/lib/use-url-query-sync";
 
 type Alert = { id: number; device_name: string | null; site: string | null; alert_type: string; severity: string; message: string; status: string; created_at: string; resolved_at: string | null };
 type AlertPage = { items: Alert[]; meta: { total: number; limit: number; offset: number } };
 const LIMIT = 50;
 
 export function AlertsPage() {
-  const [severity, setSeverity] = useState(""); const [site, setSite] = useState(""); const [alertType, setAlertType] = useState(""); const [deviceId, setDeviceId] = useState(""); const [search, setSearch] = useState(""); const [sort, setSort] = useState<"newest" | "severity">("newest"); const [offset, setOffset] = useState(0);
+  const params = useSearchParams(); const [severity, setSeverity] = useState(() => params.get("severity") ?? ""); const [site, setSite] = useState(() => params.get("site") ?? ""); const [alertType, setAlertType] = useState(() => params.get("type") ?? ""); const [deviceId, setDeviceId] = useState(() => params.get("device") ?? ""); const [search, setSearch] = useState(() => params.get("q") ?? ""); const [sort, setSort] = useState<"newest" | "severity">(() => params.get("sort") === "severity" ? "severity" : "newest"); const [offset, setOffset] = useState(() => initialOffset(params.get("offset")));
+  useUrlQuerySync({ severity, site, type: alertType, device: deviceId, q: search, sort: sort === "newest" ? undefined : sort, offset });
   const alerts = useQuery({ queryKey: ["alerts", severity, site, alertType, deviceId, search, sort, offset], queryFn: () => apiFetch<AlertPage>(withQuery("/alerts/active/paged", { severity, site, alert_type: alertType, device_id: deviceId ? Number(deviceId) : undefined, search, sort, limit: LIMIT, offset })), refetchInterval: 15_000 });
   if (alerts.isPending) return <LoadingState />; if (alerts.isError) return <ErrorState message="Alert aktif tidak dapat dimuat." onRetry={() => void alerts.refetch()} />;
   const data = alerts.data; const items = data.items; const criticalHigh = items.filter((item) => ["critical", "high"].includes(item.severity.toLowerCase())).length; const affectedDevices = new Set(items.map((item) => item.device_name).filter(Boolean)).size;

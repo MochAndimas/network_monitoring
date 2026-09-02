@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, withQuery } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
@@ -16,12 +17,14 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { PlotlyChart, statusChartColor } from "@/components/charts/plotly-chart";
 import { IncidentDetail } from "./incident-detail";
 import type { Incident, IncidentAction, IncidentPage, IncidentWorkflow } from "./types";
+import { initialOffset, useUrlQuerySync } from "@/lib/use-url-query-sync";
 
 const LIMIT = 50;
 const STATUSES = ["active", "acknowledged", "resolved"];
 
 export function IncidentsPage() {
-  const client = useQueryClient(); const [tab, setTab] = useState<"analytics" | "board">("analytics"); const [status, setStatus] = useState(""); const [site, setSite] = useState(""); const [search, setSearch] = useState(""); const [severity, setSeverity] = useState(""); const [sort, setSort] = useState<"newest" | "severity">("newest"); const [offset, setOffset] = useState(0); const [selected, setSelected] = useState<Incident | null>(null);
+  const params = useSearchParams(); const client = useQueryClient(); const [tab, setTab] = useState<"analytics" | "board">(() => params.get("tab") === "board" ? "board" : "analytics"); const [status, setStatus] = useState(() => params.get("status") ?? ""); const [site, setSite] = useState(() => params.get("site") ?? ""); const [search, setSearch] = useState(() => params.get("q") ?? ""); const [severity, setSeverity] = useState(() => params.get("severity") ?? ""); const [sort, setSort] = useState<"newest" | "severity">(() => params.get("sort") === "severity" ? "severity" : "newest"); const [offset, setOffset] = useState(() => initialOffset(params.get("offset"))); const [selected, setSelected] = useState<Incident | null>(null);
+  useUrlQuerySync({ tab: tab === "analytics" ? undefined : tab, status, site, q: search, severity, sort: sort === "newest" ? undefined : sort, offset });
   const query = useQuery({ queryKey: ["incidents", status, site, search, severity, sort, offset], queryFn: () => apiFetch<IncidentPage>(withQuery("/incidents/paged", { status, site, search, severity, sort, limit: LIMIT, offset })), refetchInterval: 15_000 });
   const escalations = useQuery({ queryKey: ["incidents", "escalations"], queryFn: () => apiFetch<{ items: Incident[] }>("/incidents/escalations"), refetchInterval: 15_000 });
   const invalidate = () => client.invalidateQueries({ queryKey: ["incidents"] });
