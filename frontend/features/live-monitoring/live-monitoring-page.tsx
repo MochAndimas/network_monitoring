@@ -2,6 +2,7 @@
 
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CsvExport } from "@/components/ui/csv-export";
 import { DataTable } from "@/components/ui/data-table";
 import { MetricCard, MetricGrid } from "@/components/ui/metric-card";
@@ -11,6 +12,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { apiFetch, withQuery } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
+import { initialOffset, useUrlQuerySync } from "@/lib/use-url-query-sync";
 import { LiveInsights } from "./live-insights";
 import { MikrotikDetail } from "./mikrotik-detail";
 import { NasDetail } from "./nas-detail";
@@ -46,16 +48,23 @@ function liveRange() {
   return { checked_from: start.toISOString(), checked_to: end.toISOString() };
 }
 
+function initialChartWindow(value: string | null) {
+  const parsed = Number(value);
+  return [1, 6, 12, 24].includes(parsed) ? parsed : 6;
+}
+
 export function LiveMonitoringPage() {
-  const [deviceId, setDeviceId] = useState("");
-  const [metric, setMetric] = useState("");
-  const [status, setStatus] = useState("");
-  const [monitoringMode, setMonitoringMode] = useState<MonitoringMode>("live");
-  const [rangeFrom, setRangeFrom] = useState(() => wibDateInput(1));
-  const [rangeTo, setRangeTo] = useState(() => wibDateInput());
-  const [chartWindowHours, setChartWindowHours] = useState(6);
-  const [snapshotOffset, setSnapshotOffset] = useState(0);
-  const [historyOffset, setHistoryOffset] = useState(0);
+  const params = useSearchParams();
+  const [deviceId, setDeviceId] = useState(() => params.get("device") ?? "");
+  const [metric, setMetric] = useState(() => params.get("metric") ?? "");
+  const [status, setStatus] = useState(() => params.get("status") ?? "");
+  const [monitoringMode, setMonitoringMode] = useState<MonitoringMode>(() => params.get("mode") === "range" ? "range" : "live");
+  const [rangeFrom, setRangeFrom] = useState(() => params.get("from") ?? wibDateInput(1));
+  const [rangeTo, setRangeTo] = useState(() => params.get("to") ?? wibDateInput());
+  const [chartWindowHours, setChartWindowHours] = useState(() => initialChartWindow(params.get("window")));
+  const [snapshotOffset, setSnapshotOffset] = useState(() => initialOffset(params.get("snapshot_offset")));
+  const [historyOffset, setHistoryOffset] = useState(() => initialOffset(params.get("history_offset")));
+  useUrlQuerySync({ device: deviceId, metric, status, mode: monitoringMode === "range" ? monitoringMode : undefined, from: monitoringMode === "range" ? rangeFrom : undefined, to: monitoringMode === "range" ? rangeTo : undefined, window: chartWindowHours === 6 ? undefined : chartWindowHours, snapshot_offset: snapshotOffset, history_offset: historyOffset });
   const devices = useQuery({ queryKey: ["devices", "options"], queryFn: () => apiFetch<DeviceOption[]>("/devices/options?active_only=true") });
   const isVoipGroup = deviceId === "__voip__";
   // `__voip__` is a client-side grouping option, not an API device identifier.
