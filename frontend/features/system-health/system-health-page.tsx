@@ -5,6 +5,8 @@ import { DataTable } from "@/components/ui/data-table";
 import { MetricCard, MetricGrid } from "@/components/ui/metric-card";
 import { ErrorState, LoadingState } from "@/components/ui/page-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { MetaStrip } from "@/components/ui/meta-strip";
+import { CsvExport } from "@/components/ui/csv-export";
 import { apiFetch } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { CapacityCards } from "./capacity-cards";
@@ -31,6 +33,7 @@ export function SystemHealthPage() {
   const summary = health.data;
   return <main className="app-page">
     <PageHeader title="System Health" description="Kesehatan backend, scheduler, collector, dan pipeline monitoring. Diperbarui setiap 15 detik." />
+    <MetaStrip items={[{ label: "Refresh otomatis", value: "Aktif (15 dtk)" }, { label: "Database", value: summary.database }, { label: "Operational alert", value: summary.operational_alerts.length }, { label: "Terakhir dirender", value: formatWib(new Date().toISOString()) }]} />
 
     <MetricGrid columns={5}>
       <MetricCard label="Database" value={summary.database} />
@@ -43,7 +46,7 @@ export function SystemHealthPage() {
     <CapacityCards summary={summary} />
 
     <section>
-      <h2>Operational Alerts</h2>
+      <div className="section-header"><h2>Operational Alerts</h2><CsvExport filename="system-health-operational-alerts.csv" columns={["Job", "Severity", "Penyebab", "Detail"]} rows={summary.operational_alerts.map((item) => [value(item, "job_name"), value(item, "severity"), value(item, "reason"), value(item, "message")])} /></div>
       <DataTable
         emptyLabel="Tidak ada operational alert aktif."
         columns={[
@@ -57,7 +60,7 @@ export function SystemHealthPage() {
     </section>
 
     <section>
-      <h2>Scheduler Jobs</h2>
+      <div className="section-header"><h2>Scheduler Jobs</h2><CsvExport filename="system-health-scheduler-jobs.csv" columns={["Job", "Running", "Failure beruntun", "Durasi terakhir", "Sukses terakhir"]} rows={summary.scheduler_jobs.map((item) => [item.job_name, item.is_running ? "Ya" : "Tidak", item.consecutive_failures, item.last_duration_ms, formatWib(item.last_succeeded_at)])} /></div>
       <DataTable<SchedulerJob>
         columns={[
           { key: "name", label: "Job", render: (item) => item.job_name },
@@ -71,7 +74,7 @@ export function SystemHealthPage() {
     </section>
 
     <section>
-      <h2>Scheduler Timing</h2>
+      <div className="section-header"><h2>Scheduler Timing</h2><CsvExport filename="system-health-scheduler-timing.csv" columns={["Job", "Status", "Schedule lag", "Heartbeat"]} rows={summary.scheduler_health.map((item) => [value(item, "job_name"), value(item, "state"), value(item, "schedule_lag_seconds"), value(item, "last_heartbeat_at")])} /></div>
       <DataTable
         columns={[
           { key: "job", label: "Job", render: (item) => value(item, "job_name") },
@@ -84,7 +87,7 @@ export function SystemHealthPage() {
     </section>
 
     <section>
-      <h2>Kesehatan Collector</h2>
+      <div className="section-header"><h2>Kesehatan Collector</h2><CsvExport filename="system-health-collectors.csv" columns={["Collector", "Status", "Success rate", "Timeout", "Tindakan"]} rows={summary.collector_health.map((item) => [value(item, "collector"), value(item, "state"), value(item, "success_rate_percent"), value(item, "timeout_count"), value(item, "action")])} /></div>
       <DataTable
         columns={[
           { key: "collector", label: "Collector", render: (item) => value(item, "collector") },
@@ -98,7 +101,7 @@ export function SystemHealthPage() {
     </section>
 
     <section>
-      <h2>Performa Collector 24 Jam</h2>
+      <div className="section-header"><h2>Performa Collector 24 Jam</h2><CsvExport filename="system-health-collector-runs.csv" columns={["Collector", "Run", "Berhasil", "Rata-rata durasi", "Terakhir"]} rows={summary.collector_runs.map((item) => [value(item, "collector"), value(item, "runs"), value(item, "successful_runs"), value(item, "average_duration_ms"), value(item, "last_checked_at")])} /></div>
       <DataTable
         columns={[
           { key: "collector", label: "Collector", render: (item) => value(item, "collector") },

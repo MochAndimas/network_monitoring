@@ -40,6 +40,12 @@ function wibRangeBoundary(date: string, endOfDay = false) {
   return `${date}T${endOfDay ? "23:59:59" : "00:00:00"}+07:00`;
 }
 
+function liveRange() {
+  const end = new Date();
+  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+  return { checked_from: start.toISOString(), checked_to: end.toISOString() };
+}
+
 export function LiveMonitoringPage() {
   const [deviceId, setDeviceId] = useState("");
   const [metric, setMetric] = useState("");
@@ -96,7 +102,8 @@ export function LiveMonitoringPage() {
     enabled: hasValidRange,
     refetchInterval: refreshInterval
   });
-  const historyPage = useQuery({ queryKey: ["live-history-page", apiDeviceId, metric, status, monitoringMode, rangeFrom, rangeTo, historyOffset], queryFn: () => apiFetch<{ items: MetricSample[]; meta: { total: number; limit: number; offset: number } }>(withQuery("/metrics/history/paged", { device_id: apiDeviceId, metric_name: metric || undefined, status: status || undefined, checked_from: isRangeMode ? wibRangeBoundary(rangeFrom) : undefined, checked_to: isRangeMode ? wibRangeBoundary(rangeTo, true) : undefined, limit: 50, offset: historyOffset })), enabled: !isVoipGroup && hasValidRange });
+  const pagedHistoryRange = isRangeMode ? { checked_from: wibRangeBoundary(rangeFrom), checked_to: wibRangeBoundary(rangeTo, true) } : liveRange();
+  const historyPage = useQuery({ queryKey: ["live-history-page", apiDeviceId, metric, status, monitoringMode, rangeFrom, rangeTo, historyOffset], queryFn: () => apiFetch<{ items: MetricSample[]; meta: { total: number; limit: number; offset: number } }>(withQuery("/metrics/history/paged", { device_id: apiDeviceId, metric_name: metric || undefined, status: status || undefined, limit: 50, offset: historyOffset, ...pagedHistoryRange })), enabled: !isVoipGroup && hasValidRange });
 
   if (!hasValidRange) return <ErrorState message="Tanggal mulai harus diisi dan tidak boleh melewati tanggal akhir." onRetry={() => undefined} />;
   if (monitoring.isPending || devices.isPending || (deviceMetrics.isPending && Boolean(deviceId) && !isVoipGroup) || (isVoipGroup && voipMetricNames.isPending)) return <LoadingState />;
