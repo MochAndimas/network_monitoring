@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { DataTable } from "@/components/ui/data-table";
 import { PlotlyChart } from "@/components/charts/plotly-chart";
 import { MetricCard, MetricGrid } from "@/components/ui/metric-card";
@@ -10,6 +11,7 @@ import { ErrorState, LoadingState } from "@/components/ui/page-state";
 import { PermissionGate } from "@/components/ui/permission-gate";
 import { ApiError, apiFetch } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
+import { useUrlQuerySync } from "@/lib/use-url-query-sync";
 
 type Threshold = { id: number; key: string; value: number; description: string | null };
 type Override = { id: number; threshold_key: string; value: number; device_id: number | null; device_type: string | null; site: string | null; description: string | null; is_active: boolean; created_at: string };
@@ -29,10 +31,12 @@ function formatNumber(value: number) {
 }
 
 export function ThresholdsPage() {
-  const [tab, setTab] = useState<"global" | "overrides" | "maintenance">("global");
-  const [category, setCategory] = useState("all");
-  const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<ThresholdSort>("key");
+  const params = useSearchParams();
+  const [tab, setTab] = useState<"global" | "overrides" | "maintenance">(() => params.get("tab") === "overrides" ? "overrides" : params.get("tab") === "maintenance" ? "maintenance" : "global");
+  const [category, setCategory] = useState(() => params.get("category") ?? "all");
+  const [search, setSearch] = useState(() => params.get("q") ?? "");
+  const [sort, setSort] = useState<ThresholdSort>(() => params.get("sort") === "value" ? "value" : params.get("sort") === "category" ? "category" : "key");
+  useUrlQuerySync({ tab: tab === "global" ? undefined : tab, category: tab === "global" && category !== "all" ? category : undefined, q: tab === "global" ? search : undefined, sort: tab === "global" && sort !== "key" ? sort : undefined });
   const [editing, setEditing] = useState<Threshold | null>(null);
   const [override, setOverride] = useState({ threshold_key: "", value: "", site: "", device_type: "", description: "" });
   const [overrideScope, setOverrideScope] = useState<OverrideScope>("site");
