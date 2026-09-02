@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch, withQuery } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { DataTable } from "@/components/ui/data-table";
@@ -13,6 +14,7 @@ import { MetaStrip } from "@/components/ui/meta-strip";
 import { ErrorState, LoadingState } from "@/components/ui/page-state";
 import { PlotlyChart } from "@/components/charts/plotly-chart";
 import { MetricCard, MetricGrid } from "@/components/ui/metric-card";
+import { initialOffset, useUrlQuerySync } from "@/lib/use-url-query-sync";
 
 type Rollup = { id: number; device_name: string; device_type: string | null; site: string | null; rollup_date: string; total_samples: number; ping_samples: number; down_count: number; uptime_percentage: number | null; average_ping_ms: number | null; min_ping_ms: number | null; max_ping_ms: number | null; average_packet_loss_percent: number | null; average_jitter_ms: number | null; max_jitter_ms: number | null; updated_at: string };
 type Response = { items: Rollup[]; meta: { total: number; limit: number; offset: number } };
@@ -21,7 +23,8 @@ type DeviceOption = { id: number; name: string; ip_address: string };
 const value = (item: number | null, suffix = "") => item === null ? "-" : `${item.toLocaleString("id-ID", { maximumFractionDigits: 2 })}${suffix}`;
 
 export function DailySummaryPage() {
-  const [deviceId, setDeviceId] = useState(""); const [site, setSite] = useState(""); const [deviceType, setDeviceType] = useState(""); const [from, setFrom] = useState(""); const [to, setTo] = useState(""); const [offset, setOffset] = useState(0); const limit = 50;
+  const params = useSearchParams(); const [deviceId, setDeviceId] = useState(() => params.get("device") ?? ""); const [site, setSite] = useState(() => params.get("site") ?? ""); const [deviceType, setDeviceType] = useState(() => params.get("type") ?? ""); const [from, setFrom] = useState(() => params.get("from") ?? ""); const [to, setTo] = useState(() => params.get("to") ?? ""); const [offset, setOffset] = useState(() => initialOffset(params.get("offset"))); const limit = 50;
+  useUrlQuerySync({ device: deviceId, site, type: deviceType, from, to, offset });
   const query = useQuery({ queryKey: ["daily-summary", deviceId, site, deviceType, from, to, offset], queryFn: () => apiFetch<Response>(withQuery("/metrics/daily-summary", { device_id: deviceId ? Number(deviceId) : undefined, site, device_type: deviceType, rollup_from: from, rollup_to: to, limit, offset })) });
   const types = useQuery({ queryKey: ["device-types"], queryFn: () => apiFetch<DeviceTypeOption[]>("/devices/meta/types"), staleTime: Infinity });
   const devices = useQuery({ queryKey: ["devices", "daily-summary-options"], queryFn: () => apiFetch<DeviceOption[]>("/devices/options?active_only=false"), staleTime: 60_000 });
