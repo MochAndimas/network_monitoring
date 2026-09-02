@@ -10,7 +10,7 @@ import { CsvExport } from "@/components/ui/csv-export";
 import { apiFetch } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { CapacityCards } from "./capacity-cards";
-import type { SchedulerJob, SystemHealthSummary, UnknownRecord } from "./types";
+import type { FreshnessSummary, SchedulerJob, SystemHealthSummary, UnknownRecord } from "./types";
 
 const value = (record: UnknownRecord, key: string) => String(record[key] ?? "-");
 const number = (record: UnknownRecord, key: string) => Number(record[key] ?? 0).toLocaleString("id-ID");
@@ -26,9 +26,10 @@ export function SystemHealthPage() {
     queryFn: () => apiFetch<SystemHealthSummary>("/observability/summary"),
     refetchInterval: 15_000
   });
+  const freshness = useQuery({ queryKey: ["metrics", "freshness", "summary"], queryFn: () => apiFetch<FreshnessSummary>("/metrics/freshness/summary?active_only=true"), refetchInterval: 15_000 });
 
-  if (health.isPending) return <LoadingState />;
-  if (health.isError) return <ErrorState message="System health tidak dapat dimuat." onRetry={() => void health.refetch()} />;
+  if (health.isPending || freshness.isPending) return <LoadingState />;
+  if (health.isError || freshness.isError) return <ErrorState message="System health tidak dapat dimuat." onRetry={() => { void health.refetch(); void freshness.refetch(); }} />;
 
   const summary = health.data;
   return <main className="app-page">
@@ -112,6 +113,11 @@ export function SystemHealthPage() {
         ]}
         rows={summary.collector_runs}
       />
+    </section>
+
+    <section>
+      <div className="section-header"><div><h2>Freshness per Collector/Site</h2><p>Stale bila tidak ada metric baru dalam {freshness.data.stale_after_minutes} menit.</p></div><CsvExport filename="system-health-freshness.csv" columns={["Collector", "Site", "Freshness", "Total device", "Dengan data", "Fresh", "Stale", "Tanpa data", "Check terbaru WIB", "Check terlama WIB"]} rows={freshness.data.items.map((item) => [item.collector, item.site, item.freshness_status, item.total_devices, item.devices_with_data, item.fresh_devices, item.stale_devices, item.no_data_devices, formatWib(item.latest_checked_at), formatWib(item.oldest_checked_at)])} /></div>
+      <DataTable columns={[{ key: "collector", label: "Collector", render: (item) => item.collector }, { key: "site", label: "Site", render: (item) => item.site }, { key: "status", label: "Freshness", render: (item) => item.freshness_status }, { key: "total", label: "Total device", render: (item) => item.total_devices }, { key: "data", label: "Dengan data", render: (item) => item.devices_with_data }, { key: "fresh", label: "Fresh", render: (item) => item.fresh_devices }, { key: "stale", label: "Stale", render: (item) => item.stale_devices }, { key: "none", label: "Tanpa data", render: (item) => item.no_data_devices }, { key: "latest", label: "Check terbaru (WIB)", render: (item) => formatWib(item.latest_checked_at) }]} rows={freshness.data.items} emptyLabel="Belum ada data freshness." />
     </section>
 
     <section>

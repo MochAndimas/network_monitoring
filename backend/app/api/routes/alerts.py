@@ -33,6 +33,7 @@ async def get_active_alerts_paged(
     alert_type: str | None = Query(default=None),
     device_id: int | None = Query(default=None, ge=1),
     search: str | None = Query(default=None),
+    sort: str = Query(default="newest", pattern="^(newest|severity)$"),
     db: AsyncSession = Depends(get_db),
 ) -> AlertPage:
     """Return get active alerts paged used by alerting workflows."""
@@ -44,6 +45,7 @@ async def get_active_alerts_paged(
         alert_type=alert_type,
         device_id=device_id,
         search=search,
+        sort=sort,
     )
     scope_parts = ["active"]
     if str(severity or "").strip():

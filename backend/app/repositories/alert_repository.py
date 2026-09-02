@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Select, desc, func, or_, select, tuple_
+from sqlalchemy import Select, case, desc, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.alert import Alert
@@ -43,13 +43,13 @@ class AlertRepository:
         alert_type: str | None = None,
         device_id: int | None = None,
         search: str | None = None,
+        sort: str = "newest",
     ) -> list[dict]:
         """Query active alert rows from the database."""
         query = (
             select(Alert, Device.name, Device.site)
             .outerjoin(Device, Device.id == Alert.device_id)
             .where(Alert.status == "active")
-            .order_by(desc(Alert.created_at), desc(Alert.id))
         )
         normalized_severity = str(severity or "").strip().lower()
         if normalized_severity:
@@ -70,6 +70,17 @@ class AlertRepository:
                     func.lower(Device.name).like(f"%{normalized_search}%"),
                 )
             )
+        if sort == "severity":
+            severity_priority = case(
+                (func.lower(Alert.severity) == "critical", 0),
+                (func.lower(Alert.severity) == "high", 1),
+                (func.lower(Alert.severity) == "warning", 2),
+                (func.lower(Alert.severity) == "low", 3),
+                else_=4,
+            )
+            query = query.order_by(severity_priority, desc(Alert.created_at), desc(Alert.id))
+        else:
+            query = query.order_by(desc(Alert.created_at), desc(Alert.id))
         if offset:
             query = query.offset(offset)
         if limit is not None:
@@ -101,6 +112,7 @@ class AlertRepository:
         alert_type: str | None = None,
         device_id: int | None = None,
         search: str | None = None,
+        sort: str = "newest",
     ) -> tuple[list[dict], int]:
         """Query active alert rows paged from the database."""
         rows = await self.list_active_alert_rows(
@@ -111,6 +123,7 @@ class AlertRepository:
             alert_type=alert_type,
             device_id=device_id,
             search=search,
+            sort=sort,
         )
         if offset == 0 and len(rows) < limit:
             return rows, len(rows)

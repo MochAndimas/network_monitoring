@@ -28,3 +28,9 @@ export type SystemHealthSummary = {
   collector_runs: UnknownRecord[];
   operational_alerts: UnknownRecord[];
 };
+
+export type FreshnessSummary = {
+  generated_at: string;
+  stale_after_minutes: number;
+  items: Array<{ collector: string; site: string; total_devices: number; devices_with_data: number; fresh_devices: number; stale_devices: number; no_data_devices: number; freshness_status: string; latest_checked_at: string | null; oldest_checked_at: string | null }>;
+};
