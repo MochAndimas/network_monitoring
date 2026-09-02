@@ -9,6 +9,7 @@ import { MetricCard, MetricGrid } from "@/components/ui/metric-card";
 import { ErrorState, LoadingState } from "@/components/ui/page-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
+import { CursorPagination } from "@/components/ui/cursor-pagination";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { apiFetch, withQuery } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
@@ -63,8 +64,9 @@ export function LiveMonitoringPage() {
   const [rangeTo, setRangeTo] = useState(() => params.get("to") ?? wibDateInput());
   const [chartWindowHours, setChartWindowHours] = useState(() => initialChartWindow(params.get("window")));
   const [snapshotOffset, setSnapshotOffset] = useState(() => initialOffset(params.get("snapshot_offset")));
-  const [historyOffset, setHistoryOffset] = useState(() => initialOffset(params.get("history_offset")));
-  useUrlQuerySync({ device: deviceId, metric, status, mode: monitoringMode === "range" ? monitoringMode : undefined, from: monitoringMode === "range" ? rangeFrom : undefined, to: monitoringMode === "range" ? rangeTo : undefined, window: chartWindowHours === 6 ? undefined : chartWindowHours, snapshot_offset: snapshotOffset, history_offset: historyOffset });
+  const [historyCursor, setHistoryCursor] = useState<string | undefined>();
+  const [historyCursorTrail, setHistoryCursorTrail] = useState<Array<string | undefined>>([]);
+  useUrlQuerySync({ device: deviceId, metric, status, mode: monitoringMode === "range" ? monitoringMode : undefined, from: monitoringMode === "range" ? rangeFrom : undefined, to: monitoringMode === "range" ? rangeTo : undefined, window: chartWindowHours === 6 ? undefined : chartWindowHours, snapshot_offset: snapshotOffset });
   const devices = useQuery({ queryKey: ["devices", "options"], queryFn: () => apiFetch<DeviceOption[]>("/devices/options?active_only=true") });
   const isVoipGroup = deviceId === "__voip__";
   // `__voip__` is a client-side grouping option, not an API device identifier.
@@ -112,7 +114,7 @@ export function LiveMonitoringPage() {
     refetchInterval: refreshInterval
   });
   const pagedHistoryRange = isRangeMode ? { checked_from: wibRangeBoundary(rangeFrom), checked_to: wibRangeBoundary(rangeTo, true) } : liveRange();
-  const historyPage = useQuery({ queryKey: ["live-history-page", apiDeviceId, metric, status, monitoringMode, rangeFrom, rangeTo, historyOffset], queryFn: () => apiFetch<{ items: MetricSample[]; meta: { total: number; limit: number; offset: number } }>(withQuery("/metrics/history/paged", { device_id: apiDeviceId, metric_name: metric || undefined, status: status || undefined, limit: 50, offset: historyOffset, ...pagedHistoryRange })), enabled: !isVoipGroup && hasValidRange });
+  const historyPage = useQuery({ queryKey: ["live-history-page", apiDeviceId, metric, status, monitoringMode, rangeFrom, rangeTo, historyCursor], queryFn: () => apiFetch<{ items: MetricSample[]; meta: { total: number | null; limit: number; next_cursor: string | null; has_more: boolean } }>(withQuery("/metrics/history/paged", { device_id: apiDeviceId, metric_name: metric || undefined, status: status || undefined, limit: 50, cursor: historyCursor, ...pagedHistoryRange })), enabled: !isVoipGroup && hasValidRange });
 
   if (!hasValidRange) return <ErrorState message="Tanggal mulai harus diisi dan tidak boleh melewati tanggal akhir." onRetry={() => undefined} />;
   if (monitoring.isPending || devices.isPending || (deviceMetrics.isPending && Boolean(deviceId) && !isVoipGroup) || (isVoipGroup && voipMetricNames.isPending)) return <LoadingState />;
@@ -140,7 +142,20 @@ export function LiveMonitoringPage() {
     { key: "status", label: "Status", render: (item: MetricSample) => <StatusBadge value={item.status} /> }
   ];
 
-  function resetSnapshot() { setSnapshotOffset(0); setHistoryOffset(0); }
+  function resetSnapshot() { setSnapshotOffset(0); setHistoryCursor(undefined); setHistoryCursorTrail([]); }
+  function nextHistoryPage() {
+    const nextCursor = historyPage.data?.meta.next_cursor;
+    if (!nextCursor) return;
+    setHistoryCursorTrail((trail) => [...trail, historyCursor]);
+    setHistoryCursor(nextCursor);
+  }
+  function previousHistoryPage() {
+    setHistoryCursorTrail((trail) => {
+      const previousCursor = trail[trail.length - 1];
+      setHistoryCursor(previousCursor);
+      return trail.slice(0, -1);
+    });
+  }
   return <main className="app-page">
     <PageHeader title="Live Monitoring" description={isRangeMode ? `Riwayat metric untuk rentang ${rangeFrom} s.d. ${rangeTo}.` : "Snapshot 24 jam terakhir, riwayat metric, dan trend perangkat secara real-time."} />
     <MetricGrid columns={5}>
@@ -181,7 +196,7 @@ export function LiveMonitoringPage() {
     <section>
       <div className="section-header"><h2>Riwayat Detail</h2><CsvExport filename="live-history.csv" columns={["Dicek WIB", "Device", "Metrik", "Nilai", "Nilai numerik", "Status"]} rows={(historyPage.data?.items ?? data.history.items).map((item) => [formatWib(item.checked_at), item.device_name, item.metric_name, displayValue(item), item.metric_value_numeric, item.status])} /></div>
       <DataTable columns={historyColumns} rows={historyPage.data?.items ?? data.history.items} pageSize={null} />
-      {historyPage.data ? <Pagination offset={historyOffset} limit={historyPage.data.meta.limit} total={historyPage.data.meta.total} onChange={setHistoryOffset} /> : null}
+      {historyPage.data ? <CursorPagination itemCount={historyPage.data.items.length} limit={historyPage.data.meta.limit} total={historyPage.data.meta.total} pageIndex={historyCursorTrail.length} hasNext={historyPage.data.meta.has_more} hasPrevious={historyCursorTrail.length > 0} onNext={nextHistoryPage} onPrevious={previousHistoryPage} /> : null}
     </section>
   </main>;
 }
