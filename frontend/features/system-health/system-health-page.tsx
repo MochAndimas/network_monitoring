@@ -32,69 +32,90 @@ export function SystemHealthPage() {
   if (health.isError || freshness.isError) return <ErrorState message="System health tidak dapat dimuat." onRetry={() => { void health.refetch(); void freshness.refetch(); }} />;
 
   const summary = health.data;
+  const runningJobs = summary.scheduler_health.filter((item) => value(item, "state") === "running").length;
+  const failingJobs = summary.scheduler_health.filter((item) => value(item, "state") === "failing").length;
+  const staleJobs = summary.scheduler_health.filter((item) => value(item, "state") === "stale").length;
+  const maxLagSeconds = Math.max(0, ...summary.scheduler_health.map((item) => Number(item.schedule_lag_seconds ?? 0)));
   return <main className="app-page">
     <PageHeader title="System Health" description="Kesehatan backend, scheduler, collector, dan pipeline monitoring. Diperbarui setiap 15 detik." />
     <MetaStrip items={[{ label: "Refresh otomatis", value: "Aktif (15 dtk)" }, { label: "Database", value: summary.database }, { label: "Operational alert", value: summary.operational_alerts.length }, { label: "Terakhir dirender", value: formatWib(new Date().toISOString()) }]} />
 
-    <MetricGrid columns={5}>
+    <MetricGrid columns={8}>
       <MetricCard label="Database" value={summary.database} />
       <MetricCard label="Device" value={summary.devices_total.toLocaleString("id-ID")} />
       <MetricCard label="Latest metric" value={summary.metrics_latest_snapshot.toLocaleString("id-ID")} />
       <MetricCard label="Alert aktif" value={summary.alerts_active.toLocaleString("id-ID")} />
       <MetricCard label="Insiden aktif" value={summary.incidents_active.toLocaleString("id-ID")} />
+      <MetricCard label="Job running" value={runningJobs.toLocaleString("id-ID")} />
+      <MetricCard label="Job failing" value={failingJobs.toLocaleString("id-ID")} />
+      <MetricCard label="Job stale" value={staleJobs.toLocaleString("id-ID")} />
+      <MetricCard label="Lag terbesar" value={`${maxLagSeconds.toLocaleString("id-ID", { maximumFractionDigits: 0 })} dtk`} />
     </MetricGrid>
 
     <CapacityCards summary={summary} />
 
     <section>
-      <div className="section-header"><h2>Operational Alerts</h2><CsvExport filename="system-health-operational-alerts.csv" columns={["Job", "Severity", "Penyebab", "Detail"]} rows={summary.operational_alerts.map((item) => [value(item, "job_name"), value(item, "severity"), value(item, "reason"), value(item, "message")])} /></div>
+      <div className="section-header"><h2>Operational Alerts</h2><CsvExport filename="system-health-operational-alerts.csv" columns={["Job", "Severity", "Penyebab", "Detail", "Error terakhir"]} rows={summary.operational_alerts.map((item) => [value(item, "job_name"), value(item, "severity"), value(item, "reason"), value(item, "message"), value(item, "last_error")])} /></div>
       <DataTable
         emptyLabel="Tidak ada operational alert aktif."
         columns={[
           { key: "job", label: "Job", render: (item) => value(item, "job_name") },
           { key: "severity", label: "Severity", render: (item) => value(item, "severity") },
           { key: "reason", label: "Penyebab", render: (item) => value(item, "reason") },
-          { key: "message", label: "Detail", render: (item) => value(item, "message") }
+          { key: "message", label: "Detail", render: (item) => value(item, "message") },
+          { key: "error", label: "Error terakhir", render: (item) => value(item, "last_error") }
         ]}
         rows={summary.operational_alerts}
       />
     </section>
 
     <section>
-      <div className="section-header"><h2>Scheduler Jobs</h2><CsvExport filename="system-health-scheduler-jobs.csv" columns={["Job", "Running", "Failure beruntun", "Durasi terakhir", "Sukses terakhir"]} rows={summary.scheduler_jobs.map((item) => [item.job_name, item.is_running ? "Ya" : "Tidak", item.consecutive_failures, item.last_duration_ms, formatWib(item.last_succeeded_at)])} /></div>
+      <div className="section-header"><h2>Scheduler Jobs</h2><CsvExport filename="system-health-scheduler-jobs.csv" columns={["Job", "Running", "Failure beruntun", "Mulai terakhir", "Sukses terakhir", "Gagal terakhir", "Durasi terakhir"]} rows={summary.scheduler_jobs.map((item) => [item.job_name, item.is_running ? "Ya" : "Tidak", item.consecutive_failures, formatWib(item.last_started_at), formatWib(item.last_succeeded_at), formatWib(item.last_failed_at), item.last_duration_ms])} /></div>
       <DataTable<SchedulerJob>
         columns={[
           { key: "name", label: "Job", render: (item) => item.job_name },
           { key: "running", label: "Running", render: (item) => item.is_running ? "Ya" : "Tidak" },
           { key: "failures", label: "Failure beruntun", render: (item) => item.consecutive_failures },
+          { key: "lastStarted", label: "Mulai terakhir", render: (item) => formatWib(item.last_started_at) },
           { key: "duration", label: "Durasi terakhir", render: (item) => item.last_duration_ms == null ? "-" : `${item.last_duration_ms} ms` },
-          { key: "lastSuccess", label: "Sukses terakhir", render: (item) => formatWib(item.last_succeeded_at) }
+          { key: "lastSuccess", label: "Sukses terakhir", render: (item) => formatWib(item.last_succeeded_at) },
+          { key: "lastFailure", label: "Gagal terakhir", render: (item) => formatWib(item.last_failed_at) }
         ]}
         rows={summary.scheduler_jobs}
       />
     </section>
 
     <section>
-      <div className="section-header"><h2>Scheduler Timing</h2><CsvExport filename="system-health-scheduler-timing.csv" columns={["Job", "Status", "Schedule lag", "Heartbeat"]} rows={summary.scheduler_health.map((item) => [value(item, "job_name"), value(item, "state"), value(item, "schedule_lag_seconds"), value(item, "last_heartbeat_at")])} /></div>
+      <div className="section-header"><h2>Scheduler Timing</h2><CsvExport filename="system-health-scheduler-timing.csv" columns={["Job", "Status", "Interval", "Umur heartbeat", "Schedule lag", "Batas stale", "Heartbeat terakhir", "Durasi terakhir"]} rows={summary.scheduler_health.map((item) => [value(item, "job_name"), value(item, "state"), value(item, "expected_interval_seconds"), value(item, "heartbeat_age_seconds"), value(item, "schedule_lag_seconds"), value(item, "stale_after_seconds"), formatWib(value(item, "last_heartbeat_at") === "-" ? null : value(item, "last_heartbeat_at")), value(item, "last_duration_ms")])} /></div>
       <DataTable
         columns={[
           { key: "job", label: "Job", render: (item) => value(item, "job_name") },
           { key: "state", label: "Status", render: (item) => value(item, "state") },
+          { key: "interval", label: "Interval", render: (item) => `${number(item, "expected_interval_seconds")} dtk` },
+          { key: "age", label: "Umur heartbeat", render: (item) => `${number(item, "heartbeat_age_seconds")} dtk` },
           { key: "lag", label: "Schedule lag", render: (item) => `${number(item, "schedule_lag_seconds")} dtk` },
-          { key: "heartbeat", label: "Heartbeat", render: (item) => formatWib(value(item, "last_heartbeat_at") === "-" ? null : value(item, "last_heartbeat_at")) }
+          { key: "stale", label: "Batas stale", render: (item) => `${number(item, "stale_after_seconds")} dtk` },
+          { key: "heartbeat", label: "Heartbeat", render: (item) => formatWib(value(item, "last_heartbeat_at") === "-" ? null : value(item, "last_heartbeat_at")) },
+          { key: "duration", label: "Durasi", render: (item) => `${number(item, "last_duration_ms")} ms` }
         ]}
         rows={summary.scheduler_health}
       />
     </section>
 
     <section>
-      <div className="section-header"><h2>Kesehatan Collector</h2><CsvExport filename="system-health-collectors.csv" columns={["Collector", "Status", "Success rate", "Timeout", "Tindakan"]} rows={summary.collector_health.map((item) => [value(item, "collector"), value(item, "state"), value(item, "success_rate_percent"), value(item, "timeout_count"), value(item, "action")])} /></div>
+      <div className="section-header"><h2>Kesehatan Collector</h2><CsvExport filename="system-health-collectors.csv" columns={["Collector", "Site", "Tipe device", "Protocol", "Status", "Success rate", "Sampel", "Timeout", "OID tidak didukung", "Check terakhir", "Tindakan"]} rows={summary.collector_health.map((item) => [value(item, "collector"), value(item, "site"), value(item, "device_type"), value(item, "protocol"), value(item, "state"), value(item, "success_rate_percent"), value(item, "sample_count"), value(item, "timeout_count"), value(item, "unsupported_oid_count"), formatWib(value(item, "last_checked_at") === "-" ? null : value(item, "last_checked_at")), value(item, "action")])} /></div>
       <DataTable
         columns={[
           { key: "collector", label: "Collector", render: (item) => value(item, "collector") },
+          { key: "site", label: "Site", render: (item) => value(item, "site") },
+          { key: "type", label: "Tipe device", render: (item) => value(item, "device_type") },
+          { key: "protocol", label: "Protocol", render: (item) => value(item, "protocol") },
           { key: "status", label: "Status", render: (item) => value(item, "state") },
           { key: "success", label: "Success rate", render: (item) => `${number(item, "success_rate_percent")}%` },
+          { key: "samples", label: "Sampel", render: (item) => number(item, "sample_count") },
           { key: "timeout", label: "Timeout", render: (item) => number(item, "timeout_count") },
+          { key: "unsupported", label: "OID tidak didukung", render: (item) => number(item, "unsupported_oid_count") },
+          { key: "checked", label: "Check terakhir", render: (item) => formatWib(value(item, "last_checked_at") === "-" ? null : value(item, "last_checked_at")) },
           { key: "action", label: "Tindakan", render: (item) => value(item, "action") }
         ]}
         rows={summary.collector_health}
