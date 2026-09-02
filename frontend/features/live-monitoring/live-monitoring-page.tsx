@@ -14,6 +14,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { apiFetch, withQuery } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { initialOffset, useUrlQuerySync } from "@/lib/use-url-query-sync";
+import { toWibOffsetTimestamp } from "@/lib/wib-time";
 import { LiveInsights } from "./live-insights";
 import { MikrotikDetail } from "./mikrotik-detail";
 import { NasDetail } from "./nas-detail";
@@ -46,7 +47,7 @@ function wibRangeBoundary(date: string, endOfDay = false) {
 function liveRange() {
   const end = new Date();
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
-  return { checked_from: start.toISOString(), checked_to: end.toISOString() };
+  return { checked_from: toWibOffsetTimestamp(start), checked_to: toWibOffsetTimestamp(end) };
 }
 
 function initialChartWindow(value: string | null) {
