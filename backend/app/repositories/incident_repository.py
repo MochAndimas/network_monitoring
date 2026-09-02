@@ -3,7 +3,7 @@
 from datetime import timedelta
 import json
 
-from sqlalchemy import Select, desc, func, or_, select
+from sqlalchemy import Select, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.time import utcnow
@@ -18,6 +18,31 @@ SEVERITY_PRIORITY = {
     "warning": 2,
     "info": 1,
 }
+
+
+def _severity_priority_expression(value):
+    """Build a portable SQL severity rank expression (higher is more urgent)."""
+    return case(
+        (func.lower(value) == "critical", 4),
+        (func.lower(value) == "high", 3),
+        (func.lower(value) == "warning", 2),
+        (func.lower(value) == "info", 1),
+        else_=0,
+    )
+
+
+def _effective_severity_priority_expression():
+    """Resolve override-or-related-alert severity inside SQL for paged filtering."""
+    related_alert_priority = (
+        select(func.max(_severity_priority_expression(Alert.severity)))
+        .where(Alert.device_id == Incident.device_id)
+        .where(Alert.created_at >= Incident.started_at)
+        .where(or_(Incident.ended_at.is_(None), Alert.created_at <= Incident.ended_at))
+        .correlate(Incident)
+        .scalar_subquery()
+    )
+    override_priority = _severity_priority_expression(Incident.severity_override)
+    return case((override_priority > 0, override_priority), else_=func.coalesce(related_alert_priority, 0))
 
 
 class IncidentNotFoundError(ValueError):
@@ -71,6 +96,8 @@ class IncidentRepository:
         search: str | None = None,
         site: str | None = None,
         device_id: int | None = None,
+        severity: str | None = None,
+        sort: str = "newest",
     ) -> list[dict]:
         """Query incident rows from the database."""
         query = select(Incident, Device.name, Device.site).outerjoin(Device, Device.id == Incident.device_id)
@@ -89,7 +116,14 @@ class IncidentRepository:
                     func.lower(Device.name).like(f"%{normalized_search}%"),
                 )
             )
-        query = query.order_by(desc(Incident.started_at), desc(Incident.id))
+        effective_severity = _effective_severity_priority_expression()
+        requested_severity = SEVERITY_PRIORITY.get(str(severity or "").strip().lower())
+        if requested_severity is not None:
+            query = query.where(effective_severity == requested_severity)
+        if sort == "severity":
+            query = query.order_by(desc(effective_severity), desc(Incident.started_at), desc(Incident.id))
+        else:
+            query = query.order_by(desc(Incident.started_at), desc(Incident.id))
         if offset:
             query = query.offset(offset)
         if limit is not None:
@@ -129,12 +163,14 @@ class IncidentRepository:
         search: str | None = None,
         site: str | None = None,
         device_id: int | None = None,
+        severity: str | None = None,
+        sort: str = "newest",
     ) -> tuple[list[dict], int]:
         """Query incident rows paged from the database."""
-        rows = await self.list_incident_rows(status=status, limit=limit, offset=offset, search=search, site=site, device_id=device_id)
+        rows = await self.list_incident_rows(status=status, limit=limit, offset=offset, search=search, site=site, device_id=device_id, severity=severity, sort=sort)
         if offset == 0 and len(rows) < limit:
             return rows, len(rows)
-        return rows, await self.count_incident_rows(status=status, search=search, site=site, device_id=device_id)
+        return rows, await self.count_incident_rows(status=status, search=search, site=site, device_id=device_id, severity=severity)
 
     async def get_incident_row(self, incident_id: int) -> dict:
         """Return one incident row with derived summary and severity."""
@@ -165,7 +201,7 @@ class IncidentRepository:
             "updated_at": incident.updated_at,
         }
 
-    async def count_incident_rows(self, *, status: str | None = None, search: str | None = None, site: str | None = None, device_id: int | None = None) -> int:
+    async def count_incident_rows(self, *, status: str | None = None, search: str | None = None, site: str | None = None, device_id: int | None = None, severity: str | None = None) -> int:
         """Query incident rows from the database."""
         query = select(func.count()).select_from(Incident)
         if status:
@@ -185,6 +221,9 @@ class IncidentRepository:
                     func.lower(Device.name).like(f"%{normalized_search}%"),
                 )
             )
+        requested_severity = SEVERITY_PRIORITY.get(str(severity or "").strip().lower())
+        if requested_severity is not None:
+            query = query.where(_effective_severity_priority_expression() == requested_severity)
         return int(await self.db.scalar(query) or 0)
 
     async def _incident_alert_summaries(self, incidents: list[Incident]) -> dict[int, str]:

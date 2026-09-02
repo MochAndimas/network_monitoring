@@ -63,6 +63,8 @@ async def list_incidents_paged(
     search: str | None = Query(default=None),
     site: str | None = Query(default=None),
     device_id: int | None = Query(default=None, ge=1),
+    severity: str | None = Query(default=None, pattern="^(critical|high|warning|info)$"),
+    sort: str = Query(default="newest", pattern="^(newest|severity)$"),
     db: AsyncSession = Depends(get_db),
 ) -> IncidentPage:
     """Handle the incidents paged endpoint."""
@@ -73,12 +75,16 @@ async def list_incidents_paged(
         search=search,
         site=site,
         device_id=device_id,
+        severity=severity,
+        sort=sort,
     )
     payload_scope = str(status or "all")
     if str(search or "").strip():
         payload_scope = f"{payload_scope}+search"
     if str(site or "").strip():
         payload_scope = f"{payload_scope}+site"
+    if severity:
+        payload_scope = f"{payload_scope}+severity"
     record_api_payload_request(endpoint="/incidents/paged", scope=payload_scope)
     record_api_payload_section(
         endpoint="/incidents/paged",
