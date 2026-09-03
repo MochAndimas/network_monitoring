@@ -23,8 +23,8 @@ type Response = { items: Rollup[]; meta: { total: number; limit: number; offset:
 type DeviceTypeOption = { value: string; label: string };
 type DeviceOption = { id: number; name: string; ip_address: string };
 const value = (item: number | null, suffix = "") => item === null ? "-" : `${item.toLocaleString("id-ID", { maximumFractionDigits: 2 })}${suffix}`;
-const PAGE_SIZES = [50, 100, 200, 500] as const;
-const DEFAULT_PAGE_SIZE = 100;
+const PAGE_SIZES = [25, 50, 100, 200, 500] as const;
+const DEFAULT_PAGE_SIZE = 25;
 
 function defaultRollupDate(daysAgo = 0) {
   return toWibDate(new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000));
