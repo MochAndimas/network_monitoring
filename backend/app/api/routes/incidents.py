@@ -121,7 +121,7 @@ async def get_incident(
     incident_id: int,
     db: AsyncSession = Depends(get_db),
 ) -> IncidentItem:
-    """Return one incident for Streamlit board drill-down views."""
+    """Return one incident for frontend detail views."""
     row = await _incident_or_404(IncidentRepository(db).get_incident_row(incident_id))
     return IncidentItem(**row)
 

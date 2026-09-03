@@ -100,7 +100,7 @@ def client_context():
     main_module.settings.auth_password_secret = "test-password-secret"
     main_module.settings.auth_cookie_secure = False
     main_module.settings.trusted_hosts = "localhost,127.0.0.1"
-    main_module.settings.cors_origins = "http://localhost:8501,http://127.0.0.1:8501"
+    main_module.settings.cors_origins = "http://localhost:3000,http://127.0.0.1:3000"
     deps_module.settings.internal_api_key = TEST_API_KEY
     deps_module.settings.auth_cookie_secure = False
     pipeline_control_module.engine = engine
@@ -191,4 +191,3 @@ __all__ = [
     "_seed_devices_and_metrics",
     "_create_user",
 ]
-

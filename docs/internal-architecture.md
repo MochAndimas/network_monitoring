@@ -1,6 +1,6 @@
 # Internal Module Ownership
 
-Dokumen ini adalah peta singkat untuk perubahan internal. Kontrak HTTP tetap berada di FastAPI; Streamlit hanya memanggil API dan merender state.
+Dokumen ini adalah peta singkat untuk perubahan internal. Kontrak HTTP tetap berada di FastAPI; Next.js memanggil API dan merender state.
 
 | Area | Lokasi utama | Ownership dan batas perubahan |
 | --- | --- | --- |
@@ -8,7 +8,7 @@ Dokumen ini adalah peta singkat untuk perubahan internal. Kontrak HTTP tetap ber
 | Alerting | `backend/app/alerting/engine_parts/` | Rule evaluator menentukan expected alert; `impl.py` hanya mengorkestrasi lifecycle, incident, dan notifier. Tambah rule beserta fixture unitnya. |
 | Database | `backend/app/models/`, `backend/app/repositories/`, `alembic/` | Perubahan schema wajib memiliki migration upgrade/downgrade dan lulus migration gate. |
 | API/service | `backend/app/services/`, `backend/app/api/` | Authorization, shaping payload, dan business logic berada di sini. Dashboard tidak boleh menduplikasi policy. |
-| Dashboard | `dashboard/pages/`, `dashboard/components/` | Rendering, state filter, pagination, export, dan action API. Reuse helper komponen sebelum menambah formatter/pagination baru. |
+| Frontend | `frontend/features/`, `frontend/components/` | Rendering, state filter, pagination, export, dan action API. Reuse helper komponen sebelum menambah formatter/pagination baru. |
 
 ## Contract collector
 

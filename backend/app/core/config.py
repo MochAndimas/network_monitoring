@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     bootstrap_admin_full_name: str = "Monitoring Admin"
     bootstrap_admin_password: str = ""
     allow_insecure_no_auth: bool = False
-    cors_origins: str = "http://localhost:8501,http://127.0.0.1:8501"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     trusted_hosts: str = "localhost,127.0.0.1"
     trusted_proxy_ips: str = ""
     log_level: str = "INFO"

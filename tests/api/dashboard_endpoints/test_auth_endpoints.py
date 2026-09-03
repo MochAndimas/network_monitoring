@@ -223,7 +223,7 @@ def test_restore_accepts_trusted_origin_when_refresh_cookie_present():
         login_response = client.post("/auth/login", json={"username": "viewer", "password": "StrongPass123!"})
         assert login_response.status_code == 200
 
-        restore_response = client.post("/auth/restore", headers={"origin": "http://localhost:8501"})
+        restore_response = client.post("/auth/restore", headers={"origin": "http://localhost:3000"})
         assert restore_response.status_code == 200
 
 def test_logout_rejects_untrusted_origin_for_cookie_session():
@@ -437,4 +437,3 @@ def test_user_can_change_password_and_old_password_stops_working():
 
         assert old_login.status_code == 401
         assert new_login.status_code == 200
-
