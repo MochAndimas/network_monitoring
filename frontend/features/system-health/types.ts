@@ -25,6 +25,7 @@ export type SystemHealthSummary = {
   scheduler_jobs: SchedulerJob[];
   scheduler_health: UnknownRecord[];
   collector_health: UnknownRecord[];
+  collector_health_window_hours?: number;
   collector_runs: UnknownRecord[];
   operational_alerts: UnknownRecord[];
 };

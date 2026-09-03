@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { ChangeEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiFetch, withQuery } from "@/lib/api/client";
@@ -39,7 +39,7 @@ export function DailySummaryPage() {
   if (query.isPending) return <LoadingState />; if (query.isError) return <ErrorState message="Daily summary tidak dapat dimuat." onRetry={() => void query.refetch()} />;
   const data = query.data;
   const reset = (setter: (value: string) => void) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => { setter(event.target.value); setOffset(0); };
-  const summary = useMemo(() => {
+  const summary = (() => {
     const rows = data.items;
     const totalSamples = rows.reduce((sum, row) => sum + row.total_samples, 0);
     const totalDown = rows.reduce((sum, row) => sum + row.down_count, 0);
@@ -49,19 +49,19 @@ export function DailySummaryPage() {
       return denominator ? weightedRows.reduce((sum, row) => sum + (row[key] ?? 0) * row.ping_samples, 0) / denominator : null;
     };
     return { totalSamples, totalDown, uptime: weighted("uptime_percentage"), ping: weighted("average_ping_ms"), loss: weighted("average_packet_loss_percent"), jitter: rows.reduce<number | null>((max, row) => row.max_jitter_ms !== null && (max === null || row.max_jitter_ms > max) ? row.max_jitter_ms : max, null) };
-  }, [data.items]);
-  const chartSeries = useMemo(() => {
+  })();
+  const chartSeries = (() => {
     const grouped = new Map<string, Rollup[]>();
     data.items.forEach((row) => { const key = deviceId ? "Perangkat terpilih" : row.device_name; grouped.set(key, [...(grouped.get(key) ?? []), row]); });
     return [...grouped.entries()].map(([name, rows]) => ({ name, rows: [...rows].sort((left, right) => left.rollup_date.localeCompare(right.rollup_date)) }));
-  }, [data.items, deviceId]);
+  })();
   return <main className="app-page"><PageHeader title="Daily Summary" description="Rollup harian uptime dan kualitas koneksi dari backend." />
     <MetaStrip items={[{ label: "Sumber", value: "metrics_daily_rollups" }, { label: "Rentang", value: `${from} s/d ${to}` }, { label: "Cakupan", value: `${data.meta.total} rollup` }, { label: "Terakhir dirender", value: formatWib(new Date().toISOString()) }]} />
     <div className="filter-panel"><label>Device<select value={deviceId} onChange={reset(setDeviceId)}><option value="">Semua device</option>{devices.data?.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.ip_address}</option>)}</select></label><label>Site<input value={site} onChange={reset(setSite)} placeholder="Semua site" /></label><label>Tipe device<select value={deviceType} onChange={reset(setDeviceType)}><option value="">Semua tipe</option>{types.data?.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><label>Dari<input type="date" value={from} onChange={reset(setFrom)} /></label><label>Sampai<input type="date" value={to} onChange={reset(setTo)} /></label><label>Baris<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setOffset(0); }}>{PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}</select></label></div>
     <MetricGrid columns={6}><MetricCard label="Total sampel" value={summary.totalSamples.toLocaleString("id-ID")} /><MetricCard label="Total down" value={summary.totalDown.toLocaleString("id-ID")} /><MetricCard label="Uptime rata-rata" value={value(summary.uptime, "%")} /><MetricCard label="Avg ping" value={value(summary.ping, " ms")} /><MetricCard label="Packet loss" value={value(summary.loss, "%")} /><MetricCard label="Max jitter" value={value(summary.jitter, " ms")} /></MetricGrid>
     <section className="two-column"><section><h2>Tren Uptime</h2><PlotlyChart ariaLabel="Tren uptime harian" data={chartSeries.map(({ name, rows }) => ({ type: "scatter", mode: "lines+markers", x: rows.map((item) => item.rollup_date), y: rows.map((item) => item.uptime_percentage), name, hovertemplate: "%{x}<br>%{y:.2f}%<extra></extra>" }))} layout={{ yaxis: { title: { text: "Uptime (%)" }, range: [0, 100] }, xaxis: { title: { text: "Tanggal" } } }} /></section><section><h2>Rata-rata Ping</h2><PlotlyChart ariaLabel="Tren rata-rata ping harian" data={chartSeries.map(({ name, rows }) => ({ type: "scatter", mode: "lines+markers", x: rows.map((item) => item.rollup_date), y: rows.map((item) => item.average_ping_ms), name, hovertemplate: "%{x}<br>%{y:.2f} ms<extra></extra>" }))} layout={{ yaxis: { title: { text: "Ping (ms)" } }, xaxis: { title: { text: "Tanggal" } } }} /></section></section>
     <div className="section-header"><h2>Detail Rollup</h2><CsvExport filename="daily-summary.csv" columns={["Tanggal", "Device", "Tipe", "Sampel", "Ping Sampel", "Down", "Uptime", "Avg Ping", "Min Ping", "Max Ping", "Packet Loss", "Avg Jitter", "Max Jitter", "Terakhir Update"]} rows={data.items.map((item) => [item.rollup_date, item.device_name, item.device_type, item.total_samples, item.ping_samples, item.down_count, value(item.uptime_percentage, "%"), value(item.average_ping_ms, " ms"), value(item.min_ping_ms, " ms"), value(item.max_ping_ms, " ms"), value(item.average_packet_loss_percent, "%"), value(item.average_jitter_ms, " ms"), value(item.max_jitter_ms, " ms"), formatWib(item.updated_at)])} /></div>
-    <DataTable columns={[{ key: "date", label: "Tanggal", render: (item) => item.rollup_date }, { key: "device", label: "Device", render: (item) => item.device_name }, { key: "type", label: "Tipe", render: (item) => item.device_type ?? "-" }, { key: "samples", label: "Sample", render: (item) => item.total_samples }, { key: "ping", label: "Ping sample", render: (item) => item.ping_samples }, { key: "down", label: "Down", render: (item) => item.down_count }, { key: "uptime", label: "Uptime", render: (item) => value(item.uptime_percentage, "%") }, { key: "avg", label: "Avg ping", render: (item) => value(item.average_ping_ms, " ms") }, { key: "minmax", label: "Min / Max ping", render: (item) => `${value(item.min_ping_ms)} / ${value(item.max_ping_ms)} ms` }, { key: "loss", label: "Packet loss", render: (item) => value(item.average_packet_loss_percent, "%") }, { key: "jitter", label: "Avg / Max jitter", render: (item) => `${value(item.average_jitter_ms)} / ${value(item.max_jitter_ms)} ms` }, { key: "updated", label: "Terakhir update (WIB)", render: (item) => formatWib(item.updated_at) }]} rows={data.items} />
+    <DataTable columns={[{ key: "date", label: "Tanggal", render: (item) => item.rollup_date }, { key: "device", label: "Device", render: (item) => item.device_name }, { key: "type", label: "Tipe", render: (item) => item.device_type ?? "-" }, { key: "samples", label: "Sample", render: (item) => item.total_samples }, { key: "ping", label: "Ping sample", render: (item) => item.ping_samples }, { key: "down", label: "Down", render: (item) => item.down_count }, { key: "uptime", label: "Uptime", render: (item) => value(item.uptime_percentage, "%") }, { key: "avg", label: "Avg ping", render: (item) => value(item.average_ping_ms, " ms") }, { key: "minmax", label: "Min / Max ping", render: (item) => `${value(item.min_ping_ms)} / ${value(item.max_ping_ms)} ms` }, { key: "loss", label: "Packet loss", render: (item) => value(item.average_packet_loss_percent, "%") }, { key: "jitter", label: "Avg / Max jitter", render: (item) => `${value(item.average_jitter_ms)} / ${value(item.max_jitter_ms)} ms` }, { key: "updated", label: "Terakhir update (WIB)", render: (item) => formatWib(item.updated_at) }]} rows={data.items} pageSize={null} />
     <Pagination offset={offset} limit={pageSize} total={data.meta.total} onChange={setOffset} />
   </main>;
 }

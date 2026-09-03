@@ -7,6 +7,7 @@ import { ErrorState, LoadingState } from "@/components/ui/page-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { MetaStrip } from "@/components/ui/meta-strip";
 import { CsvExport } from "@/components/ui/csv-export";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { apiFetch } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { CapacityCards } from "./capacity-cards";
@@ -60,7 +61,7 @@ export function SystemHealthPage() {
         emptyLabel="Tidak ada operational alert aktif."
         columns={[
           { key: "job", label: "Job", render: (item) => value(item, "job_name") },
-          { key: "severity", label: "Severity", render: (item) => value(item, "severity") },
+          { key: "severity", label: "Severity", render: (item) => <StatusBadge value={value(item, "severity")} /> },
           { key: "reason", label: "Penyebab", render: (item) => value(item, "reason") },
           { key: "message", label: "Detail", render: (item) => value(item, "message") },
           { key: "error", label: "Error terakhir", render: (item) => value(item, "last_error") }
@@ -90,7 +91,7 @@ export function SystemHealthPage() {
       <DataTable
         columns={[
           { key: "job", label: "Job", render: (item) => value(item, "job_name") },
-          { key: "state", label: "Status", render: (item) => value(item, "state") },
+          { key: "state", label: "Status", render: (item) => <StatusBadge value={value(item, "state")} /> },
           { key: "interval", label: "Interval", render: (item) => `${number(item, "expected_interval_seconds")} dtk` },
           { key: "age", label: "Umur heartbeat", render: (item) => `${number(item, "heartbeat_age_seconds")} dtk` },
           { key: "lag", label: "Schedule lag", render: (item) => `${number(item, "schedule_lag_seconds")} dtk` },
@@ -104,13 +105,14 @@ export function SystemHealthPage() {
 
     <section>
       <div className="section-header"><h2>Kesehatan Collector</h2><CsvExport filename="system-health-collectors.csv" columns={["Collector", "Site", "Tipe device", "Protocol", "Status", "Success rate", "Sampel", "Timeout", "OID tidak didukung", "Check terakhir", "Tindakan"]} rows={summary.collector_health.map((item) => [value(item, "collector"), value(item, "site"), value(item, "device_type"), value(item, "protocol"), value(item, "state"), value(item, "success_rate_percent"), value(item, "sample_count"), value(item, "timeout_count"), value(item, "unsupported_oid_count"), formatWib(value(item, "last_checked_at") === "-" ? null : value(item, "last_checked_at")), value(item, "action")])} /></div>
+      <p className="section-caption">Agregasi {summary.collector_health_window_hours ?? 24} jam terakhir dari metric status collector.</p>
       <DataTable
         columns={[
           { key: "collector", label: "Collector", render: (item) => value(item, "collector") },
           { key: "site", label: "Site", render: (item) => value(item, "site") },
           { key: "type", label: "Tipe device", render: (item) => value(item, "device_type") },
           { key: "protocol", label: "Protocol", render: (item) => value(item, "protocol") },
-          { key: "status", label: "Status", render: (item) => value(item, "state") },
+          { key: "status", label: "Status", render: (item) => <StatusBadge value={value(item, "state")} /> },
           { key: "success", label: "Success rate", render: (item) => `${number(item, "success_rate_percent")}%` },
           { key: "samples", label: "Sampel", render: (item) => number(item, "sample_count") },
           { key: "timeout", label: "Timeout", render: (item) => number(item, "timeout_count") },
@@ -138,16 +140,18 @@ export function SystemHealthPage() {
 
     <section>
       <div className="section-header"><div><h2>Freshness per Collector/Site</h2><p>Stale bila tidak ada metric baru dalam {freshness.data.stale_after_minutes} menit.</p></div><CsvExport filename="system-health-freshness.csv" columns={["Collector", "Site", "Freshness", "Total device", "Dengan data", "Fresh", "Stale", "Tanpa data", "Check terbaru WIB", "Check terlama WIB"]} rows={freshness.data.items.map((item) => [item.collector, item.site, item.freshness_status, item.total_devices, item.devices_with_data, item.fresh_devices, item.stale_devices, item.no_data_devices, formatWib(item.latest_checked_at), formatWib(item.oldest_checked_at)])} /></div>
-      <DataTable columns={[{ key: "collector", label: "Collector", render: (item) => item.collector }, { key: "site", label: "Site", render: (item) => item.site }, { key: "status", label: "Freshness", render: (item) => item.freshness_status }, { key: "total", label: "Total device", render: (item) => item.total_devices }, { key: "data", label: "Dengan data", render: (item) => item.devices_with_data }, { key: "fresh", label: "Fresh", render: (item) => item.fresh_devices }, { key: "stale", label: "Stale", render: (item) => item.stale_devices }, { key: "none", label: "Tanpa data", render: (item) => item.no_data_devices }, { key: "latest", label: "Check terbaru (WIB)", render: (item) => formatWib(item.latest_checked_at) }]} rows={freshness.data.items} emptyLabel="Belum ada data freshness." />
+      <DataTable columns={[{ key: "collector", label: "Collector", render: (item) => item.collector }, { key: "site", label: "Site", render: (item) => item.site }, { key: "status", label: "Freshness", render: (item) => <StatusBadge value={item.freshness_status} /> }, { key: "total", label: "Total device", render: (item) => item.total_devices }, { key: "data", label: "Dengan data", render: (item) => item.devices_with_data }, { key: "fresh", label: "Fresh", render: (item) => item.fresh_devices }, { key: "stale", label: "Stale", render: (item) => item.stale_devices }, { key: "none", label: "Tanpa data", render: (item) => item.no_data_devices }, { key: "latest", label: "Check terbaru (WIB)", render: (item) => formatWib(item.latest_checked_at) }]} rows={freshness.data.items} emptyLabel="Belum ada data freshness." />
     </section>
 
-    <section>
-      <h2>Auth Observability</h2>
-      <KeyValueTable rows={summary.auth} />
-    </section>
-    <section>
-      <h2>Runtime</h2>
-      <KeyValueTable rows={summary.runtime} />
+    <section className="two-column">
+      <section>
+        <h2>Auth Observability</h2>
+        <KeyValueTable rows={summary.auth} />
+      </section>
+      <section>
+        <h2>Runtime</h2>
+        <KeyValueTable rows={summary.runtime} />
+      </section>
     </section>
   </main>;
 }
