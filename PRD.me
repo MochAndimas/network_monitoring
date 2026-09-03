@@ -3,11 +3,11 @@
 **Status:** Draft implementasi
 
 **Tanggal:** 2026-08-31
-**Scope:** Penggantian penuh frontend Streamlit menjadi Next.js.
+**Scope:** Frontend Next.js Network Monitoring.
 
 ## Status Implementasi (2026-09-01)
 
-Status ini hanya menandai hasil yang sudah tersedia di codebase; parity penuh terhadap Streamlit masih berlangsung.
+Status ini menandai hasil implementasi frontend yang tersedia di codebase.
 
 | Area | Status | Cakupan yang sudah selesai |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ Status ini hanya menandai hasil yang sudah tersedia di codebase; parity penuh te
 
 ## 1. Keputusan Produk
 
-Frontend baru wajib mencapai feature, data, visual, dan interaction parity terhadap frontend Streamlit lama. Semua halaman, chart, tabel, metric card, filter, pagination, export CSV, role behavior, dan layout informasi yang ada saat ini harus tersedia di Next.js.
+Frontend Next.js menyediakan halaman, chart, tabel, metric card, filter, pagination, export CSV, role behavior, dan layout informasi operasional.
 
 Prinsipnya adalah **parity before redesign**: perbaikan responsivitas, aksesibilitas, dan konsistensi boleh dilakukan, tetapi tidak boleh mengurangi informasi, mengubah alur operator, atau menyederhanakan tampilan sebelum parity disetujui.
 
@@ -34,7 +34,7 @@ FastAPI tetap pemilik authentication, authorization, business logic, validation,
 
 ## 2. Tujuan
 
-1. Menggantikan seluruh UI Streamlit dengan aplikasi Next.js production-ready.
+1. Menyediakan aplikasi Next.js production-ready untuk operasional monitoring.
 2. Mempertahankan semua kemampuan operasional FE lama di setiap halaman.
 3. Membuat code frontend type-safe, modular, testable, maintainable, dan scalable.
 4. Mempertahankan format data operator: WIB, unit metric, severity/status, freshness, dan CSV export.
@@ -42,7 +42,7 @@ FastAPI tetap pemilik authentication, authorization, business logic, validation,
 
 ## 3. Inventaris Halaman yang Wajib Diparitas
 
-Audit dilakukan terhadap seluruh folder `dashboard/`. Semua route berikut wajib ada:
+Audit frontend dilakukan pada seluruh route Next.js berikut:
 
 | Route Next.js | FE lama | Kewajiban |
 | --- | --- | --- |
@@ -276,4 +276,4 @@ tests/                  # unit, component, E2E
 3. Complex parity: Live Monitoring, termasuk MikroTik, NAS, Printer, VoIP, dan edge case history.
 4. Mutation parity: Device CRUD/import, Incident workflow, Threshold/Override/Maintenance.
 5. Hardening: responsive/accessibility/performance, test automation, observability, UAT.
-6. Cutover: Next.js berjalan paralel dengan Streamlit, hasil dibandingkan pada data produksi, lalu switch setelah sign-off. Decommission Streamlit dilakukan terpisah dan reversible.
+6. Operasional: Next.js berjalan sebagai satu-satunya frontend setelah sign-off dan validasi lingkungan.
