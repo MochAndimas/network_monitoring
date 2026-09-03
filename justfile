@@ -56,17 +56,13 @@ backend:
 scheduler:
   python -m backend.app.scheduler.worker
 
-dashboard:
-  streamlit run dashboard/Overview.py
-
 docker-up:
   docker compose up -d --build
 
 docker-logs:
-  docker compose logs --tail=100 backend scheduler dashboard
+  docker compose logs --tail=100 backend scheduler frontend
 
 security:
   pip-audit -r requirements/backend.txt
-  pip-audit -r requirements/dashboard.txt
   bandit -q -r backend scripts -x tests,venv
   semgrep scan --config p/security-audit --config p/python --error --metrics=off --exclude venv --exclude tests backend scripts dashboard

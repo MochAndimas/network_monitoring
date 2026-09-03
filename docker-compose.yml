@@ -182,33 +182,6 @@ services:
       <<: *monitoring-runtime-environment
     command: ["sh", "-c", "python /app/scripts/prepare_prometheus_multiproc_dir.py && python -m backend.app.scheduler.worker"]
 
-  dashboard:
-    build:
-      context: .
-      dockerfile: Dockerfile.dashboard
-    container_name: network_monitoring_dashboard
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
-    environment:
-      DASHBOARD_API_URL: http://backend:8000
-      DASHBOARD_PUBLIC_API_URL: ${DASHBOARD_PUBLIC_API_URL:?DASHBOARD_PUBLIC_API_URL must be set}
-    ports:
-      - "127.0.0.1:8501:8501"
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=5).read()",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-
   frontend:
     build:
       context: ./frontend
