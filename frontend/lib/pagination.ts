@@ -1,9 +1,9 @@
 export const PAGE_SIZES = [25, 50, 100] as const;
 export const DEFAULT_PAGE_SIZE = 50;
 
-export function initialPageSize(value: string | null) {
+export function initialPageSize(value: string | null, pageSizes: readonly number[] = PAGE_SIZES, defaultPageSize = DEFAULT_PAGE_SIZE) {
   const pageSize = Number(value);
-  return PAGE_SIZES.includes(pageSize as (typeof PAGE_SIZES)[number]) ? pageSize : DEFAULT_PAGE_SIZE;
+  return pageSizes.includes(pageSize) ? pageSize : defaultPageSize;
 }
 
 export function pageRange(total: number, offset: number, itemCount: number) {

@@ -7,6 +7,8 @@ describe("initialPageSize", () => {
     expect(initialPageSize("100")).toBe(100);
     expect(initialPageSize("35")).toBe(DEFAULT_PAGE_SIZE);
     expect(initialPageSize(null)).toBe(DEFAULT_PAGE_SIZE);
+    expect(initialPageSize("200", [50, 100, 200, 500], 100)).toBe(200);
+    expect(initialPageSize("25", [50, 100, 200, 500], 100)).toBe(100);
   });
 });
 
