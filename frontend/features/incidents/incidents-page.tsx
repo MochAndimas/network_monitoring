@@ -21,6 +21,7 @@ import { initialOffset, useUrlQuerySync } from "@/lib/use-url-query-sync";
 import { DEFAULT_PAGE_SIZE, initialPageSize, PAGE_SIZES, pageRange } from "@/lib/pagination";
 
 const STATUSES = ["active", "acknowledged", "resolved"];
+const LIMIT = 25;
 
 export function IncidentsPage() {
   const params = useSearchParams(); const client = useQueryClient(); const [tab, setTab] = useState<"analytics" | "board">(() => params.get("tab") === "board" ? "board" : "analytics"); const [status, setStatus] = useState(() => params.get("status") ?? ""); const [site, setSite] = useState(() => params.get("site") ?? ""); const [search, setSearch] = useState(() => params.get("q") ?? ""); const [severity, setSeverity] = useState(() => params.get("severity") ?? ""); const [deviceId, setDeviceId] = useState(() => params.get("device") ?? ""); const [sort, setSort] = useState<"newest" | "severity">(() => params.get("sort") === "severity" ? "severity" : "newest"); const [offset, setOffset] = useState(() => initialOffset(params.get("offset"))); const [pageSize, setPageSize] = useState(() => initialPageSize(params.get("limit"))); const [selected, setSelected] = useState<Incident | null>(null);

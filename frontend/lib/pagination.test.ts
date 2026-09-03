@@ -5,6 +5,7 @@ describe("initialPageSize", () => {
   it("accepts only supported page sizes from URL state", () => {
     expect(initialPageSize("25")).toBe(25);
     expect(initialPageSize("100")).toBe(100);
+    expect(DEFAULT_PAGE_SIZE).toBe(25);
     expect(initialPageSize("35")).toBe(DEFAULT_PAGE_SIZE);
     expect(initialPageSize(null)).toBe(DEFAULT_PAGE_SIZE);
     expect(initialPageSize("200", [50, 100, 200, 500], 100)).toBe(200);

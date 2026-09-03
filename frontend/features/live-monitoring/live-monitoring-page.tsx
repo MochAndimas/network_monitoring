@@ -24,7 +24,7 @@ import { LiveTrends } from "./live-trends";
 import { isMikrotikDevice, trendMetricNames } from "./trend-utils";
 import type { DeviceOption, LiveMonitoringContext, MetricSample } from "./types";
 
-const SNAPSHOT_LIMIT = 10;
+const SNAPSHOT_LIMIT = 25;
 const HISTORY_LIMIT = 100;
 
 type MonitoringMode = "live" | "range";
@@ -115,7 +115,7 @@ export function LiveMonitoringPage() {
     refetchInterval: refreshInterval
   });
   const pagedHistoryRange = isRangeMode ? { checked_from: wibRangeBoundary(rangeFrom), checked_to: wibRangeBoundary(rangeTo, true) } : liveRange();
-  const historyPage = useQuery({ queryKey: ["live-history-page", apiDeviceId, metric, status, monitoringMode, rangeFrom, rangeTo, historyCursor], queryFn: () => apiFetch<{ items: MetricSample[]; meta: { total: number | null; limit: number; next_cursor: string | null; has_more: boolean } }>(withQuery("/metrics/history/paged", { device_id: apiDeviceId, metric_name: metric || undefined, status: status || undefined, limit: 50, cursor: historyCursor, ...pagedHistoryRange })), enabled: !isVoipGroup && hasValidRange });
+  const historyPage = useQuery({ queryKey: ["live-history-page", apiDeviceId, metric, status, monitoringMode, rangeFrom, rangeTo, historyCursor], queryFn: () => apiFetch<{ items: MetricSample[]; meta: { total: number | null; limit: number; next_cursor: string | null; has_more: boolean } }>(withQuery("/metrics/history/paged", { device_id: apiDeviceId, metric_name: metric || undefined, status: status || undefined, limit: 25, cursor: historyCursor, ...pagedHistoryRange })), enabled: !isVoipGroup && hasValidRange });
 
   if (!hasValidRange) return <ErrorState message="Tanggal mulai harus diisi dan tidak boleh melewati tanggal akhir." onRetry={() => undefined} />;
   if (monitoring.isPending || devices.isPending || (deviceMetrics.isPending && Boolean(deviceId) && !isVoipGroup) || (isVoipGroup && voipMetricNames.isPending)) return <LoadingState />;
@@ -196,7 +196,7 @@ export function LiveMonitoringPage() {
 
     <section>
       <div className="section-header"><h2>Riwayat Detail</h2><CsvExport filename="live-history.csv" columns={["Dicek WIB", "Device", "Metrik", "Nilai", "Nilai numerik", "Status"]} rows={(historyPage.data?.items ?? data.history.items).map((item) => [formatWib(item.checked_at), item.device_name, item.metric_name, displayValue(item), item.metric_value_numeric, item.status])} /></div>
-      <DataTable columns={historyColumns} rows={historyPage.data?.items ?? data.history.items} pageSize={null} />
+      <DataTable columns={historyColumns} rows={historyPage.data?.items ?? data.history.items} />
       {historyPage.data ? <CursorPagination itemCount={historyPage.data.items.length} limit={historyPage.data.meta.limit} total={historyPage.data.meta.total} pageIndex={historyCursorTrail.length} hasNext={historyPage.data.meta.has_more} hasPrevious={historyCursorTrail.length > 0} onNext={nextHistoryPage} onPrevious={previousHistoryPage} /> : null}
     </section>
   </main>;

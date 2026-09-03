@@ -21,7 +21,7 @@ import { DeviceForm } from "./device-form";
 import { DeviceImport } from "./device-import";
 import type { Device, DeviceDraft, DevicePage, DeviceTypeOption } from "./types";
 
-const LIMIT = 50;
+const LIMIT = 25;
 const invalidateDevices = (client: ReturnType<typeof useQueryClient>) => client.invalidateQueries({ queryKey: ["devices"] });
 
 function initialOffset(value: string | null) {

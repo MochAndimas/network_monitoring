@@ -4,7 +4,7 @@ import { ReactNode, useEffect, useState } from "react";
 
 export type TableColumn<Row> = { key: string; label: string; render: (row: Row) => ReactNode };
 
-export function DataTable<Row>({ columns, rows, emptyLabel = "Tidak ada data untuk filter ini.", pageSize = 10 }: {
+export function DataTable<Row>({ columns, rows, emptyLabel = "Tidak ada data untuk filter ini.", pageSize = 25 }: {
   columns: readonly TableColumn<Row>[]; rows: readonly Row[]; emptyLabel?: string; pageSize?: number | null;
 }) {
   const [page, setPage] = useState(0);

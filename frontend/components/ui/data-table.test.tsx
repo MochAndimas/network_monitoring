@@ -19,4 +19,12 @@ describe("DataTable", () => {
     render(<DataTable columns={columns} rows={[]} emptyLabel="Tidak ada hasil" />);
     expect(screen.getByText("Tidak ada hasil")).toBeInTheDocument();
   });
+
+  it("uses 25 rows as the default page size", () => {
+    const rows = Array.from({ length: 26 }, (_, index) => ({ name: `Row ${index + 1}` }));
+    render(<DataTable columns={columns} rows={rows} />);
+    expect(screen.getByText("Row 25")).toBeInTheDocument();
+    expect(screen.queryByText("Row 26")).not.toBeInTheDocument();
+    expect(screen.getByText("Menampilkan 1–25 dari 26")).toBeInTheDocument();
+  });
 });
