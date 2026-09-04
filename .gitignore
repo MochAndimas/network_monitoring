@@ -5,6 +5,7 @@ __pycache__/
 .env
 backup/
 frontend/node_modules/
+node_modules/
 frontend/.next/
 .venv/
 venv/
