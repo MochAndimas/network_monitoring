@@ -1,5 +1,5 @@
 export type Incident = {
-  id: number; device_id: number | null; device_name: string | null; site: string | null; status: string; summary: string;
+  id: number; device_id: number | null; device_name: string | null; site: string | null; location: string | null; status: string; summary: string;
   owner: string | null; assignee: string | null; severity_override: string | null; effective_severity: string | null; note: string | null;
   acknowledged_at: string | null; acknowledged_by: string | null; started_at: string; ended_at: string | null; resolved_by: string | null; updated_at: string | null;
 };

@@ -47,7 +47,7 @@ class AlertRepository:
     ) -> list[dict]:
         """Query active alert rows from the database."""
         query = (
-            select(Alert, Device.name, Device.site)
+            select(Alert, Device.name, Device.site, Device.location)
             .outerjoin(Device, Device.id == Alert.device_id)
             .where(Alert.status == "active")
         )
@@ -92,6 +92,7 @@ class AlertRepository:
                 "device_id": alert.device_id,
                 "device_name": device_name,
                 "site": row_site,
+                "location": location,
                 "alert_type": alert.alert_type,
                 "severity": alert.severity,
                 "message": alert.message,
@@ -99,7 +100,7 @@ class AlertRepository:
                 "created_at": alert.created_at,
                 "resolved_at": alert.resolved_at,
             }
-            for alert, device_name, row_site in rows
+            for alert, device_name, row_site, location in rows
         ]
 
     async def list_active_alert_rows_paged(

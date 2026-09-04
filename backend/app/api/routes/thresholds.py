@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...api.deps import require_write_access
+from ...api.deps import require_admin_access, require_write_access
 from ...api.schemas import (
     MaintenanceWindowCreate,
     MaintenanceWindowItem,
@@ -37,7 +37,7 @@ def _actor_label(actor: AuthenticatedActor) -> str:
     return actor.kind
 
 
-@router.get("", response_model=list[ThresholdItem])
+@router.get("", response_model=list[ThresholdItem], dependencies=[Depends(require_admin_access)])
 async def list_thresholds(db: AsyncSession = Depends(get_db)) -> list[ThresholdItem]:
     """Handle the thresholds endpoint."""
     return [ThresholdItem(**row) for row in await list_threshold_rows(db)]
@@ -66,7 +66,7 @@ async def update_threshold(
     return ThresholdItem(**threshold)
 
 
-@router.get("/overrides", response_model=list[ThresholdOverrideItem])
+@router.get("/overrides", response_model=list[ThresholdOverrideItem], dependencies=[Depends(require_admin_access)])
 async def list_threshold_overrides(db: AsyncSession = Depends(get_db)) -> list[ThresholdOverrideItem]:
     """List scoped threshold overrides."""
     return [ThresholdOverrideItem(**row) for row in await list_threshold_override_rows(db)]
@@ -117,7 +117,7 @@ async def deactivate_threshold_override_endpoint(
     return {"ok": True}
 
 
-@router.get("/maintenance-windows", response_model=list[MaintenanceWindowItem])
+@router.get("/maintenance-windows", response_model=list[MaintenanceWindowItem], dependencies=[Depends(require_admin_access)])
 async def list_maintenance_windows(db: AsyncSession = Depends(get_db)) -> list[MaintenanceWindowItem]:
     """List maintenance windows."""
     return [MaintenanceWindowItem(**row) for row in await list_maintenance_window_rows(db)]

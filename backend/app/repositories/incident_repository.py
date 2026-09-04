@@ -100,7 +100,7 @@ class IncidentRepository:
         sort: str = "newest",
     ) -> list[dict]:
         """Query incident rows from the database."""
-        query = select(Incident, Device.name, Device.site).outerjoin(Device, Device.id == Incident.device_id)
+        query = select(Incident, Device.name, Device.site, Device.location).outerjoin(Device, Device.id == Incident.device_id)
         if status:
             query = query.where(Incident.status == status)
         if device_id is not None:
@@ -129,14 +129,15 @@ class IncidentRepository:
         if limit is not None:
             query = query.limit(limit)
         rows = (await self.db.execute(query)).all()
-        incident_summaries = await self._incident_alert_summaries([incident for incident, _device_name, _site in rows])
-        severities = await self._incident_effective_severities([incident for incident, _device_name, _site in rows])
+        incident_summaries = await self._incident_alert_summaries([incident for incident, _device_name, _site, _location in rows])
+        severities = await self._incident_effective_severities([incident for incident, _device_name, _site, _location in rows])
         return [
             {
                 "id": incident.id,
                 "device_id": incident.device_id,
                 "device_name": device_name,
                 "site": site_name,
+                "location": location,
                 "status": incident.status,
                 "summary": incident_summaries.get(incident.id, incident.summary),
                 "owner": incident.owner,
@@ -151,7 +152,7 @@ class IncidentRepository:
                 "resolved_by": incident.resolved_by,
                 "updated_at": incident.updated_at,
             }
-            for incident, device_name, site_name in rows
+            for incident, device_name, site_name, location in rows
         ]
 
     async def list_incident_rows_paged(
@@ -174,11 +175,11 @@ class IncidentRepository:
 
     async def get_incident_row(self, incident_id: int) -> dict:
         """Return one incident row with derived summary and severity."""
-        query = select(Incident, Device.name, Device.site).outerjoin(Device, Device.id == Incident.device_id).where(Incident.id == incident_id)
+        query = select(Incident, Device.name, Device.site, Device.location).outerjoin(Device, Device.id == Incident.device_id).where(Incident.id == incident_id)
         row = (await self.db.execute(query)).first()
         if row is None:
             raise IncidentNotFoundError(f"Incident {incident_id} not found")
-        incident, device_name, site_name = row
+        incident, device_name, site_name, location = row
         summaries = await self._incident_alert_summaries([incident])
         severities = await self._incident_effective_severities([incident])
         return {
@@ -186,6 +187,7 @@ class IncidentRepository:
             "device_id": incident.device_id,
             "device_name": device_name,
             "site": site_name,
+            "location": location,
             "status": incident.status,
             "summary": summaries.get(incident.id, incident.summary),
             "owner": incident.owner,

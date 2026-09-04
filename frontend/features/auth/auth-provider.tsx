@@ -6,10 +6,12 @@ import { useRouter } from "next/navigation";
 import { apiFetch, setAccessToken } from "@/lib/api/client";
 
 type SessionUser = {
+  id: number;
   username: string;
   full_name: string;
   role: "admin" | "viewer";
   expires_at: string;
+  session_expires_at: string;
 };
 
 type SessionResponse = {

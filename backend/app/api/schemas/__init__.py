@@ -14,6 +14,7 @@ from .auth import (
     UserAdminUpdateRequest,
     UserPasswordResetRequest,
     UserSessionInfo,
+    UpdateMyAccountRequest,
 )
 from .dashboard import (
     AlertPage,
@@ -116,4 +117,5 @@ __all__ = [
     "UserAdminUpdateRequest",
     "UserPasswordResetRequest",
     "UserSessionInfo",
+    "UpdateMyAccountRequest",
 ]

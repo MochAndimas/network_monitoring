@@ -1,3 +1,5 @@
+name: network_monitoring
+
 x-backend-build: &backend-build
   context: .
   dockerfile: Dockerfile.backend
@@ -124,7 +126,6 @@ x-monitoring-runtime-environment: &monitoring-runtime-environment
 services:
   mysql:
     image: mysql:8.4
-    container_name: network_monitoring_mysql
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-network_monitoring}
@@ -144,7 +145,6 @@ services:
 
   backend:
     build: *backend-build
-    container_name: network_monitoring_backend_api
     restart: unless-stopped
     depends_on: *mysql-health-dependency
     environment:
@@ -175,7 +175,6 @@ services:
 
   scheduler:
     build: *backend-build
-    container_name: network_monitoring_scheduler
     restart: unless-stopped
     depends_on: *mysql-health-dependency
     environment:
@@ -186,7 +185,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: network_monitoring_frontend
     restart: unless-stopped
     depends_on:
       backend:

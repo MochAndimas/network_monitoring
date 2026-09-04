@@ -5,8 +5,10 @@ from __future__ import annotations
 from .auth.admin import (
     change_password_for_user,
     create_user_for_admin,
+    delete_user_for_admin,
     list_users_for_admin,
     reset_user_password_for_admin,
+    update_profile_for_user,
     update_user_for_admin,
 )
 from .auth.authentication import (
@@ -46,6 +48,7 @@ __all__ = [
     "cleanup_auth_data",
     "clear_failed_login_attempts",
     "create_user_for_admin",
+    "delete_user_for_admin",
     "ensure_bootstrap_admin",
     "ensure_login_not_rate_limited",
     "get_user_from_access_token",
@@ -61,5 +64,5 @@ __all__ = [
     "revoke_other_sessions_for_user",
     "revoke_token",
     "update_user_for_admin",
+    "update_profile_for_user",
 ]
-

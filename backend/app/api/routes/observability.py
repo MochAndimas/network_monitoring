@@ -7,6 +7,8 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...api.deps import require_admin_access
+
 from ...api.schemas import AuthObservabilitySummary
 from ...db.session import check_database_connection, database_pool_health, get_db
 from ...repositories.alert_repository import AlertRepository
@@ -31,7 +33,7 @@ from ...services.observability_service import (
 router = APIRouter()
 
 
-@router.get("/summary")
+@router.get("/summary", dependencies=[Depends(require_admin_access)])
 async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
     """Handle the observability summary endpoint."""
     database_ok = await check_database_connection()

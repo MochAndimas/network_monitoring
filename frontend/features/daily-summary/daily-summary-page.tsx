@@ -23,8 +23,8 @@ type Response = { items: Rollup[]; meta: { total: number; limit: number; offset:
 type DeviceTypeOption = { value: string; label: string };
 type DeviceOption = { id: number; name: string; ip_address: string };
 const value = (item: number | null, suffix = "") => item === null ? "-" : `${item.toLocaleString("id-ID", { maximumFractionDigits: 2 })}${suffix}`;
-const PAGE_SIZES = [25, 50, 100, 200, 500] as const;
-const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZES = [10, 25, 50, 100, 200, 500] as const;
+const DEFAULT_PAGE_SIZE = 10;
 
 function defaultRollupDate(daysAgo = 0) {
   return toWibDate(new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000));
@@ -55,7 +55,7 @@ export function DailySummaryPage() {
     data.items.forEach((row) => { const key = deviceId ? "Perangkat terpilih" : row.device_name; grouped.set(key, [...(grouped.get(key) ?? []), row]); });
     return [...grouped.entries()].map(([name, rows]) => ({ name, rows: [...rows].sort((left, right) => left.rollup_date.localeCompare(right.rollup_date)) }));
   })();
-  return <main className="app-page"><PageHeader title="Daily Summary" description="Rollup harian uptime dan kualitas koneksi dari backend." />
+  return <main className="app-page daily-summary-page"><PageHeader className="daily-summary-header" title="Daily Summary" description="Rollup harian uptime dan kualitas koneksi dari backend." />
     <MetaStrip items={[{ label: "Sumber", value: "metrics_daily_rollups" }, { label: "Rentang", value: `${from} s/d ${to}` }, { label: "Cakupan", value: `${data.meta.total} rollup` }, { label: "Terakhir dirender", value: formatWib(new Date().toISOString()) }]} />
     <div className="filter-panel"><label>Device<select value={deviceId} onChange={reset(setDeviceId)}><option value="">Semua device</option>{devices.data?.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.ip_address}</option>)}</select></label><label>Site<input value={site} onChange={reset(setSite)} placeholder="Semua site" /></label><label>Tipe device<select value={deviceType} onChange={reset(setDeviceType)}><option value="">Semua tipe</option>{types.data?.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><label>Dari<input type="date" value={from} onChange={reset(setFrom)} /></label><label>Sampai<input type="date" value={to} onChange={reset(setTo)} /></label><label>Baris<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setOffset(0); }}>{PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}</select></label></div>
     <MetricGrid columns={6}><MetricCard label="Total sampel" value={summary.totalSamples.toLocaleString("id-ID")} /><MetricCard label="Total down" value={summary.totalDown.toLocaleString("id-ID")} /><MetricCard label="Uptime rata-rata" value={value(summary.uptime, "%")} /><MetricCard label="Avg ping" value={value(summary.ping, " ms")} /><MetricCard label="Packet loss" value={value(summary.loss, "%")} /><MetricCard label="Max jitter" value={value(summary.jitter, " ms")} /></MetricGrid>

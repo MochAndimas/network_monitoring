@@ -28,6 +28,7 @@ def test_auth_login_me_and_logout_flow():
         token = payload["access_token"]
         assert token.count(".") == 2
         assert payload["user"]["role"] == "viewer"
+        assert payload["user"]["session_expires_at"] > payload["user"]["expires_at"]
         assert login_response.cookies.get("network_monitoring_session") == token
         assert login_response.cookies.get("network_monitoring_refresh") is not None
 
@@ -37,6 +38,7 @@ def test_auth_login_me_and_logout_flow():
         assert restored_token.count(".") == 2
         assert restored_token != ""
         assert restored_token != token
+        assert restore_response.json()["user"]["session_expires_at"] == payload["user"]["session_expires_at"]
 
         me_response = client.get("/auth/me", headers={"authorization": f"Bearer {token}"})
         assert me_response.status_code == 200

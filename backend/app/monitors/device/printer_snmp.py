@@ -28,12 +28,15 @@ SNMP_MAX_CONCURRENT_REQUESTS = 4
 SYS_UPTIME_OID = "1.3.6.1.2.1.1.3.0"
 HR_PRINTER_STATUS_OID = "1.3.6.1.2.1.25.3.5.1.1.1"
 HR_PRINTER_ERROR_STATE_OID = "1.3.6.1.2.1.25.3.5.1.2.1"
-PRT_INPUT_STATUS_OID = "1.3.6.1.2.1.43.8.2.1.10.1.1"
+# prtInputCurrentLevel. The Printer MIB reserves negative values as
+# sentinels, including -3 for "at least one unit remains".
+PRT_INPUT_CURRENT_LEVEL_OID = "1.3.6.1.2.1.43.8.2.1.10.1.1"
 PRT_INPUT_MAX_CAPACITY_OID = "1.3.6.1.2.1.43.8.2.1.9.1.1"
 PRT_INPUT_NAME_OID = "1.3.6.1.2.1.43.8.2.1.13.1.1"
 PRT_MARKER_LIFE_COUNT_OID = "1.3.6.1.2.1.43.10.2.1.4.1.1"
 PRT_MARKER_SUPPLIES_LEVEL_BASE_OID = "1.3.6.1.2.1.43.11.1.1.9.1"
 PRT_MARKER_COLORANT_BASE_OID = "1.3.6.1.2.1.43.12.1.1.4.1"
+TONER_COLORS = ("black", "cyan", "magenta", "yellow")
 
 PRINTER_STATUS_LABELS = {
     1: "other",
@@ -123,27 +126,40 @@ async def collect_printer_snmp_metrics(device_id: int, ip_address: str) -> list[
     checked_at = utcnow()
     if not community:
         return [_metric_payload(device_id, SnmpPrinterMetric("printer_snmp_collection_status", "configuration_missing", "warning"), checked_at)]
-    oids = {
+    base_oids = {
         "printer_uptime_ticks": SYS_UPTIME_OID,
         "printer_status_code": HR_PRINTER_STATUS_OID,
         "printer_error_state_raw": HR_PRINTER_ERROR_STATE_OID,
-        "printer_input_status_code": PRT_INPUT_STATUS_OID,
+        "printer_input_current_level": PRT_INPUT_CURRENT_LEVEL_OID,
         "printer_input_max_capacity": PRT_INPUT_MAX_CAPACITY_OID,
         "printer_input_name": PRT_INPUT_NAME_OID,
         "printer_total_pages": PRT_MARKER_LIFE_COUNT_OID,
     }
-    # Query only the black supply. It is enough for monochrome printers such
-    # as the Canon iR-ADV 4551 and avoids overloading legacy SNMPv1 agents
-    # with unsupported CMYK supply OIDs.
-    oids["printer_ink_black_level_raw"] = f"{PRT_MARKER_SUPPLIES_LEVEL_BASE_OID}.1"
-    oids["printer_ink_black_colorant_raw"] = f"{PRT_MARKER_COLORANT_BASE_OID}.1"
+    # Printer MIB keeps supply levels and colorants in matching tables. Probe
+    # the standard CMYK entries and only persist colors reported by a device,
+    # so monochrome printers do not receive artificial CMY warnings.
+    toner_oids = {
+        "printer_uptime_ticks": SYS_UPTIME_OID,
+        **{
+            f"printer_toner_{color}_{kind}_raw": f"{base_oid}.{index}"
+            for index, color in enumerate(TONER_COLORS, start=1)
+            for kind, base_oid in (
+                ("level", PRT_MARKER_SUPPLIES_LEVEL_BASE_OID),
+                ("colorant", PRT_MARKER_COLORANT_BASE_OID),
+            )
+        },
+    }
 
     async with vendor_protocol_guard("printer-snmp"):
         fetch_result = await retry_transient_collection(
-            lambda: _fetch_oid_values(ip_address, community, oids),
+            lambda: _fetch_oid_values(ip_address, community, base_oids),
             retryable_statuses={"timeout", "connection_failed", "collector_error"},
         )
-    raw_values = fetch_result.values
+        toner_result = await retry_transient_collection(
+            lambda: _fetch_oid_values(ip_address, community, toner_oids),
+            retryable_statuses={"timeout", "connection_failed", "collector_error"},
+        )
+    raw_values = {**fetch_result.values, **toner_result.values}
 
     metrics = [
         SnmpPrinterMetric(
@@ -156,7 +172,7 @@ async def collect_printer_snmp_metrics(device_id: int, ip_address: str) -> list[
         _build_printer_status_metric(raw_values),
         _build_error_state_metric(raw_values),
         _build_ink_status_metric(raw_values),
-        _build_black_toner_metric(raw_values),
+        *_build_toner_metrics(raw_values),
         _build_paper_status_metric(raw_values),
         _build_paper_detail_metric(raw_values),
         _build_total_pages_metric(raw_values),
@@ -260,7 +276,10 @@ def _build_printer_status_metric(raw_values: dict[str, object | None]) -> SnmpPr
     """Build printer status metric for monitoring collection."""
     status_code = _safe_int(raw_values.get("printer_status_code"))
     status_label = PRINTER_STATUS_LABELS.get(status_code, "unknown") if status_code is not None else "unknown"
-    metric_status = "up" if status_label in {"idle", "printing", "warmup"} else "warning"
+    # Some Canon devices permanently report the valid Host-Resources value
+    # "other" instead of an operational state. It is not an actionable fault
+    # when collection and the printer error-state metric are healthy.
+    metric_status = "up" if status_label in {"idle", "printing", "warmup", "other"} else "warning"
     return SnmpPrinterMetric("printer_status", status_label, metric_status)
 
 
@@ -283,19 +302,30 @@ def _build_ink_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinte
     return SnmpPrinterMetric("printer_ink_status", "ok", "ok")
 
 
-def _build_black_toner_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
-    """Build an optional black-toner percentage from the standard Printer MIB."""
-    toner_level = _safe_int(raw_values.get("printer_ink_black_level_raw"))
-    colorant = str(raw_values.get("printer_ink_black_colorant_raw") or "").strip().lower()
-    if toner_level is None or colorant not in {"", "black"} or not 0 <= toner_level <= 100:
-        return SnmpPrinterMetric("printer_toner_black_percent", "unavailable", "warning", "%")
+def _build_toner_metrics(raw_values: dict[str, object | None]) -> list[SnmpPrinterMetric]:
+    """Build one percentage metric for each CMYK toner reported by the printer."""
+    metrics: list[SnmpPrinterMetric] = []
+    for color in TONER_COLORS:
+        colorant = str(raw_values.get(f"printer_toner_{color}_colorant_raw") or "").strip().lower()
+        if colorant != color:
+            continue
+
+        toner_level = _safe_int(raw_values.get(f"printer_toner_{color}_level_raw"))
+        metrics.append(_build_toner_metric(color, toner_level))
+    return metrics
+
+
+def _build_toner_metric(color: str, toner_level: int | None) -> SnmpPrinterMetric:
+    """Normalize a supported toner percentage and apply the shared thresholds."""
+    if toner_level is None or not 0 <= toner_level <= 100:
+        return SnmpPrinterMetric(f"printer_toner_{color}_percent", "unavailable", "warning", "%")
     if toner_level <= 5:
         status = "error"
     elif toner_level <= 20:
         status = "warning"
     else:
         status = "ok"
-    return SnmpPrinterMetric("printer_toner_black_percent", str(toner_level), status, "%")
+    return SnmpPrinterMetric(f"printer_toner_{color}_percent", str(toner_level), status, "%")
 
 
 def _build_paper_status_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
@@ -306,20 +336,28 @@ def _build_paper_status_metric(raw_values: dict[str, object | None]) -> SnmpPrin
     if "low_paper" in flags:
         return SnmpPrinterMetric("printer_paper_status", "low", "warning")
 
-    input_status_code = _safe_int(raw_values.get("printer_input_status_code"))
-    input_status_label = PAPER_STATUS_LABELS.get(input_status_code, "ok") if input_status_code is not None else "ok"
+    input_level = _safe_int(raw_values.get("printer_input_current_level"))
+    input_status_label = PAPER_STATUS_LABELS.get(input_level, "ok") if input_level is not None else "ok"
     metric_status = "ok" if input_status_label in {"available", "ok"} else "warning"
     normalized_label = "ok" if input_status_label == "available" else input_status_label
     return SnmpPrinterMetric("printer_paper_status", normalized_label, metric_status)
 
 
 def _build_paper_detail_metric(raw_values: dict[str, object | None]) -> SnmpPrinterMetric:
-    """Build a human-readable explanation of the input tray that needs attention."""
+    """Build a human-readable paper-level description without misreading MIB sentinels."""
     tray_name = str(raw_values.get("printer_input_name") or "Input tray").strip() or "Input tray"
-    current_level = _safe_int(raw_values.get("printer_input_status_code"))
+    current_level = _safe_int(raw_values.get("printer_input_current_level"))
     max_capacity = _safe_int(raw_values.get("printer_input_max_capacity"))
     if current_level is None:
         return SnmpPrinterMetric("printer_paper_detail", "unavailable", "warning")
+
+    # RFC 3805 defines -3 as "at least one unit remains", not an empty tray.
+    # A number must not be inferred because the device cannot report it.
+    if current_level == -3:
+        return SnmpPrinterMetric("printer_paper_detail", f"{tray_name}: tersedia (jumlah tidak diketahui)", "ok")
+    if current_level in {-1, -2}:
+        return SnmpPrinterMetric("printer_paper_detail", f"{tray_name}: jumlah tidak diketahui", "warning")
+
     if max_capacity and max_capacity > 0:
         level_description = f"{current_level}/{max_capacity} lembar"
     else:

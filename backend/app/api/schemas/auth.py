@@ -19,6 +19,7 @@ class UserSessionInfo(BaseModel):
     full_name: str
     role: str
     expires_at: datetime
+    session_expires_at: datetime
 
 
 class LoginResponse(BaseModel):
@@ -113,6 +114,12 @@ class ChangePasswordRequest(BaseModel):
     """Pydantic schema for ChangePasswordRequest payloads."""
     current_password: str = Field(min_length=1, max_length=255)
     new_password: str = Field(min_length=1, max_length=255)
+
+
+class UpdateMyAccountRequest(BaseModel):
+    """Request payload for a user updating their own profile."""
+
+    full_name: str = Field(min_length=1, max_length=150)
 
 
 class AdminAuditLogItem(BaseModel):

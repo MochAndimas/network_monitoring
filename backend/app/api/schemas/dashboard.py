@@ -299,6 +299,7 @@ class AlertItem(BaseModel):
     device_id: int | None = None
     device_name: str | None = None
     site: str | None = None
+    location: str | None = None
     alert_type: str
     severity: str
     message: str
@@ -319,6 +320,7 @@ class IncidentItem(BaseModel):
     device_id: int | None = None
     device_name: str | None = None
     site: str | None = None
+    location: str | None = None
     status: str
     summary: str
     owner: str | None = None

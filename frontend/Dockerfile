@@ -1,8 +1,13 @@
+# syntax=docker/dockerfile:1.7
+
 FROM node:22-alpine AS dependencies
 
 WORKDIR /app
-COPY package.json ./
-RUN npm install --ignore-scripts
+COPY package.json pnpm-lock.yaml ./
+RUN --mount=type=cache,id=network-monitoring-pnpm-store,target=/pnpm/store \
+  corepack enable \
+  && pnpm config set store-dir /pnpm/store \
+  && pnpm install --frozen-lockfile --ignore-scripts
 
 FROM node:22-alpine AS builder
 
@@ -10,7 +15,8 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN --mount=type=cache,id=network-monitoring-next-cache,target=/app/.next/cache \
+  npm run build
 
 FROM node:22-alpine AS runner
 

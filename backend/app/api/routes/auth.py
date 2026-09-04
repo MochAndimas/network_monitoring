@@ -21,6 +21,7 @@ from ...api.schemas import (
     UserAdminUpdateRequest,
     UserPasswordResetRequest,
     UserSessionInfo,
+    UpdateMyAccountRequest,
 )
 from ...core.config import settings
 from ...core.time import as_wib_aware
@@ -30,6 +31,7 @@ from ...services.auth_service import (
     authenticate_user_with_options,
     change_password_for_user,
     create_user_for_admin,
+    delete_user_for_admin,
     list_users_for_admin,
     list_active_sessions_for_user,
     list_sessions_for_admin,
@@ -38,6 +40,7 @@ from ...services.auth_service import (
     revoke_other_sessions_for_user,
     revoke_token,
     reset_user_password_for_admin,
+    update_profile_for_user,
     update_user_for_admin,
 )
 
@@ -122,7 +125,7 @@ def _clear_refresh_cookie(response: Response) -> None:
     )
 
 
-def _build_login_response(user, token: str, expiry) -> LoginResponse:
+def _build_login_response(user, token: str, *, access_expires_at, session_expires_at) -> LoginResponse:
     """Handle the login response endpoint."""
     return LoginResponse(
         access_token=token,
@@ -131,7 +134,8 @@ def _build_login_response(user, token: str, expiry) -> LoginResponse:
             username=user.username,
             full_name=user.full_name,
             role=user.role,
-            expires_at=expiry,
+            expires_at=access_expires_at,
+            session_expires_at=session_expires_at,
         ),
     )
 
@@ -219,7 +223,12 @@ async def login(
     )
     _set_auth_cookie(response, tokens.access_token, expires_at=tokens.access_expires_at)
     _set_refresh_cookie(response, tokens.refresh_token, expires_at=tokens.refresh_expires_at)
-    return _build_login_response(user, tokens.access_token, tokens.access_expires_at)
+    return _build_login_response(
+        user,
+        tokens.access_token,
+        access_expires_at=tokens.access_expires_at,
+        session_expires_at=tokens.refresh_expires_at,
+    )
 
 
 @router.post("/restore", response_model=LoginResponse)
@@ -239,7 +248,12 @@ async def restore_session(
     user, tokens = await refresh_user_session(db, refresh_token)
     _set_auth_cookie(response, tokens.access_token, expires_at=tokens.access_expires_at)
     _set_refresh_cookie(response, tokens.refresh_token, expires_at=tokens.refresh_expires_at)
-    return _build_login_response(user, tokens.access_token, tokens.access_expires_at)
+    return _build_login_response(
+        user,
+        tokens.access_token,
+        access_expires_at=tokens.access_expires_at,
+        session_expires_at=tokens.refresh_expires_at,
+    )
 
 
 @router.get("/me", response_model=CurrentUserResponse)
@@ -255,6 +269,45 @@ async def me(actor=Depends(require_api_access_with_session_cookie)) -> CurrentUs
             auth_kind=actor.kind,
             scopes=sorted(actor.permissions),
         )
+    return CurrentUserResponse(
+        id=user.id,
+        username=user.username,
+        full_name=user.full_name,
+        role=user.role,
+        auth_kind=actor.kind,
+        scopes=sorted(actor.permissions),
+        expires_at=actor.session.expires_at if actor.session is not None else None,
+    )
+
+
+@router.put("/me", response_model=CurrentUserResponse)
+async def update_my_account(
+    payload: UpdateMyAccountRequest,
+    request: Request,
+    actor=Depends(require_api_access),
+    db: AsyncSession = Depends(get_db),
+) -> CurrentUserResponse:
+    """Allow an authenticated user to update only their own profile."""
+    if actor.user is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User session required")
+    try:
+        user = await update_profile_for_user(db, user_id=actor.user.id, full_name=payload.full_name, commit=False)
+        client_ip, user_agent = _client_metadata(request)
+        await record_admin_audit_log(
+            db,
+            actor=actor,
+            action="auth.user.update_profile",
+            target_type="user",
+            target_id=str(user.id),
+            ip_address=client_ip,
+            user_agent=user_agent,
+            details={"username": user.username},
+            commit=False,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     return CurrentUserResponse(
         id=user.id,
         username=user.username,
@@ -417,6 +470,7 @@ async def admin_update_user(
         user = await update_user_for_admin(
             db,
             user_id=user_id,
+            actor_user_id=actor.user.id if actor.user else None,
             full_name=payload.full_name,
             role=payload.role,
             is_active=payload.is_active,
@@ -475,6 +529,35 @@ async def admin_reset_password(
         await db.rollback()
         raise
     return UserAdminItem.model_validate(user)
+
+
+@router.delete("/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_access)])
+async def admin_delete_user(
+    user_id: int,
+    request: Request,
+    actor=Depends(require_admin_access),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Permanently remove a user account with audit logging and admin safeguards."""
+    try:
+        user = await delete_user_for_admin(db, user_id=user_id, actor_user_id=actor.user.id if actor.user else None, commit=False)
+        client_ip, user_agent = _client_metadata(request)
+        await record_admin_audit_log(
+            db,
+            actor=actor,
+            action="auth.admin.delete_user",
+            target_type="user",
+            target_id=str(user_id),
+            ip_address=client_ip,
+            user_agent=user_agent,
+            details={"username": user.username, "role": user.role},
+            commit=False,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/admin/audit-logs", response_model=list[AdminAuditLogItem], dependencies=[Depends(require_admin_access)])
