@@ -14,6 +14,7 @@ from ..monitors.internet.service import run_internet_checks
 from ..monitors.mikrotik.service import run_mikrotik_checks
 from ..monitors.server.service import run_server_checks
 from .monitoring_service import persist_metrics
+from .collector_ownership import device_collector_ownership
 
 
 logger = logging.getLogger("network_monitoring.run_cycle")
@@ -81,10 +82,18 @@ async def _collect_runner_metrics(runner: MonitorRunner) -> list[dict]:
 
 
 def _monitor_runners() -> tuple[MonitorRunner, ...]:
-    """Return the monitor runner functions included in a full cycle."""
+    """Agents run their device collector; central owns the other domains."""
+    if device_collector_ownership().site is not None:
+        return (_run_owned_device_checks,)
     return (
         run_internet_checks,
-        run_device_checks,
+        _run_owned_device_checks,
         run_server_checks,
         run_mikrotik_checks,
     )
+
+
+async def _run_owned_device_checks(db: AsyncSession) -> list[dict]:
+    """Apply the same site ownership as the scheduled device collector."""
+    ownership = device_collector_ownership()
+    return await run_device_checks(db, site=ownership.site, excluded_sites=set(ownership.excluded_sites))

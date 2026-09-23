@@ -1,7 +1,7 @@
 """Database query helpers for incident repository data."""
 
-from datetime import timedelta
 import json
+from datetime import timedelta
 
 from sqlalchemy import Select, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +10,6 @@ from ..core.time import utcnow
 from ..models.alert import Alert
 from ..models.device import Device
 from ..models.incident import Incident, IncidentTimelineEvent
-
 
 SEVERITY_PRIORITY = {
     "critical": 4,
@@ -51,6 +50,7 @@ class IncidentNotFoundError(ValueError):
 
 class IncidentRepository:
     """Database access object for Incident records."""
+
     def __init__(self, db: AsyncSession):
         """Initialize the object with its runtime dependencies."""
         self.db = db
@@ -100,7 +100,9 @@ class IncidentRepository:
         sort: str = "newest",
     ) -> list[dict]:
         """Query incident rows from the database."""
-        query = select(Incident, Device.name, Device.site, Device.location).outerjoin(Device, Device.id == Incident.device_id)
+        query = select(Incident, Device.name, Device.site, Device.location).outerjoin(
+            Device, Device.id == Incident.device_id
+        )
         if status:
             query = query.where(Incident.status == status)
         if device_id is not None:
@@ -129,8 +131,12 @@ class IncidentRepository:
         if limit is not None:
             query = query.limit(limit)
         rows = (await self.db.execute(query)).all()
-        incident_summaries = await self._incident_alert_summaries([incident for incident, _device_name, _site, _location in rows])
-        severities = await self._incident_effective_severities([incident for incident, _device_name, _site, _location in rows])
+        incident_summaries = await self._incident_alert_summaries(
+            [incident for incident, _device_name, _site, _location in rows]
+        )
+        severities = await self._incident_effective_severities(
+            [incident for incident, _device_name, _site, _location in rows]
+        )
         return [
             {
                 "id": incident.id,
@@ -168,14 +174,29 @@ class IncidentRepository:
         sort: str = "newest",
     ) -> tuple[list[dict], int]:
         """Query incident rows paged from the database."""
-        rows = await self.list_incident_rows(status=status, limit=limit, offset=offset, search=search, site=site, device_id=device_id, severity=severity, sort=sort)
+        rows = await self.list_incident_rows(
+            status=status,
+            limit=limit,
+            offset=offset,
+            search=search,
+            site=site,
+            device_id=device_id,
+            severity=severity,
+            sort=sort,
+        )
         if offset == 0 and len(rows) < limit:
             return rows, len(rows)
-        return rows, await self.count_incident_rows(status=status, search=search, site=site, device_id=device_id, severity=severity)
+        return rows, await self.count_incident_rows(
+            status=status, search=search, site=site, device_id=device_id, severity=severity
+        )
 
     async def get_incident_row(self, incident_id: int) -> dict:
         """Return one incident row with derived summary and severity."""
-        query = select(Incident, Device.name, Device.site, Device.location).outerjoin(Device, Device.id == Incident.device_id).where(Incident.id == incident_id)
+        query = (
+            select(Incident, Device.name, Device.site, Device.location)
+            .outerjoin(Device, Device.id == Incident.device_id)
+            .where(Incident.id == incident_id)
+        )
         row = (await self.db.execute(query)).first()
         if row is None:
             raise IncidentNotFoundError(f"Incident {incident_id} not found")
@@ -203,7 +224,15 @@ class IncidentRepository:
             "updated_at": incident.updated_at,
         }
 
-    async def count_incident_rows(self, *, status: str | None = None, search: str | None = None, site: str | None = None, device_id: int | None = None, severity: str | None = None) -> int:
+    async def count_incident_rows(
+        self,
+        *,
+        status: str | None = None,
+        search: str | None = None,
+        site: str | None = None,
+        device_id: int | None = None,
+        severity: str | None = None,
+    ) -> int:
         """Query incident rows from the database."""
         query = select(func.count()).select_from(Incident)
         if status:
@@ -212,7 +241,9 @@ class IncidentRepository:
             query = query.where(Incident.device_id == device_id)
         normalized_site = str(site or "").strip().lower()
         if normalized_site:
-            query = query.join(Device, Device.id == Incident.device_id, isouter=True).where(func.lower(Device.site) == normalized_site)
+            query = query.join(Device, Device.id == Incident.device_id, isouter=True).where(
+                func.lower(Device.site) == normalized_site
+            )
         normalized_search = str(search or "").strip().lower()
         if normalized_search:
             if not normalized_site:
@@ -547,7 +578,9 @@ class IncidentRepository:
             if row.get("acknowledged_at") is not None:
                 continue
             severity = str(row.get("effective_severity") or "").lower()
-            threshold = critical_after_minutes if severity == "critical" else high_after_minutes if severity == "high" else None
+            threshold = (
+                critical_after_minutes if severity == "critical" else high_after_minutes if severity == "high" else None
+            )
             if threshold is None:
                 continue
             started_at = row.get("started_at")
@@ -601,10 +634,7 @@ class IncidentRepository:
 
     async def _matching_incidents_for_event(self, *, device_id: int | None, event_at) -> list[Incident]:
         """Find active or recently resolved incidents that match one alert/notification event."""
-        if device_id is None:
-            device_condition = Incident.device_id.is_(None)
-        else:
-            device_condition = Incident.device_id == device_id
+        device_condition = Incident.device_id.is_(None) if device_id is None else Incident.device_id == device_id
         query = (
             select(Incident)
             .where(device_condition)
@@ -639,8 +669,7 @@ def _normalize_severity(value: str | None) -> str | None:
 
 
 def _highest_severity(values) -> str | None:
-    severities = [_normalize_severity(value) for value in values]
-    severities = [value for value in severities if value]
+    severities = [severity for value in values if (severity := _normalize_severity(value)) is not None]
     if not severities:
         return None
     return max(severities, key=lambda item: SEVERITY_PRIORITY.get(item, 0))

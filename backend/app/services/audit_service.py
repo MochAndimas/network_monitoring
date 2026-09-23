@@ -51,5 +51,7 @@ async def list_admin_audit_logs(
     limit: int = 100,
 ) -> list[AdminAuditLog]:
     """List admin audit logs in the service layer."""
-    rows = await db.scalars(select(AdminAuditLog).order_by(desc(AdminAuditLog.created_at), desc(AdminAuditLog.id)).limit(limit))
+    rows = await db.scalars(
+        select(AdminAuditLog).order_by(desc(AdminAuditLog.created_at), desc(AdminAuditLog.id)).limit(limit)
+    )
     return list(rows.all())

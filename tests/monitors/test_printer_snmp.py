@@ -1,6 +1,10 @@
 """Unit tests for Printer MIB value normalization."""
 
-from backend.app.monitors.device.printer_snmp import _build_paper_detail_metric, _build_printer_status_metric, _build_toner_metrics
+from backend.app.monitors.device.printer_snmp import (
+    _build_paper_detail_metric,
+    _build_printer_status_metric,
+    _build_toner_metrics,
+)
 
 
 def test_paper_detail_treats_negative_three_as_available_with_unknown_quantity():

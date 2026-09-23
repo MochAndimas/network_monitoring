@@ -16,7 +16,7 @@ def test_redact_sensitive_log_message_masks_telegram_credentials(monkeypatch):
     monkeypatch.setattr(observability_module.settings, "telegram_chat_id", "-987654321")
 
     message = (
-        'HTTP Request: POST https://api.telegram.org/bot123456:secret-token/sendMessage '
+        "HTTP Request: POST https://api.telegram.org/bot123456:secret-token/sendMessage "
         'chat_id=-987654321 "HTTP/1.1 200 OK"'
     )
 
@@ -134,21 +134,21 @@ def test_observability_payload_metrics_cover_paged_endpoints():
             scheduler_statuses=[],
         )
 
-        assert 'network_monitoring_api_payload_requests_total{endpoint="/devices/paged",scope="filtered"} 1' in metrics_text
         assert (
-            'network_monitoring_api_payload_rows_total'
-            '{endpoint="/alerts/active/paged",scope="active",section="items"} 20'
+            'network_monitoring_api_payload_requests_total{endpoint="/devices/paged",scope="filtered"} 1'
             in metrics_text
         )
         assert (
-            'network_monitoring_api_payload_total_rows_sum'
-            '{endpoint="/incidents/paged",scope="active",section="items"} 30'
-            in metrics_text
+            "network_monitoring_api_payload_rows_total"
+            '{endpoint="/alerts/active/paged",scope="active",section="items"} 20' in metrics_text
         )
         assert (
-            'network_monitoring_api_payload_sampled_total'
-            '{endpoint="/metrics/latest-snapshot/paged",scope="global",section="items"} 1'
-            in metrics_text
+            "network_monitoring_api_payload_total_rows_sum"
+            '{endpoint="/incidents/paged",scope="active",section="items"} 30' in metrics_text
+        )
+        assert (
+            "network_monitoring_api_payload_sampled_total"
+            '{endpoint="/metrics/latest-snapshot/paged",scope="global",section="items"} 1' in metrics_text
         )
     finally:
         observability_module._api_payload_request_count.clear()
@@ -159,3 +159,64 @@ def test_observability_payload_metrics_cover_paged_endpoints():
         observability_module._api_payload_total_rows.update(original_payload_total_rows)
         observability_module._api_payload_sampled.clear()
         observability_module._api_payload_sampled.update(original_payload_sampled)
+
+
+def test_agent_success_and_registration_do_not_clear_other_agent_failure(monkeypatch):
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from tests.test_utils import create_all, drop_all, run
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    run(create_all(engine))
+
+    async def scenario():
+        async with sessions() as db:
+            monkeypatch.setattr(observability_module.settings, "collector_agent_site", "Branch A")
+            monkeypatch.setattr(observability_module.settings, "scheduler_interval_device_seconds", 30)
+            await observability_module.mark_scheduler_job_failed(
+                db, job_name="device_checks", duration_ms=1, error="site A failed"
+            )
+            monkeypatch.setattr(observability_module.settings, "collector_agent_site", "Branch B")
+            monkeypatch.setattr(observability_module.settings, "scheduler_interval_device_seconds", 300)
+            await observability_module.mark_scheduler_jobs_registered(db, job_names=["device_checks"])
+            await observability_module.mark_scheduler_job_succeeded(db, job_name="device_checks", duration_ms=2)
+            monkeypatch.setattr(observability_module.settings, "collector_agent_site", "")
+            await observability_module.mark_scheduler_job_succeeded(db, job_name="device_checks", duration_ms=3)
+            rows = await observability_module.list_scheduler_job_statuses(db)
+            assert len(rows) == 3
+            by_site = {row.agent_site: row for row in rows}
+            assert by_site["Branch A"].consecutive_failures == 1
+            assert by_site["Branch A"].last_error == "site A failed"
+            assert by_site["Branch B"].consecutive_failures == 0
+            assert by_site[None].agent_id == "central"
+            assert by_site["Branch A"].expected_interval_seconds == 30
+            assert by_site["Branch B"].expected_interval_seconds == 300
+            # Another owner cannot refresh a stopped agent's heartbeat.
+            stopped = by_site["Branch B"]
+            stopped_at = utcnow() - timedelta(hours=1)
+            stopped.last_finished_at = stopped_at
+            stopped.updated_at = stopped_at
+            health = {row["agent_site"]: row for row in observability_module.build_scheduler_job_health_rows(rows)}
+            assert health["Branch B"]["state"] == "stale"
+            assert health["Branch B"]["expected_interval_seconds"] == 300
+            assert health[None]["state"] == "on_schedule"
+            alerts = observability_module.build_scheduler_operational_alerts(rows)
+            assert {row["agent_site"] for row in alerts} == {"Branch A", "Branch B"}
+            metrics = observability_module.render_prometheus_metrics(
+                database_up=True, scheduler_alert_count=2, scheduler_statuses=rows
+            )
+            from prometheus_client.parser import text_string_to_metric_families
+
+            samples = [
+                sample
+                for family in text_string_to_metric_families(metrics)
+                for sample in family.samples
+                if sample.name == "network_monitoring_scheduler_job_consecutive_failures"
+            ]
+            assert len(samples) == 3
+            assert len({sample.labels["agent_id"] for sample in samples}) == 3
+
+    try:
+        run(scenario())
+    finally:
+        run(drop_all(engine))

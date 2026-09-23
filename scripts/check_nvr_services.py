@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import socket
 import time
 from dataclasses import dataclass
@@ -106,7 +107,7 @@ def check_http(host: str, port: int, timeout_seconds: float) -> str:
         try:
             connection.close()
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Transport cleanup failed")
 
 
 async def snmp_get(host: str, community: str, oid: str, timeout_seconds: float, retries: int) -> tuple[bool, str]:
@@ -131,7 +132,7 @@ async def snmp_get(host: str, community: str, oid: str, timeout_seconds: float, 
         try:
             engine.transport_dispatcher.close_dispatcher()
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Transport cleanup failed")
 
 
 async def check_snmp(host: str, community: str, timeout_seconds: float, retries: int) -> None:

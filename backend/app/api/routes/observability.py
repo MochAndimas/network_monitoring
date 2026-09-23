@@ -1,5 +1,6 @@
 """FastAPI routes for observability endpoints."""
 
+from dataclasses import asdict
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends
@@ -21,6 +22,10 @@ from ...core.time import utcnow
 from ...models.collector_run import CollectorRun
 from ...models.metric import Metric
 from ...services.pipeline_control import pipeline_lock_health
+from ...services.notification_outbox_health import (
+    build_notification_queue_health,
+    render_notification_queue_metrics,
+)
 from ...services.observability_service import (
     build_collector_health_rows,
     build_observability_runtime_info,
@@ -73,14 +78,11 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
         ).where(Metric.checked_at >= now - timedelta(hours=1))
     )
     write_rate = metric_write_rows.one()
-    scheduler_queue_risk = sum(
-        1
-        for row in scheduler_health
-        if float(row.get("schedule_lag_seconds") or 0) > 0
-    )
+    scheduler_queue_risk = sum(1 for row in scheduler_health if float(row.get("schedule_lag_seconds") or 0) > 0)
     scheduler_missed_windows = sum(1 for row in scheduler_health if str(row.get("state")) == "stale")
     return {
         "database": "up" if database_ok else "down",
+        "notification_outbox": asdict(await build_notification_queue_health(db, now=now)),
         "devices_total": devices_total,
         "metrics_latest_snapshot": metrics_latest_snapshot,
         "alerts_active": alerts_active,
@@ -103,6 +105,9 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
         "scheduler_jobs": [
             {
                 "job_name": job.job_name,
+                "agent_id": job.agent_id,
+                "agent_site": job.agent_site,
+                "expected_interval_seconds": job.expected_interval_seconds,
                 "is_running": job.is_running,
                 "consecutive_failures": job.consecutive_failures,
                 "last_started_at": job.last_started_at,
@@ -116,7 +121,15 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
         "collector_health": collector_health,
         "collector_health_window_hours": 24,
         "collector_runs": [
-            {"collector": row.collector_name, "runs": int(row.runs or 0), "successful_runs": int(row.successful_runs or 0), "average_duration_ms": float(row.average_duration_ms or 0), "max_duration_ms": float(row.max_duration_ms or 0), "metric_writes": int(row.metric_writes or 0), "last_checked_at": row.last_checked_at}
+            {
+                "collector": row.collector_name,
+                "runs": int(row.runs or 0),
+                "successful_runs": int(row.successful_runs or 0),
+                "average_duration_ms": float(row.average_duration_ms or 0),
+                "max_duration_ms": float(row.max_duration_ms or 0),
+                "metric_writes": int(row.metric_writes or 0),
+                "last_checked_at": row.last_checked_at,
+            }
             for row in collector_run_rows
         ],
         "operational_alerts": scheduler_alerts,
@@ -129,11 +142,13 @@ async def observability_metrics(db: AsyncSession = Depends(get_db)) -> PlainText
     database_ok = await check_database_connection()
     scheduler_statuses = await list_scheduler_job_statuses(db)
     scheduler_alerts = build_scheduler_operational_alerts(scheduler_statuses)
+    queue_health = await build_notification_queue_health(db, now=utcnow())
     return PlainTextResponse(
         render_prometheus_metrics(
             database_up=database_ok,
             scheduler_alert_count=len(scheduler_alerts),
             scheduler_statuses=scheduler_statuses,
-        ),
+        )
+        + render_notification_queue_metrics(queue_health),
         media_type="text/plain; version=0.0.4; charset=utf-8",
     )

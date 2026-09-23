@@ -30,7 +30,7 @@ DEFAULT_EXPECT_ENDPOINTS = [
     "/metrics/daily-summary",
 ]
 
-_METRIC_LINE_RE = re.compile(r'^([a-zA-Z_:][a-zA-Z0-9_:]*)\{([^}]*)\}\s+([-+]?[0-9]*\.?[0-9]+)\s*$')
+_METRIC_LINE_RE = re.compile(r"^([a-zA-Z_:][a-zA-Z0-9_:]*)\{([^}]*)\}\s+([-+]?[0-9]*\.?[0-9]+)\s*$")
 
 
 def _parse_metric_lines(metrics_text: str, metric_name: str) -> list[tuple[dict[str, str], float]]:
@@ -72,7 +72,9 @@ def _find_missing_rows_coverage(metrics_text: str, endpoints: list[str]) -> list
     records = _parse_metric_lines(metrics_text, "network_monitoring_api_payload_rows_total")
     missing: list[str] = []
     for endpoint in endpoints:
-        covered = any(labels.get("endpoint") == endpoint and labels.get("section") == "items" for labels, _value in records)
+        covered = any(
+            labels.get("endpoint") == endpoint and labels.get("section") == "items" for labels, _value in records
+        )
         if not covered:
             missing.append(endpoint)
     return missing

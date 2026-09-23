@@ -94,7 +94,7 @@ def apply_legacy_deprecation_headers(response: Response, *, legacy_endpoint: str
     response.headers["Sunset"] = plan.sunset_http_date
     response.headers["Warning"] = (
         '299 - "Deprecated API endpoint. '
-        f"Migrate from {plan.legacy_endpoint} to {plan.replacement_endpoint} before {plan.removal_on.isoformat()}.\""
+        f'Migrate from {plan.legacy_endpoint} to {plan.replacement_endpoint} before {plan.removal_on.isoformat()}."'
     )
     response.headers["X-API-Deprecation-Phase"] = phase
     response.headers["X-API-Deprecation-Announced-On"] = plan.announced_on.isoformat()

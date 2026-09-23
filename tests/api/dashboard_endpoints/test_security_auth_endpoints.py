@@ -7,13 +7,13 @@ def test_internal_api_key_protects_mutation_endpoints():
     with client_context() as (client, _session_factory):
         unauthorized_device = client.post(
             "/devices",
-            json={"name": "Secured Device", "ip_address": "192.168.1.90", "device_type": "switch"},
+            json={"name": "Secured Device", "ip_address": "192.168.1.90", "device_type": "switch", "site": "Test HQ"},
         )
         unauthorized_cycle = client.post("/system/run-cycle")
         authorized_device = client.post(
             "/devices",
             headers=API_HEADERS,
-            json={"name": "Secured Device", "ip_address": "192.168.1.90", "device_type": "switch"},
+            json={"name": "Secured Device", "ip_address": "192.168.1.90", "device_type": "switch", "site": "Test HQ"},
         )
 
         assert unauthorized_device.status_code == 401
@@ -42,12 +42,22 @@ def test_internal_api_key_scopes_split_write_and_ops_access():
             write_denied = client.post(
                 "/devices",
                 headers={"x-api-key": "reader-key"},
-                json={"name": "Blocked Device", "ip_address": "192.168.1.190", "device_type": "switch"},
+                json={
+                    "name": "Blocked Device",
+                    "ip_address": "192.168.1.190",
+                    "device_type": "switch",
+                    "site": "Test HQ",
+                },
             )
             write_allowed = client.post(
                 "/devices",
                 headers={"x-api-key": "writer-key"},
-                json={"name": "Writable Device", "ip_address": "192.168.1.191", "device_type": "switch"},
+                json={
+                    "name": "Writable Device",
+                    "ip_address": "192.168.1.191",
+                    "device_type": "switch",
+                    "site": "Test HQ",
+                },
             )
             ops_denied = client.post("/system/run-cycle", headers={"x-api-key": "writer-key"})
             ops_allowed = client.post("/system/run-cycle", headers={"x-api-key": "ops-key"})
@@ -122,3 +132,22 @@ def test_missing_credentials_are_rejected_without_api_key_or_bearer_token():
 
         assert response.status_code == 401
         assert response.json()["detail"] == "Authentication required"
+
+
+def test_service_keys_and_viewers_cannot_read_admin_configuration():
+    with client_context() as (client, session_factory):
+        run(_create_user(session_factory, username="read-only", password="StrongPass123!", role="viewer"))
+        login = client.post("/auth/login", json={"username": "read-only", "password": "StrongPass123!"})
+        assert login.status_code == 200
+        viewer_headers = {"authorization": f"Bearer {login.json()['access_token']}"}
+        client.cookies.clear()
+        for path in (
+            "/thresholds",
+            "/thresholds/overrides",
+            "/thresholds/maintenance-windows",
+            "/observability/summary",
+        ):
+            for headers in (API_HEADERS, viewer_headers):
+                response = client.get(path, headers=headers)
+                assert response.status_code == 403
+                assert response.json()["detail"] == "Admin access required"

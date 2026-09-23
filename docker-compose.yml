@@ -47,6 +47,11 @@ x-monitoring-runtime-environment: &monitoring-runtime-environment
   MIKROTIK_PORT: ${MIKROTIK_PORT:-8728}
   MIKROTIK_USERNAME: ${MIKROTIK_USERNAME:-}
   MIKROTIK_PASSWORD: ${MIKROTIK_PASSWORD:-}
+  MIKROTIK_TARGETS: ${MIKROTIK_TARGETS:-}
+  RO_MIKROTIK_HOST: ${RO_MIKROTIK_HOST:-}
+  RO_MIKROTIK_PORT: ${RO_MIKROTIK_PORT:-8728}
+  RO_MIKROTIK_USERNAME: ${RO_MIKROTIK_USERNAME:-}
+  RO_MIKROTIK_PASSWORD: ${RO_MIKROTIK_PASSWORD:-}
   MIKROTIK_DYNAMIC_SECTIONS: ${MIKROTIK_DYNAMIC_SECTIONS:-interface,firewall,queue}
   MIKROTIK_DYNAMIC_FIREWALL_SECTION_ALLOWLIST: ${MIKROTIK_DYNAMIC_FIREWALL_SECTION_ALLOWLIST:-filter,nat}
   MIKROTIK_DYNAMIC_INTERFACE_ALLOWLIST: ${MIKROTIK_DYNAMIC_INTERFACE_ALLOWLIST:-}
@@ -185,12 +190,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${FRONTEND_PUBLIC_API_URL:-http://localhost:8000}
     restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
-    environment:
-      NEXT_PUBLIC_API_URL: \${FRONTEND_PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "127.0.0.1:3000:3000"
     healthcheck:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..core.time import now
@@ -17,8 +17,12 @@ if TYPE_CHECKING:
 
 class MetricDailyRollup(Base):
     """SQLAlchemy ORM model for MetricDailyRollup records."""
+
     __tablename__ = "metric_daily_rollups"
-    __table_args__ = (UniqueConstraint("device_id", "rollup_date", name="uq_metric_daily_rollups_device_date"),)
+    __table_args__ = (
+        UniqueConstraint("device_id", "rollup_date", name="uq_metric_daily_rollups_device_date"),
+        Index("ix_metric_daily_rollups_date_device_lookup", "rollup_date", "device_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), nullable=False, index=True)

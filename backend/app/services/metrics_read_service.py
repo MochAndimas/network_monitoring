@@ -66,7 +66,10 @@ def _device_monitoring_context(items: list[dict]) -> DeviceMonitoringContext:
         )
     statuses = {str(item.get("status") or "unknown").lower() for item in items}
     state = "degraded" if statuses & {"down", "error", "warning", "stale"} else "healthy"
-    latest = max((item.get("checked_at") for item in items if item.get("checked_at") is not None), default=None)
+    latest = max(
+        (checked_at for item in items if isinstance(checked_at := item.get("checked_at"), datetime)),
+        default=None,
+    )
     reason = (
         "Metric terakhir mengindikasikan monitoring degraded; periksa collector/freshness sebelum menyimpulkan perangkat gagal."
         if state == "degraded"
@@ -384,10 +387,7 @@ async def get_metrics_history_live(
         offset=snapshot_offset,
         device_id=device_id,
     )
-    if device_id is None:
-        latest_snapshot_status_summary = await repository.summarize_latest_snapshot_status_counts()
-    else:
-        latest_snapshot_status_summary = repository.summarize_latest_snapshot_status_counts_for_rows(latest_snapshot_rows)
+    latest_snapshot_status_summary = await repository.summarize_latest_snapshot_status_counts(device_id=device_id)
     selected_device_snapshot_rows = []
     if include_selected_device_snapshot and device_id is not None:
         selected_device_snapshot_rows = await repository.list_latest_metric_rows(
@@ -879,7 +879,9 @@ def _record_context_payload_sections(
             "latest_snapshot",
             latest_snapshot_items,
             latest_snapshot_total,
-            latest_snapshot_sampled if latest_snapshot_sampled is not None else latest_snapshot_total > len(latest_snapshot_items),
+            latest_snapshot_sampled
+            if latest_snapshot_sampled is not None
+            else latest_snapshot_total > len(latest_snapshot_items),
         ),
         (
             "selected_device_snapshot",
@@ -916,7 +918,9 @@ def _decode_metric_history_cursor(cursor: str) -> tuple[datetime, int]:
         checked_at = datetime.fromisoformat(str(payload["checked_at"]))
         metric_id = int(payload["id"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid metrics history cursor") from exc
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid metrics history cursor"
+        ) from exc
     return checked_at, metric_id
 
 
@@ -948,4 +952,6 @@ def _decode_latest_snapshot_cursor(cursor: str) -> dict:
             "id": int(payload["id"]),
         }
     except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid latest snapshot cursor") from exc
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid latest snapshot cursor"
+        ) from exc

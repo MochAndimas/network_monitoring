@@ -18,8 +18,7 @@ from ..helpers import bounded_gather, build_ping_check_metrics, collect_ping_pro
 
 
 class HttpGetClient(Protocol):
-    async def get(self, url: str) -> httpx.Response:
-        ...
+    async def get(self, url: str) -> httpx.Response: ...
 
 
 async def run_internet_checks(db: AsyncSession) -> list[dict]:
@@ -50,6 +49,7 @@ async def run_internet_checks(db: AsyncSession) -> list[dict]:
 
 def _select_internet_anchor_device(devices: list[Device]) -> Device:
     """Return select internet anchor device for monitoring collection."""
+
     def priority(device: Device) -> tuple[int, str]:
         name = str(getattr(device, "name", "") or "").lower()
         if "myrepublic" in name:

@@ -13,6 +13,7 @@ from ..db.base import Base
 
 class RetentionBucketProgress(Base):
     """Track raw-metric retention buckets that have already been processed."""
+
     __tablename__ = "retention_bucket_progress"
     __table_args__ = (
         UniqueConstraint(

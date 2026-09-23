@@ -69,4 +69,3 @@ def test_nested_settings_groups_preserve_flat_env_contract() -> None:
     settings.auth_jwt_secret = "rotated-jwt-secret"
 
     assert settings.auth.jwt_secret == "rotated-jwt-secret"
-

@@ -20,6 +20,7 @@ from backend.app.repositories.metric_repository import MetricRepository
 from backend.app.core.time import utcnow
 from tests.test_utils import create_all, drop_all, make_fake_safe_ping, run
 
+
 def test_internet_checks_collect_quality_dns_http_and_public_ip(monkeypatch, session_factory):
     ping_samples = iter([0.010, None, 0.020])
     monkeypatch.setattr(helpers.settings, "ping_sample_count", 3)
@@ -392,9 +393,7 @@ def test_mikrotik_api_checks_collect_routeros_metrics(monkeypatch, session_facto
                         "free-hdd-space": "500",
                     }
                 ],
-                ("interface",): [
-                    {"name": "ether1", "running": True, "rx-byte": "1001000", "tx-byte": "2002000"}
-                ],
+                ("interface",): [{"name": "ether1", "running": True, "rx-byte": "1001000", "tx-byte": "2002000"}],
                 ("ip", "dhcp-server", "lease"): [
                     {"status": "bound", "active-address": "192.168.88.10", "mac-address": "AA:BB:CC:DD:EE:01"}
                 ],
@@ -406,9 +405,7 @@ def test_mikrotik_api_checks_collect_routeros_metrics(monkeypatch, session_facto
                     {"chain": "forward", "action": "drop", "comment": "bad", "packets": "5000", "bytes": "10000000"}
                 ],
                 ("ip", "firewall", "nat"): [],
-                ("queue", "simple"): [
-                    {"name": "user-a", "bytes": "3003000/4004000", "rate": "7000000/8000000"}
-                ],
+                ("queue", "simple"): [{"name": "user-a", "bytes": "3003000/4004000", "rate": "7000000/8000000"}],
             }
             return paths.get(parts, [])
 
@@ -541,7 +538,15 @@ def test_mikrotik_api_metrics_attach_to_configured_host_device(monkeypatch, sess
     class FakeApi:
         def path(self, *parts):
             if parts == ("system", "resource"):
-                return [{"cpu-load": "10", "total-memory": "1000", "free-memory": "500", "total-hdd-space": "1000", "free-hdd-space": "500"}]
+                return [
+                    {
+                        "cpu-load": "10",
+                        "total-memory": "1000",
+                        "free-memory": "500",
+                        "total-hdd-space": "1000",
+                        "free-hdd-space": "500",
+                    }
+                ]
             if parts == ("interface",):
                 return []
             if parts == ("ip", "dhcp-server", "lease"):
@@ -590,7 +595,9 @@ def test_mikrotik_api_metrics_are_skipped_when_host_does_not_match_multiple_devi
     monkeypatch.setattr(mikrotik_service.settings, "mikrotik_host", "192.168.88.99")
     monkeypatch.setattr(mikrotik_service.settings, "mikrotik_username", "monitor")
     monkeypatch.setattr(mikrotik_service.settings, "mikrotik_password", "secret")
-    monkeypatch.setattr(mikrotik_service, "connect", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("connect should not run")))
+    monkeypatch.setattr(
+        mikrotik_service, "connect", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("connect should not run"))
+    )
 
     async def scenario():
         async with session_factory() as db:
@@ -605,6 +612,72 @@ def test_mikrotik_api_metrics_are_skipped_when_host_does_not_match_multiple_devi
     metrics = run(scenario())
     metric_names = {metric["metric_name"] for metric in metrics}
     assert "mikrotik_api" not in metric_names
+
+
+def test_mikrotik_api_collects_primary_and_regional_targets_independently(monkeypatch, session_factory):
+    class FakeApi:
+        def __init__(self, host):
+            self.host = host
+
+        def path(self, *parts):
+            if parts == ("system", "resource"):
+                return [
+                    {
+                        "cpu-load": "10" if self.host == "192.0.2.1" else "20",
+                        "total-memory": "1000",
+                        "free-memory": "500",
+                        "total-hdd-space": "1000",
+                        "free-hdd-space": "500",
+                    }
+                ]
+            return []
+
+        def close(self):
+            return None
+
+    connections = []
+
+    def fake_connect(**kwargs):
+        connections.append((kwargs["host"], kwargs["port"], kwargs["username"]))
+        return FakeApi(kwargs["host"])
+
+    monkeypatch.setattr(helpers, "safe_ping", make_fake_safe_ping(iter([0.010, 0.010, 0.010, 0.010, 0.010, 0.010])))
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_targets", "")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_host", "192.0.2.1")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_port", 8728)
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_username", "head-user")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_password", "head-secret")
+    monkeypatch.setattr(mikrotik_service.settings, "ro_mikrotik_host", "192.0.2.2")
+    monkeypatch.setattr(mikrotik_service.settings, "ro_mikrotik_port", 8729)
+    monkeypatch.setattr(mikrotik_service.settings, "ro_mikrotik_username", "regional-user")
+    monkeypatch.setattr(mikrotik_service.settings, "ro_mikrotik_password", "regional-secret")
+    monkeypatch.setattr(mikrotik_service.settings, "mikrotik_dynamic_sections", "")
+    monkeypatch.setattr(mikrotik_service, "connect", fake_connect)
+
+    async def scenario():
+        async with session_factory() as db:
+            devices = await DeviceRepository(db).upsert_devices(
+                [
+                    {"name": "Mikrotik Head Office", "ip_address": "192.0.2.1", "device_type": "mikrotik"},
+                    {"name": "Mikrotik Regional Office", "ip_address": "192.0.2.2", "device_type": "mikrotik"},
+                ]
+            )
+            metrics = await mikrotik_service.run_mikrotik_checks(db)
+            return metrics, {device.ip_address: device.id for device in devices}
+
+    metrics, device_ids = run(scenario())
+    api_metrics = {
+        metric["device_id"]: metric["metric_value"] for metric in metrics if metric["metric_name"] == "mikrotik_api"
+    }
+    cpu_metrics = {
+        metric["device_id"]: metric["metric_value"] for metric in metrics if metric["metric_name"] == "cpu_percent"
+    }
+    assert api_metrics == {device_ids["192.0.2.1"]: "ok", device_ids["192.0.2.2"]: "ok"}
+    assert cpu_metrics == {device_ids["192.0.2.1"]: "10", device_ids["192.0.2.2"]: "20"}
+    assert sorted(connections) == [
+        ("192.0.2.1", 8728, "head-user"),
+        ("192.0.2.2", 8729, "regional-user"),
+    ]
 
 
 def test_server_resource_metrics_require_explicit_target_for_multiple_servers(monkeypatch, session_factory):

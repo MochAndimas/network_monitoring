@@ -17,5 +17,16 @@ build/
 logs/
 alembic/__pycache__/
 backend/__pycache__/
-dashboard/__pycache__/
 tests/__pycache__/
+# Backend build context excludes frontend and local environment artifacts.
+frontend/
+node_modules/
+.pnpm-store/
+backup/
+bin/
+etc/
+include/
+lib/
+share/
+pyvenv.cfg
+.ruff_cache/

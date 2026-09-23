@@ -15,6 +15,7 @@ from ...models.metric import Metric
 
 class MetricRepositoryBase:
     """Shared database session and row-shaping helpers for metric repositories."""
+
     def __init__(self, db: AsyncSession) -> None:
         """Initialize the object with its runtime dependencies."""
         self.db = db
@@ -93,20 +94,17 @@ class MetricRepositoryBase:
         checked_to: datetime | None = None,
     ) -> Select[Any]:
         """Build the base joined query for metric history rows."""
-        query = (
-            select(
-                Metric.id,
-                Metric.device_id,
-                Device.name.label("device_name"),
-                Metric.metric_name,
-                Metric.metric_value,
-                Metric.metric_value_numeric,
-                Metric.status,
-                Metric.unit,
-                Metric.checked_at,
-            )
-            .outerjoin(Device, Device.id == Metric.device_id)
-        )
+        query = select(
+            Metric.id,
+            Metric.device_id,
+            Device.name.label("device_name"),
+            Metric.metric_name,
+            Metric.metric_value,
+            Metric.metric_value_numeric,
+            Metric.status,
+            Metric.unit,
+            Metric.checked_at,
+        ).outerjoin(Device, Device.id == Metric.device_id)
         conditions = self._recent_metric_filter_conditions(
             device_id=device_id,
             metric_name=metric_name,

@@ -21,7 +21,7 @@ class MetricSiteTypeDailySummary(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    summary_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    summary_date: Mapped[date] = mapped_column(Date, nullable=False)
     site: Mapped[str] = mapped_column(String(100), nullable=False, default="Unassigned")
     device_type: Mapped[str] = mapped_column(String(50), nullable=False, default="unknown")
     device_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

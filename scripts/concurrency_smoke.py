@@ -161,9 +161,7 @@ async def main() -> None:
             )
         )
 
-    print(
-        f"Threshold profile={args.profile} max_p95_ms={resolved_max_p95_ms:.2f} max_max_ms={resolved_max_max_ms:.2f}"
-    )
+    print(f"Threshold profile={args.profile} max_p95_ms={resolved_max_p95_ms:.2f} max_max_ms={resolved_max_max_ms:.2f}")
     _print_latency_summary(measured)
     _write_json(
         str(args.output_json or "").strip() or None,

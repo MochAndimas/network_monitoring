@@ -15,7 +15,9 @@ def _validate_internal_api_key(x_api_key: str | None) -> AuthenticatedActor | No
     api_keys = internal_api_key_map()
     if not api_keys:
         if settings.auth.allow_insecure_no_auth:
-            return AuthenticatedActor(kind="insecure", role="admin", permissions=frozenset({"admin", "ops", "read", "write"}))
+            return AuthenticatedActor(
+                kind="insecure", role="admin", permissions=frozenset({"admin", "ops", "read", "write"})
+            )
         return None
     if x_api_key and x_api_key in api_keys:
         for secret, spec in api_keys.items():

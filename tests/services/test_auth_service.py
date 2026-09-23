@@ -16,6 +16,7 @@ from backend.app.models.user import AuthLoginAttempt, AuthSession, User
 from backend.app.services.auth_service import cleanup_auth_data
 from tests.test_utils import run
 
+
 def test_cleanup_auth_data_removes_old_sessions_and_attempts():
     original_password_secret = settings.auth_password_secret
     original_jwt_secret = settings.auth_jwt_secret

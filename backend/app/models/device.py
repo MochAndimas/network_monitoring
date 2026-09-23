@@ -17,10 +17,9 @@ if TYPE_CHECKING:
 
 class Device(Base):
     """SQLAlchemy ORM model for Device records."""
+
     __tablename__ = "devices"
-    __table_args__ = (
-        Index("ix_devices_active_type_name", "is_active", "device_type", "name"),
-    )
+    __table_args__ = (Index("ix_devices_active_type_name", "is_active", "device_type", "name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)

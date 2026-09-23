@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch, setAccessToken } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { useAuth } from "@/features/auth/auth-provider";
+import { ThemeToggle } from "./theme-toggle";
 
 const NAVIGATION = [
   ["/", "Overview"], ["/daily-summary", "Daily Summary"], ["/live-monitoring", "Live Monitoring"],
@@ -90,7 +91,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           {isQuickMenuOpen ? <div className="global-menu-popover" role="menu" aria-label="Menu cepat">
             <div className="global-menu-heading"><span>Navigasi cepat</span><small>{user?.role === "admin" ? "Admin" : "Viewer"}</small></div>
             <div className="global-menu-links">{[...QUICK_NAVIGATION, ACCOUNT_NAVIGATION].map(([href, label]) => <Link key={href} href={href} role="menuitem" onClick={() => setIsQuickMenuOpen(false)} className={pathname === href ? "global-menu-link global-menu-link-active" : "global-menu-link"}><NavIcon href={href} /><span>{label}</span></Link>)}</div>
-            <div className="global-menu-footer"><button type="button" className="global-menu-logout" onClick={() => void logout()}>Keluar</button></div>
+            <div className="global-menu-footer"><ThemeToggle /><button type="button" className="global-menu-logout" onClick={() => void logout()}>Keluar</button></div>
           </div> : null}
       </div>
       {children}

@@ -44,7 +44,9 @@ def upgrade() -> None:
         ["bucket_kind"],
         unique=False,
     )
-    op.create_index(op.f("ix_retention_bucket_progress_device_id"), "retention_bucket_progress", ["device_id"], unique=False)
+    op.create_index(
+        op.f("ix_retention_bucket_progress_device_id"), "retention_bucket_progress", ["device_id"], unique=False
+    )
     op.create_index(
         op.f("ix_retention_bucket_progress_bucket_date"),
         "retention_bucket_progress",

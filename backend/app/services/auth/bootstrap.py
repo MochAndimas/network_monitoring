@@ -41,4 +41,3 @@ async def ensure_bootstrap_admin(db: AsyncSession, *, commit: bool = True) -> bo
         await db.rollback()
         return False
     return True
-

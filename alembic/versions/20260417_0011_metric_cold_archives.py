@@ -4,6 +4,7 @@ Revision ID: 20260417_0011
 Revises: 20260417_0010
 Create Date: 2026-04-17 13:10:00
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -52,8 +53,12 @@ def upgrade() -> None:
             name="uq_metric_cold_archives_device_date_metric_status_unit",
         ),
     )
-    op.create_index(op.f("ix_metric_cold_archives_archive_date"), "metric_cold_archives", ["archive_date"], unique=False)
-    op.create_index(op.f("ix_metric_cold_archives_archive_month"), "metric_cold_archives", ["archive_month"], unique=False)
+    op.create_index(
+        op.f("ix_metric_cold_archives_archive_date"), "metric_cold_archives", ["archive_date"], unique=False
+    )
+    op.create_index(
+        op.f("ix_metric_cold_archives_archive_month"), "metric_cold_archives", ["archive_month"], unique=False
+    )
     op.create_index(op.f("ix_metric_cold_archives_device_id"), "metric_cold_archives", ["device_id"], unique=False)
     op.create_index(op.f("ix_metric_cold_archives_id"), "metric_cold_archives", ["id"], unique=False)
     op.create_index(op.f("ix_metric_cold_archives_metric_name"), "metric_cold_archives", ["metric_name"], unique=False)

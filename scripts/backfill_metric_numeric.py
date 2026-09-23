@@ -105,6 +105,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+
     async def _run() -> None:
         try:
             await main()

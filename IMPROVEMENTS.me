@@ -1,0 +1,1074 @@
+# Backlog Improvement — Network Monitoring
+
+Tanggal audit: 2026-09-08
+Terakhir diselaraskan: 2026-09-22
+Status: In progress — IMP-001/002/004/008 Done; fondasi outbox mencakup service worker (3C7), observability backlog (3C8), dan adapter signal proses (3C9), tetapi worker operasional belum aktif. IMP-003/005/010 In progress; IMP-006/007/009 Open. Toggle tema selesai dengan default light mode.
+Scope: clean code, scalability, maintainability backend, frontend, collector, database, deployment, dan pengujian.
+
+Dokumen ini melengkapi PRD.me. Status selesai di PRD frontend tidak otomatis berarti temuan audit berikut sudah ditutup.
+
+Checklist pada bagian IMP-001 sampai IMP-010 adalah acuan status terkini. Bagian progres bertanggal menyimpan hasil dan batasan pada saat tahap tersebut dikerjakan; kalimat seperti “belum diterapkan” atau “berikutnya” di sana merupakan konteks historis. Pekerjaan implementasi yang teruji tidak otomatis berarti sudah diaktifkan pada deployment. Angka test adalah hasil run yang dicatat, bukan pengujian ulang pada tanggal penyelarasan dokumen.
+
+## Penilaian awal
+
+| Aspek | Penilaian |
+| --- | --- |
+| Clean code | Struktur domain cukup jelas; beberapa modul masih menggabungkan terlalu banyak tanggung jawab dan frontend terlalu padat. |
+| Scalability | Sudah memiliki concurrency limit, latest snapshot, pagination, dan retention; koordinasi penulis metrik, biaya query, serta polling grup perlu diperbaiki. |
+| Maintainability | Pemisahan API/service/repository dan migrasi merupakan fondasi baik; konfigurasi CI dan sebagian test tertinggal dari implementasi. |
+
+Kapasitas maksimum perangkat belum dapat disimpulkan tanpa load test dan query plan pada data representatif.
+
+## Ringkasan backlog
+
+P1: didahulukan karena memengaruhi integritas proses atau jalur build/deployment.
+P2: perbaikan reliability, scalability, dan kemudahan pemeliharaan.
+
+| ID | Prioritas | Improvement | Status |
+| --- | --- | --- | --- |
+| IMP-001 | P1 | Hentikan operasi saat gagal memperoleh pipeline lock | Done |
+| IMP-002 | P1 | Selaraskan lock dan ownership collector dengan siklus manual | Done |
+| IMP-003 | P1 | Pulihkan setup development dan CI untuk stack aktual | In progress |
+| IMP-004 | P1 | Perbaiki konfigurasi URL API frontend dalam Docker | Done |
+| IMP-005 | P2 | Pisahkan pengiriman notifikasi dari transaksi alert | In progress |
+| IMP-006 | P2 | Batasi biaya query rolling alert | Open |
+| IMP-007 | P2 | Agregasikan request Live Monitoring untuk grup perangkat | Open |
+| IMP-008 | P2 | Bedakan status scheduler berdasarkan agent/site | Done |
+| IMP-009 | P2 | Batasi transaksi dan penghapusan retention | Open |
+| IMP-010 | P2 | Rapikan tanggung jawab modul dan kontrak pengujian | In progress |
+
+## IMP-001 — Hentikan operasi saat gagal memperoleh pipeline lock
+
+Lokasi: backend/app/scheduler/jobs.py, backend/app/services/pipeline_control.py.
+
+Temuan: _persist_runner() menggunakan monitoring_pipeline_guard(wait=True) tanpa memeriksa nilai acquired. Guard MySQL dapat menghasilkan False ketika timeout. Penulisan metrik, evaluasi alert, dan commit tetap dijalankan.
+
+Bukti audit: fungsi _persist_runner dieksekusi secara terisolasi dengan guard palsu yang menghasilkan False. persist_metrics, evaluate_alerts, dan commit tetap terpanggil. Ini membuktikan alur kontrol; bukan pengujian contention MySQL langsung.
+
+Dampak: operasi yang seharusnya eksklusif dapat berjalan bersamaan ketika lock gagal diperoleh.
+
+- [x] Tetapkan kontrak blocking acquisition: gagal memperoleh lock harus menghentikan operasi, melalui exception atau pemeriksaan acquired.
+- [x] Terapkan kontrak tersebut pada seluruh pemanggil yang relevan.
+- [x] Tambahkan regression test timeout yang memastikan operasi terlindungi tidak dipanggil.
+- [x] Verifikasi perilaku pada MySQL dengan lock contention dan timeout terkontrol.
+
+Kriteria selesai: kegagalan memperoleh lock tidak pernah menjalankan critical section; outcome tercatat jelas dan resource lock/connection dilepas.
+
+## IMP-002 — Selaraskan lock dan ownership collector dengan siklus manual
+
+Lokasi: backend/app/services/pipeline_control.py, backend/app/scheduler/jobs.py, backend/app/services/run_cycle_service.py, backend/app/repositories/metrics/writes.py.
+
+Temuan: full cycle memakai metrics:device, sementara scheduler memakai metrics:device:central atau metrics:device:<site>. Lock bernama berbeda tidak otomatis saling mengunci. Siklus manual juga memanggil collector perangkat tanpa filter delegasi site.
+
+Dampak: penulis berbeda dapat memproses perangkat yang sama bersamaan. Pembaruan latest snapshot masih memakai baca-lalu-tulis sehingga berisiko konflik insert atau pembaruan dari data yang lebih lama.
+
+- [x] Definisikan ownership perangkat/site untuk collector pusat, agent, dan siklus manual.
+- [x] Gunakan koordinasi lock yang menjamin eksklusivitas untuk penulis dengan perangkat yang beririsan.
+- [x] Pastikan run-cycle menghormati site yang didelegasikan.
+- [x] Evaluasi atomic upsert atau row locking untuk latest snapshot dengan pemeriksaan urutan checked_at dan metric ID.
+- [x] Tambahkan test yang menjalankan jalur scheduler aktual bersamaan dengan full cycle, termasuk agent site.
+
+Kriteria selesai: tidak ada penulisan bersamaan yang tidak terkoordinasi untuk perangkat yang sama; sampel lama tidak menggantikan snapshot baru; site independen tetap dapat berjalan paralel.
+
+## IMP-003 — Pulihkan setup development dan CI untuk stack aktual
+
+Lokasi: requirements/dev.txt, .github/workflows/ci.yml, Makefile, mypy.ini, frontend/package.json.
+
+Temuan: requirements/dev.txt memasukkan dashboard.txt yang sudah tidak ada. CI masih merujuk direktori dashboard, Dockerfile.dashboard, dan requirements/dashboard.txt. Workflow belum menjalankan test, typecheck, serta build frontend Next.js.
+
+Dampak: fresh checkout tidak memiliki jalur setup dan quality gate yang dapat diandalkan.
+
+- [x] Hapus atau ganti referensi komponen dashboard lama pada dependency, workflow, dan perintah lokal.
+- [x] Tambahkan instalasi frontend memakai lockfile, typecheck, unit test, serta build ke CI.
+- [x] Verifikasi script lint frontend dan konfigurasi lint/format yang dipakai.
+- [x] Pertahankan migration gate dan MySQL integration test dalam environment terisolasi.
+- [x] Dokumentasikan perintah backend/frontend dan quality gate di README (1A/1B).
+- [x] Selaraskan gate fungsional lokal/CI, pin alat audit bersama, dan isolasi konfigurasi test frontend dari URL API operator (1C).
+- [x] Triase dan tutup gate Bandit lokal: perbaiki guard/cleanup serta tandai false positive JWT secara spesifik; validasi regression dan Python optimasi (1D1).
+- [x] Pulihkan startup Semgrep pada environment audit baru dan tutup temuan ruleset CI lokal dengan pengecualian identifier lock yang spesifik (1D2).
+- [x] Remediasi advisory dependency production frontend dan validasi lint/typecheck/test serta build Docker Node 22 (1D3).
+- [x] Triase empat temuan secret-scan historis; validasi pengecualian fingerprint spesifik dan deteksi temuan baru (1D4).
+- [x] Validasi checkout kandidat lokal bersih: dependency baru, backend/frontend quality gate, pre-commit seluruh file, migrasi MySQL dan smoke non-functional terisolasi (1E1).
+- [ ] Jalankan seluruh quality gate dari fresh checkout tanpa bergantung pada file lokal yang tidak terlacak; verifikasi workflow CI remote, termasuk audit dependency/security dan build Docker backend.
+
+Kriteria selesai: setup development dan seluruh quality gate yang diwajibkan berhasil dari checkout bersih, tanpa bergantung pada file lokal yang tidak terlacak.
+
+## IMP-004 — Perbaiki konfigurasi URL API frontend dalam Docker
+
+Lokasi: frontend/lib/api/client.ts, frontend/Dockerfile, docker-compose.yml.
+
+Temuan: NEXT_PUBLIC_API_URL dibaca oleh client, tetapi Compose hanya memasoknya saat runtime container. Tahap build Docker belum menerima konfigurasi tersebut. Nilai publik Next.js dibundel saat build. Periksa juga karakter backslash pada nilai environment Compose.
+
+Dampak: deployment dengan alamat API berbeda dapat tetap menggunakan fallback localhost:8000 dari browser pengguna.
+
+- [x] Pilih kontrak konfigurasi: build-time URL atau endpoint satu origin dengan proxy.
+- [x] Implementasikan kontrak secara konsisten pada client, Dockerfile, Compose, dan dokumentasi deployment.
+- [x] Validasi nilai environment hasil resolusi tanpa menampilkan secret.
+- [x] Build dengan alamat API non-default dan verifikasi URL tujuan pada bundle browser di image hasil build. Pemeriksaan dilakukan pada artifact yang benar-benar dikirim ke browser; smoke test UI terhadap API deployment tetap bagian validasi operasional.
+
+Kriteria selesai: frontend pada deployment non-local mengakses API yang dikonfigurasi; perilaku perubahan konfigurasi dan kebutuhan rebuild terdokumentasi.
+
+## IMP-005 — Pisahkan pengiriman notifikasi dari transaksi alert
+
+Lokasi: backend/app/alerting/engine_parts/impl.py, backend/app/alerting/notifiers/telegram_notifier.py, backend/app/scheduler/jobs.py.
+
+Temuan: evaluate_alerts(commit=False) tetap mengirim dan menunggu Telegram sebelum transaksi scheduler selesai. Pengiriman berlangsung selama lock alert dipegang.
+
+Dampak: layanan eksternal lambat memperpanjang lock. Pesan yang sudah terkirim tidak dapat dibatalkan jika commit berikutnya gagal.
+
+- [x] Sediakan outbox, referensi alert, acknowledgement atomik, dan jalur writer engine dengan transaksi domain/enqueue bersama (3B–3C3).
+- [x] Sediakan adapter opt-in dengan grouping, snapshot tujuan numerik, idempotency key, dan koordinasi stream hingga commit (3C4).
+- [x] Pecah grup lintas event menurut batas pesan/referensi, dengan acknowledgement per potongan (3C5).
+- [x] Selaraskan urutan lock evaluator/acknowledgement dan validasi generasi reminder, termasuk contention MySQL untuk alert yang sama (3C6).
+- [ ] Pasang adapter pada pemanggil operasional setelah kontrak routing/lifecycle dan seluruh gate aktivasi selesai.
+- [ ] Kirim notifikasi melalui worker setelah transaksi berhasil.
+- [x] Implementasikan retry/backoff, lease, idempotency dan status outcome pada service delivery (3B–3C4).
+- [x] Sediakan runner service dengan concurrency/polling terbatas, error backoff, dan graceful shutdown (3C7).
+- [x] Sediakan adapter signal SIGTERM/SIGINT untuk proses worker khusus; uji drain/deadline dengan signal OS pada subprocess fixture (3C9).
+- [x] Tampilkan snapshot backlog persisten dan umur job melalui API observability serta Prometheus (3C8).
+- [ ] Integrasikan runner ke proses operasional, heartbeat worker, redrive/dead-job, dan retention worker.
+- [ ] Tuntaskan validasi kebijakan grace period, cooldown, grouping, reminder/flap dan korelasi ACTIVE/RESOLVED pada jalur operasional, termasuk alert pengganti serta perubahan site/tujuan.
+- [ ] Dukung event tunggal yang melebihi batas pesan/referensi dengan kontrak acknowledgement multipart; pemecahan grup antar-event sudah selesai pada 3C5.
+- [x] Uji rollback, kegagalan pengiriman, retry, lease recovery, dan crash setelah send sebelum acknowledgement pada service/fixture.
+- [x] Uji cancellation dan pemulihan lease melalui runner baru dengan database fixture yang sama dalam proses test (3C7).
+- [ ] Uji restart proses/container dan concurrency evaluator/acknowledgement end-to-end melalui lifecycle worker sebelum aktivasi; test service MySQL 3C6 dan recovery dalam proses 3C7 belum menutup gate ini.
+- [ ] Ukur query plan/performa backlog MySQL, load adapter, serta dampak scrape paralel pada workload representatif.
+
+Kriteria selesai: transaksi dan lock alert tidak menunggu Telegram; pekerjaan notifikasi yang sudah committed dapat dipulihkan. Semantik kemungkinan duplikasi pada layanan eksternal terdokumentasi, tanpa mengasumsikan exactly-once delivery.
+
+## IMP-006 — Batasi biaya query rolling alert
+
+Lokasi: backend/app/repositories/metrics/history.py, backend/app/alerting/engine_parts/impl.py.
+
+Temuan: list_recent_metrics_by_device memakai row_number() atas seluruh riwayat yang cocok sebelum membatasi hasil per perangkat. Tidak ada batas waktu pada input ranking. Evaluator mengulang query untuk nama metrik termasuk interface dinamis.
+
+Dampak: biaya evaluasi dapat meningkat mengikuti volume riwayat dan variasi metrik. Besarnya dampak belum diukur pada MySQL.
+
+- [ ] Definisikan jendela riwayat yang sesuai dengan rolling rule dan perilaku ketika data kurang atau stale.
+- [ ] Batasi input query tanpa mengubah semantik rule secara tidak sengaja.
+- [ ] Evaluasi batching pasangan device/metric dan indeks berdasarkan query plan.
+- [ ] Ukur jumlah query, rows examined, dan durasi evaluasi pada data representatif.
+- [ ] Tambahkan regression test keputusan alert pada batas jendela waktu.
+
+Kriteria selesai: query plan dan benchmark menunjukkan biaya terkendali untuk target workload yang disepakati, dengan hasil rule tetap benar.
+
+## IMP-007 — Agregasikan request Live Monitoring untuk grup perangkat
+
+Lokasi: frontend/features/live-monitoring/live-monitoring-page.tsx, backend/app/services/metrics_read_service.py, backend/app/api/routes/metrics.py.
+
+Temuan: useQueries membuat satu request untuk setiap perangkat dalam grup dan melakukan polling setiap 15 detik. Grup berisi 100 perangkat berarti sekitar 100 request per refresh per dashboard aktif, sebelum retry dan request tambahan.
+
+- [ ] Sediakan endpoint agregasi grup dengan filter device/site/type yang jelas.
+- [ ] Batasi jumlah perangkat, sampel, dan ukuran payload; gunakan pagination atau sampling yang dinyatakan di respons.
+- [ ] Gunakan query frontend agregat dan teruskan cancellation signal saat filter berubah.
+- [ ] Pertahankan tampilan freshness, empty/error state, dan kebutuhan detail per perangkat.
+- [ ] Ukur request count serta latensi dengan beberapa dashboard aktif secara bersamaan.
+
+Kriteria selesai: jumlah request grup tidak lagi satu per perangkat per refresh; payload tetap terbatas dan informasi operator terjaga.
+
+## IMP-008 — Bedakan status scheduler berdasarkan agent/site
+
+Lokasi: backend/app/models/scheduler_job_status.py, backend/app/services/observability_service.py, backend/app/scheduler/jobs.py.
+
+Temuan: central dan site agent menggunakan job_name=device_checks, sementara status unik hanya berdasarkan job_name. Keberhasilan satu agent dapat mereset failure counter atau error milik agent lain.
+
+- [x] Tambahkan identitas agent/site yang stabil pada status scheduler dan kontrak observability.
+- [x] Sediakan migration beserta strategi untuk record lama.
+- [x] Perbarui heartbeat, failure counter, interval yang diharapkan, dan tampilan System Health.
+- [x] Uji dua agent dengan outcome berbeda serta satu agent yang berhenti melapor.
+
+Kriteria selesai: keberhasilan agent lain tidak menutupi kegagalan atau heartbeat stale suatu agent.
+
+## IMP-009 — Batasi transaksi dan penghapusan retention
+
+Lokasi: backend/app/services/retention_service.py, backend/app/scheduler/jobs.py.
+
+Temuan: rollup, archive, delete, dan refresh summary diselesaikan sebelum satu commit akhir. Batch saat ini membatasi buffer payload, sementara delete raw metric tidak memiliki batas jumlah baris.
+
+Dampak: backlog besar dapat menghasilkan transaksi panjang, beban undo/rollback, dan contention database.
+
+- [ ] Pecah pekerjaan berdasarkan bucket/checkpoint dengan batas kerja per transaksi.
+- [ ] Batasi penghapusan per batch dan pertahankan referensi latest snapshot.
+- [ ] Pastikan data hanya dihapus setelah rollup/archive yang diperlukan aman.
+- [ ] Tetapkan perilaku terhadap late-arriving metrics dan perubahan source fingerprint.
+- [ ] Uji penghentian di tengah proses, resume, retry, dan backlog retention besar.
+
+Kriteria selesai: pekerjaan dapat dilanjutkan setelah kegagalan, durasi transaksi terkendali, dan tidak terjadi kehilangan data yang belum diarsipkan.
+
+## IMP-010 — Rapikan tanggung jawab modul dan kontrak pengujian
+
+Lokasi: backend/app/alerting/engine_parts/impl.py, backend/app/services/metrics_read_service.py, backend/app/alerting/engine.py, frontend/features/devices/devices-page.tsx, frontend/features/accounts/accounts-page.tsx, tests/services/test_transaction_boundary.py.
+
+Temuan: engine alert memiliki 1.405 baris dan mencampur lifecycle, query orchestration, kebijakan Telegram, serta formatting. metrics_read_service memiliki 951 baris. Beberapa halaman frontend memiliki baris lebih dari 1.000 karakter yang mencampur state, mutation, dan JSX. Ukuran file adalah indikator untuk peninjauan, bukan ukuran kualitas tunggal.
+
+Test rollback mem-patch collect_monitoring_metrics, tetapi implementasi run_monitoring_cycle memanggil collect_monitoring_metrics_by_runner. Test lock full-cycle memakai ulang daftar scope yang sama sehingga tidak menguji kesesuaian dengan scope scheduler aktual.
+
+- [x] Pisahkan kebijakan pemilihan Telegram dan formatting pesan dari engine orchestration (tahap 3C2).
+- [ ] Lanjutkan pemisahan lifecycle alert/incident dan query orchestration berdasarkan tanggung jawab.
+- [ ] Pisahkan hook data/mutation, state filter, form, dan rendering frontend bila mempermudah pemeliharaan.
+- [x] Rapikan formatting Python dan lint/pre-commit pada baseline yang divalidasi (1B).
+- [ ] Lanjutkan formatting dan penggunaan ulang helper pada modul frontend/domain yang belum dirapikan.
+- [x] Perbaiki tipe kontrak backend/fixture (1B) dan sediakan dependency injection writer, sender, clock, serta policy worker (3C3–3C7).
+- [ ] Lanjutkan penguatan tipe payload dan dependency injection pada batas collector/repository/notifier yang belum tercakup.
+- [x] Perbaiki patch test rollback agar mengisolasi fungsi yang benar-benar dipanggil.
+- [x] Uji jalur scheduler aktual saat gagal memperoleh lock: timeout untuk wait=True, acquired=False/penolakan untuk nonblocking, dan contention scheduler/manual/site (2A/2B; test_pipeline_control.py, test_collector_ownership.py, test_mysql_integration.py).
+- [ ] Kurangi ketergantungan test pada mutable globals dan private compatibility facade secara bertahap.
+
+Kriteria selesai: perubahan rule/notifier/UI terlokalisasi, test menguji kontrak aktual, dan refactor tidak mengubah perilaku tanpa keputusan eksplisit.
+
+## Urutan implementasi
+
+1. IMP-003 dan IMP-004: pulihkan jalur validasi serta deployment.
+2. IMP-001 dan IMP-002: perbaiki integritas koordinasi penulis metrik, sertakan regression test terkait IMP-010.
+3. IMP-005 dan IMP-008: perbaiki keandalan notifikasi serta visibilitas multi-agent.
+4. IMP-006, IMP-007, dan IMP-009: optimalkan berdasarkan workload serta benchmark yang disepakati.
+5. Lanjutkan IMP-010 secara bertahap pada area yang disentuh; pertahankan kontrak API dan perilaku operator.
+
+## Baseline validasi audit
+
+Hasil berikut berasal dari audit 2026-09-08, bukan validasi setelah improvement:
+
+- Frontend: 11 file test, 22 test lulus melalui Vitest lokal.
+- TypeScript: tsc --noEmit --incremental false lulus.
+- Python: 194 file terlacak berhasil diparse secara sintaks; ini bukan lint, typecheck, atau unit test backend.
+- IMP-001: alur kontrol direproduksi menggunakan fungsi sumber dengan dependency palsu; tidak mengakses MySQL atau mengirim Telegram.
+- Backend suite, migration MySQL, E2E, production build, serta load test belum dijalankan dalam audit ini.
+- Dependensi test backend belum tersedia; tidak ada layanan Compose aktif saat diperiksa.
+- Wrapper pnpm sempat gagal karena mencoba sinkronisasi dependency; test dan typecheck berhasil dijalankan langsung memakai dependency frontend lokal yang sudah tersedia.
+
+## Pelacakan penyelesaian
+
+Ubah status menjadi In progress saat implementasi dimulai, lalu Done setelah kriteria selesai dan validasi terkait terpenuhi. Gunakan Blocked bila ada dependensi nyata dan tulis penyebabnya. Jangan menandai seluruh backlog selesai hanya karena lint atau unit test lulus.
+
+Untuk setiap improvement, tambahkan catatan:
+
+- ID improvement:
+- Tanggal dan penanggung jawab:
+- Ringkasan perubahan:
+- Commit/PR terkait:
+- Validasi dan hasil:
+- Keterbatasan atau tindak lanjut:
+
+| Tanggal | Catatan |
+| --- | --- |
+| 2026-09-08 | Backlog awal dibuat dari audit proyek; seluruh improvement berstatus Open. |
+
+
+## Progres tahap 1A — Fondasi development dan deployment (2026-09-08)
+
+Tujuan tahap ini: menyediakan perintah validasi yang sesuai stack aktual, instalasi dependency yang dapat direproduksi, dan kontrak konfigurasi deployment frontend yang jelas. Belum ada perubahan rule monitoring, transaksi database, atau koordinasi collector pada tahap ini.
+
+Perubahan:
+
+- requirements/dev.txt tidak lagi mengimpor dependency dashboard yang sudah dihapus; instalasi fresh virtual environment dan pip check berhasil.
+- Makefile, justfile, mypy, dan CI memakai scope backend/shared/scripts/tests. Pyright mengikuti interpreter yang dipilih, bukan folder venv yang di-hardcode.
+- pytest.ini membatasi collection ke tests agar virtual environment lokal tidak ikut dikumpulkan.
+- CI memiliki job frontend dengan frozen lockfile, ESLint, TypeScript, Vitest, production build, dan dependency audit. Build Docker diarahkan ke frontend/Dockerfile.
+- Job backend memakai URL database SQLite fixture eksplisit; job non-functional mengaktifkan pembuatan schema hanya pada fixture development. Migration gate MySQL tetap dipertahankan.
+- Versi pnpm dipatok ke 11.19.0, sesuai tooling yang dipakai; konfigurasi build script dependency tidak lagi berisi placeholder interaktif.
+- ESLint 9 dan konfigurasi Next.js 15 memakai flat config, termasuk resolusi plugin untuk layout dependency pnpm. Versi ESLint dipilih mengikuti peer range eslint-config-next yang digunakan; upgrade major tooling perlu diuji bersama konfigurasi Next.js.
+- FRONTEND_PUBLIC_API_URL diteruskan Compose sebagai build argument NEXT_PUBLIC_API_URL. Environment runtime yang sebelumnya menyesatkan dihapus.
+- Dokumentasi menjelaskan perbedaan environment Compose/backend dengan frontend/.env.local dan kewajiban rebuild setelah perubahan URL publik.
+- Build context backend mengecualikan frontend, backup, dan artifact environment lokal. File environment frontend dikecualikan dari Git serta build context Docker frontend.
+
+Hasil validasi tahap 1A:
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Instalasi requirements/dev.txt pada virtual environment baru | Lulus |
+| pip check | Lulus |
+| Ruff dasar backend/shared/scripts/tests | Lulus |
+| ESLint frontend, tanpa warning | Lulus |
+| TypeScript, incremental dinonaktifkan | Lulus |
+| Vitest frontend | 11 file / 22 test lulus |
+| Production build frontend lokal | Lulus; 13 halaman statis dihasilkan; terdapat warning CSS lama mengenai nilai end |
+| URL API non-default pada browser bundle lokal | https://api.example.test ditemukan pada 3 chunk |
+| YAML workflow dan referensi requirements | Valid |
+| Resolusi Compose dengan .env.example | URL berada pada build args; tidak lagi pada runtime environment |
+| Backend pytest dari direktori sementara tanpa membaca .env lokal | 162 lulus, 14 gagal, 3 MySQL deselected |
+| Mypy | 32 error pada 13 file |
+| Pyright dengan interpreter virtual environment yang benar | 19 error, tanpa warning |
+| Ruff staged B/I/UP/SIM | 2 temuan pada incident_repository.py |
+| Ruff format check | 89 file memerlukan formatting, 81 sudah sesuai |
+| Docker frontend, Node.js 22 Alpine, frozen lockfile | Lulus; image network-monitoring-frontend-improvements:stage1 berhasil dibangun |
+| Pemeriksaan image tanpa jaringan, filesystem read-only | URL non-default ditemukan pada 3 browser chunk, server.js tersedia, UID 1001 |
+| Git diff whitespace check | Lulus |
+
+Kegagalan backend sudah ada pada kode yang belum diubah tahap ini. Menjalankan test dari root yang membaca .env lokal menghasilkan 161 lulus / 15 gagal; perbedaan ini juga menunjukkan kebutuhan isolasi konfigurasi fixture. Baseline utama di atas menggunakan direktori sementara tanpa .env lokal.
+
+Prioritas tahap 1B sebelum memperluas perubahan arsitektur:
+
+- [x] Pulihkan kontrak query history: service mengirim site/device_type yang belum diterima repository; endpoint terkait menghasilkan 500.
+- [x] Sesuaikan fixture device dengan field site wajib dan fixture autentikasi dengan akses admin pada endpoint yang memerlukannya, tanpa melonggarkan policy produksi.
+- [x] Perbaiki entry point test collector-degradation agar menguji orchestrator evaluator yang benar.
+- [x] Perbaiki patch test rollback collect_monitoring_metrics_by_runner dan isolasi konfigurasi Telegram/flap.
+- [x] Selesaikan type errors pada production code dan fixture dengan tipe yang benar, tanpa menonaktifkan aturan pemeriksaan.
+- [x] Tangani staged lint dan formatting sebagai perubahan terpisah yang mudah direview.
+- [x] Jalankan ulang backend suite, typecheck, migration gate, dan job non-functional setelah baseline dipulihkan.
+
+IMP-004 selesai pada level implementasi dan validasi artifact deployment. Tidak ada deploy ke layanan produksi. GitHub Actions remote, audit dependency, migration MySQL, dan smoke test UI terhadap API deployment belum dijalankan pada tahap ini.
+
+IMP-003 tetap In progress sampai quality gate backend dan validasi fresh checkout memenuhi kriteria selesai. IMP-001/002 dan pekerjaan arsitektur berikutnya belum dimulai; urutan berikutnya adalah pemulihan baseline test, baru perbaikan koordinasi lock.
+
+| Tanggal | Progres implementasi |
+| --- | --- |
+| 2026-09-08 | Tahap 1A diterapkan; IMP-004 Done; IMP-003 In progress dengan baseline kegagalan backend dan checklist tahap 1B tercatat. |
+
+## Progres tahap 1B — Kontrak backend dan validasi yang dapat dipercaya (2026-09-08)
+
+Tujuan: memperbaiki baseline sebelum refactor koordinasi collector. Perubahan dikerjakan dan diverifikasi bertahap; status historis tahap 1A di atas tetap dipertahankan untuk perbandingan.
+
+### Perubahan perilaku dan kontrak
+
+- Memperbaiki kontrak history dari route API sampai repository: filter site/device_type diterapkan sebelum limit. Regression test meliputi kombinasi filter, masing-masing filter, site kosong, serta urutan limit.
+- Test mengabaikan .env operator lewat APP_ENV_FILE kosong dan memakai secret fixture. Runtime tetap membaca .env secara default; path alternatif dapat dipilih eksplisit. Tiga regression test subprocess memeriksa perilaku tersebut.
+- Fixture device memenuhi field site wajib. Test endpoint administratif menggunakan akun admin yang benar. Regression test memastikan viewer dan service API key tetap ditolak pada endpoint admin.
+- Test degradation printer/NAS/ping memanggil orchestrator evaluator yang bertanggung jawab terhadap degradation. Fixture flap menetapkan kebijakan perangkat secara eksplisit dan memeriksa gangguan singkat maupun gangguan berkelanjutan.
+- Test rollback mem-patch collect_monitoring_metrics_by_runner, memastikan metrik sempat ditulis dalam transaksi sebelum evaluator gagal, kemudian memastikan rollback menghapus hasilnya.
+- Memperjelas tipe datetime, kondisi SQL, hasil loader evaluator, mapping perangkat, pool database, dan payload performance budget. Aturan pemeriksaan tipe tetap aktif.
+- Benchmark menerima bearer token selain API key, dengan kedua metode saling eksklusif. CI login sebagai admin fixture untuk endpoint observability administratif; token diteruskan melalui environment child process. Hak akses endpoint produksi tidak dilonggarkan.
+- Dependency PyMySQL memakai extra rsa agar autentikasi MySQL 8.4 bekerja dari instalasi baru.
+- Metadata ORM diselaraskan dengan schema hasil migration: unique constraint dipisahkan dari indeks biasa, indeks lookup yang sudah dimigrasikan dicantumkan, indeks tambahan yang tidak ada pada migration dihapus dari metadata. Unique constraint penting tetap ada; tidak ada DDL terhadap database operasional.
+- Registrasi seluruh model pada Alembic dibuat eksplisit melalui import modul models dengan alasan suppression F401. Import ini diperlukan untuk mengisi Base.metadata dan harus tetap dipertahankan.
+
+### Formatting dan hygiene
+
+Batch Ruff format memformat 107 dari 194 file Python terlacak (termasuk Alembic). AST sebelum/sesudah batch formatting dibandingkan dengan normalisasi docstring dan posisi type-ignore; struktur program sama. Perbaikan fungsional dan metadata di atas adalah perubahan terpisah dari bukti kesetaraan formatting tersebut.
+
+Hook pre-commit juga merapikan newline placeholder frontend dan import. Seluruh hook kemudian lolos. Upgrade/downgrade migration tidak diubah secara semantik; registrasi model Alembic diuji ulang setelah hook berjalan.
+
+### Hasil validasi
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Backend SQLite, seluruh test non-MySQL | 182 lulus, 3 MySQL deselected; 2 deprecation warning dependency |
+| MySQL 8.4 terisolasi | Upgrade head, single head, alembic check, downgrade satu revision, upgrade ulang, 3 integration test lulus |
+| Salinan source terlacak + konfigurasi ESLint baru, tanpa .env/venv/node_modules proyek | 182 lulus, 3 MySQL skipped; memakai virtual environment dependency terisolasi yang sudah dipasang |
+| pip check setelah penambahan RSA | Lulus |
+| Schema ORM vs migration | Tidak ada operasi upgrade baru terdeteksi |
+| Mypy | 170 file, tanpa error |
+| Pyright | Tanpa error maupun warning |
+| Ruff dasar dan staged B/I/UP/SIM | Lulus |
+| Pre-commit semua file terlacak | Seluruh 7 hook lulus |
+| Benchmark smoke | 12 path, 3 run, profile CI lulus |
+| Concurrency smoke | 5 path, 10 request/path, concurrency 5 lulus |
+| Expected-failure gate | Batas latensi mustahil ditolak dengan exit code 1 |
+| Observability payload dan laporan non-functional | Lulus |
+| Git diff whitespace | Lulus |
+
+Benchmark menggunakan fixture kecil/kosong: hasil ini memvalidasi jalur quality gate, bukan bukti kapasitas produksi atau penyelesaian IMP-006/007/009. Database dan server smoke memakai resource sementara. Container MySQL dibersihkan setelah pengujian.
+
+Dua warning berasal dari integrasi Starlette/httpx dan alias AnyIO. Penyesuaian versi dependency perlu ditangani bersama kompatibilitas framework, bukan menyembunyikan warning.
+
+### Status dan langkah berikutnya
+
+- IMP-003 tetap In progress: baseline fungsional lokal sudah hijau, tetapi seluruh workflow remote (termasuk security/dependency audit dan Docker backend) belum diverifikasi. Jangan menyimpulkan seluruh CI hijau dari test lokal.
+- IMP-010: patch rollback selesai; formatting Python dan sejumlah batas tipe sudah diperbaiki. Pemisahan tanggung jawab domain dan frontend tetap terbuka.
+- Prioritas implementasi berikutnya tetap IMP-001 lalu IMP-002: kegagalan lock harus menghentikan critical section, lalu koordinasi scheduler/manual/site dibenahi dengan test contention nyata.
+- Tidak ada commit/PR pada tahap ini; perubahan tersedia di working tree untuk review.
+
+| Tanggal | Progres implementasi |
+| --- | --- |
+| 2026-09-08 | Tahap 1B: kontrak backend, fixture, tipe, hygiene, benchmark auth, dependency MySQL dan metadata ORM diperbaiki; 182 test SQLite + 3 test MySQL lulus. |
+
+## Progres tahap 2A — Kegagalan lock menghentikan operasi (2026-09-08)
+
+ID: IMP-001 Done. Tujuan: membuat kontrak koordinasi eksplisit, mencegah penulisan tanpa lock, dan memastikan kegagalan mudah ditelusuri.
+
+### Kontrak dan perubahan
+
+- monitoring_pipeline_guard(wait=True) hanya memasuki body setelah memperoleh lock. Timeout melempar PipelineLockTimeoutError yang membawa scope; pemanggil tidak perlu mengulang pemeriksaan boolean.
+- wait=False tetap menghasilkan boolean untuk jalur skip/API conflict yang sudah ada. Seluruh pemanggil produksi diperiksa: scheduler metric/alert memakai blocking guard; alert tick, cleanup, dan full-cycle API memeriksa hasil non-blocking.
+- Fallback asyncio sekarang memakai batas MONITORING_LOCK_TIMEOUT_SECONDS yang sama dengan MySQL (minimum 1 detik), menggantikan penantian tanpa batas. Batas berlaku per lock, bukan deadline keseluruhan multi-lock atau pengambilan koneksi pool.
+- Timeout menambah contention counter. Wrapper scheduler melakukan rollback transaksi yang belum committed, mencatat scope dalam last_error, dan menaikkan failure counter.
+- Kegagalan atau cancellation saat GET_LOCK/RELEASE_LOCK membuang koneksi fisik melalui invalidate sebelum close agar ownership yang tidak pasti tidak kembali ke pool.
+- AsyncExitStack melepas lock yang sudah diperoleh ketika akuisisi scope selanjutnya gagal.
+
+Batas transaksi tetap eksplisit: bila lock metrik gagal, persist/CollectorRun/commit/evaluasi alert tidak dijalankan. Bila commit metrik sudah berhasil tetapi lock alert gagal, metrik tersebut tetap tersimpan; evaluasi alert dan commit alert tidak dijalankan. Perubahan ini tidak membuat kedua transaksi menjadi satu transaksi atomik.
+
+### Bukti pengujian
+
+- 9 regression test khusus guard: timeout scheduler pada kedua scope, pelepasan multi-lock parsial, timeout/retry fallback lokal, penutupan koneksi yang tidak memperoleh lock, serta invalidasi saat error/cancellation akuisisi dan pelepasan.
+- Test rollback/status scheduler diperluas untuk PipelineLockTimeoutError selain exception umum; seluruh 9 test modul transaction boundary lulus.
+- MySQL 8.4 terisolasi: seluruh 6 integration test lulus. Tiga kasus baru menahan lock pada koneksi berbeda, menjalankan jalur _persist_runner aktual, memeriksa operasi yang tidak boleh dijalankan, memastikan owner awal tetap memegang lock, serta membuktikan scope dapat diperoleh kembali setelah release. Persist/evaluator dalam test timeout diganti spy; contention dan lifecycle lock memakai database nyata.
+- Migration upgrade, single head, alembic check, downgrade–upgrade tetap lulus. Container fixture dibersihkan.
+- Backend suite non-MySQL: 191 lulus, 6 MySQL deselected, 2 warning dependency yang sudah tercatat sebelumnya. Setelah penambahan parameter exception timeout pada test status scheduler, modul transaction boundary dijalankan ulang: 9 lulus.
+- Mypy: 171 source file tanpa error. Pyright: 0 error/0 warning. Ruff dasar/staged, formatting, dan pre-commit lulus, termasuk file test baru yang belum terlacak Git.
+
+### Dampak terhadap tujuan proyek dan tindak lanjut
+
+Clean code: kontrak gagal berada pada satu guard dengan exception bermakna. Maintainability: jalur timeout, rollback, dan lifecycle koneksi dilindungi regression test. Scalability: critical section tidak lagi berjalan tanpa ownership ketika contention meningkat; batas throughput belum diukur.
+
+IMP-002 tetap Open: nama scope scheduler device dan full-cycle masih berbeda; ownership site dan perlindungan snapshot terhadap sampel lama belum ditangani. Tahap berikutnya perlu menyelesaikan ketiganya secara konsisten sebelum dinyatakan selesai. Outbox, rolling query, polling grup, dan retention tetap mengikuti backlog.
+
+Perubahan tersedia di working tree; belum dibuat commit/PR atau diterapkan ke produksi.
+
+## Progres tahap 2B — Ownership collector dan konsistensi snapshot (2026-09-08)
+
+ID: IMP-002 Done. Tujuan: menyatukan aturan penulis metrik, menjaga snapshot konsisten pada contention, dan mempertahankan penulisan paralel untuk perangkat independen.
+
+### Perubahan
+
+- DeviceCollectorOwnership menjadi sumber aturan site untuk scheduler dan full-cycle. Pusat mengecualikan site delegasi; agent hanya mengoleksi perangkat pada site sendiri.
+- Full-cycle pada agent hanya menjalankan collector perangkat. Collector internet/server/MikroTik tetap dijalankan pusat, mengikuti pembagian scheduler.
+- Route run-cycle memakai daftar lock dinamis berdasarkan ownership yang sama dengan scheduler. Central memakai metrics:device:central; agent memakai namespace site dengan digest stabil. Nama site seperti central, Branch/A, dan Branch A tidak berbenturan akibat normalisasi scope.
+- Repository mengunci parent Device sebelum insert raw metric dan menahan lock sampai commit/rollback. Ini juga mengoordinasikan penulis pada perangkat sama yang memakai scope berbeda atau langsung memanggil repository.
+- ID perangkat dikunci terurut; lookup dan inisialisasi snapshot memakai batch maksimum 250. Tidak ditambahkan global lock untuk seluruh site.
+- Snapshot yang belum ada diinisialisasi secara atomik dengan duplicate-key no-op pada MySQL. Snapshot yang sudah ada tidak di-insert ulang. Locking read memakai indeks unik device/metric dan populate_existing untuk membaca state terbaru setelah menunggu, termasuk ketika session memiliki read view atau objek ORM lama.
+- Perbandingan checked_at lalu ID metric tetap menentukan sampel terbaru. Data lama tetap tersimpan sebagai history. Sampel sebelum snapshot tidak lagi ikut menghitung ulang uptime streak pada batch campuran.
+- Helper khusus MySQL memisahkan inisialisasi row dari aturan pemilihan snapshot. Tidak ada perubahan schema/migration.
+
+### Pengujian dan temuan selama implementasi
+
+- Regression test ownership memeriksa filter scheduler dan manual, pemilihan domain pada agent/pusat, nama site yang berpotensi berbenturan, serta lock yang benar-benar digunakan jalur scheduler.
+- Route run-cycle aktual diuji saat scheduler sedang menulis: mengembalikan 409 pada pusat maupun agent. Arah sebaliknya diuji dengan full-cycle guard aktif dan scheduler aktual yang harus gagal sebelum persist.
+- Pada MySQL, dua transaksi menulis perangkat sama ketika snapshot belum ada maupun sudah ada. Penulis kedua memiliki read view lama dan, bila tersedia, objek ORM yang sudah dicache. Perangkat lain tetap harus berhasil commit ketika transaksi pertama belum selesai.
+- Test awal menangkap perangkat independen ikut tertahan. Implementasi diperbaiki dengan akses indeks yang spesifik dan inisialisasi hanya untuk key yang belum terlihat, kemudian test concurrency yang sama dijalankan ulang.
+- Test memeriksa late sample, batch campuran lama/baru, kestabilan uptime streak, dan tie-break ID pada timestamp sama.
+- Validasi rollback memastikan row snapshot yang baru dibuat dan raw metric tetap berada dalam transaksi yang sama.
+
+### Batasan operasional
+
+- Jaminan koordinasi row lintas proses diuji pada MySQL 8.4; SQLite tidak menyediakan SELECT FOR UPDATE setara MySQL.
+- Benchmark kapasitas perangkat besar belum dijalankan. Lock perangkat hidup sepanjang transaksi; pekerjaan alert/notifikasi yang memperpanjang transaksi tetap bagian IMP-005.
+- Koordinasi ini berlaku bagi jalur repository yang diperbaiki. Script SQL eksternal yang menulis langsung wajib mengikuti kontrak transaksi yang sama.
+- Hindari batch multi-perangkat yang memperoleh lock dengan urutan berbeda dalam satu transaksi. Database tetap dapat membatalkan transaksi jika terjadi deadlock dengan pekerjaan lain; perubahan ini tidak menambahkan retry transaksi otomatis.
+- Namespace lock agent berubah. Rollout memerlukan penghentian pekerjaan aktif dan restart backend/scheduler/agent dengan versi seragam. Konfigurasi delegasi site harus konsisten; perubahan ownership saat collector masih berjalan tidak termasuk mekanisme hot handoff.
+- Alert tetap memakai lock global sesuai lifecycle saat ini; per-site writer independen tidak berarti evaluasi alert global dijalankan paralel.
+
+Perubahan tersedia pada working tree. Tidak ada deploy atau perubahan database operasional.
+
+### Hasil akhir tahap 2B
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Backend non-MySQL | 203 lulus, 10 MySQL deselected pada run suite; 2 warning dependency lama |
+| MySQL 8.4 | 11 integration test lulus; test rollback tambahan dijalankan dalam suite MySQL terpisah |
+| Migration | Upgrade head, single head, no drift, downgrade–upgrade lulus |
+| Mypy | 173 file, tanpa error |
+| Pyright | Tanpa error/warning |
+| Ruff dasar/staged dan pre-commit | Lulus, termasuk file baru |
+| Git diff whitespace | Lulus |
+
+IMP-002 ditutup berdasarkan implementasi dan validasi di atas. Test menggunakan fixture terisolasi; container dibersihkan. Ini bukan klaim load capacity produksi atau penyelesaian seluruh CI remote. Langkah selanjutnya adalah IMP-005 (transactional outbox) dan IMP-008 (status scheduler per agent/site), sesuai urutan backlog.
+
+| Tanggal | Progres implementasi |
+| --- | --- |
+| 2026-09-08 | Tahap 2B selesai: IMP-002 Done; ownership collector, scope lock dinamis, row coordination dan snapshot ordering tervalidasi. |
+
+## Progres tahap 3A — Status scheduler per owner/site (2026-09-08)
+
+ID: IMP-008 Done. Tahap ini didahulukan sebagai perubahan terukur pada visibilitas multi-agent; IMP-005 transactional outbox tetap terbuka dan tidak digabungkan ke perubahan schema status.
+
+### Implementasi
+
+- Identitas database berubah dari job_name tunggal menjadi pasangan job_name + agent_id. Site menggunakan identitas stabil yang diturunkan dari kebijakan ownership collector; agent_site tetap disimpan untuk tampilan yang mudah dibaca.
+- Registrasi, start, success, dan failure memperbarui row owner masing-masing. Inisialisasi row yang belum terlihat memakai insert atomik tanpa mengganti state row yang sudah ada, lalu locking read sebelum pembaruan untuk melindungi failure counter pada proses bersamaan. Heartbeat row yang sudah ada melewati insert agar tidak mengonsumsi ID otomatis setiap kali melapor.
+- Worker menyimpan expected_interval_seconds saat melapor. Pembaca observability memakai interval row tersebut, sehingga konfigurasi interval agent tidak ditimpa asumsi interval backend pusat. Record lama tanpa interval memakai fallback konfigurasi seperti sebelumnya.
+- API summary, operational alert, scheduler health, tabel System Health, dan CSV menyertakan identitas owner/site. Gauge scheduler Prometheus mempunyai label agent_id agar dua job bernama sama tidak menjadi seri yang bertabrakan. Label text di-escape.
+- Migration 20260908_0025 menambah kolom owner/site/interval dan indeks unik gabungan, serta mempertahankan indeks lookup job_name.
+- Riwayat lama tetap dipertahankan sebagai central. Ini adalah strategi kompatibilitas, bukan bukti bahwa seluruh riwayat lama berasal dari pusat: asal agent sebelum migration tidak dapat direkonstruksi.
+- Downgrade melakukan pemeriksaan sebelum DDL dan menolak row non-central agar riwayat agent tidak dihapus/ditimpa secara diam-diam.
+
+### Bukti dan batasan
+
+Regression test memeriksa kegagalan agent A yang tetap ada setelah registrasi/sukses agent B dan pusat, interval berbeda per owner, serta agent yang berhenti melapor tetap stale ketika owner lain sehat. Exposition Prometheus diparse dan diperiksa memiliki seri owner berbeda.
+
+Test migration memakai schema lama yang berisi failure/error, memeriksa backfill tanpa kehilangan nilai, menambahkan row agent, memverifikasi penolakan downgrade tanpa kehilangan data, kemudian menguji downgrade–upgrade setelah rekonsiliasi fixture eksplisit.
+
+Test MySQL tambahan menggunakan proses Python terpisah untuk dua kegagalan pada owner sama dan keberhasilan owner lain. Tujuannya memeriksa counter tidak hilang dan state antar-owner tetap terpisah pada pembaruan bersamaan.
+
+Identitas adalah owner logis per site, bukan identitas host/replica. Site yang belum pernah mendaftarkan job belum memiliki heartbeat tersimpan; status ini mendeteksi agent yang berhenti setelah pernah melapor, bukan inventaris agent yang seharusnya ada tetapi belum pernah berjalan. Penghapusan owner yang dipensiunkan tetap tindakan operasional eksplisit.
+
+Rollout perlu menghentikan worker versi lama, melakukan migration, lalu menjalankan seluruh komponen dengan versi seragam. Perubahan lokal belum diterapkan ke database operasional dan belum dideploy.
+
+### Hasil akhir tahap 3A
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Backend non-MySQL | 205 lulus, 12 MySQL deselected; 2 warning dependency yang sudah tercatat |
+| Regression test setelah optimasi insert heartbeat | 16 test observability, transaksi, dan migration lulus |
+| MySQL 8.4, termasuk worker terpisah | 12 integration test lulus setelah perubahan akhir |
+| Migration MySQL | Single head, upgrade, alembic check tanpa drift, downgrade–upgrade lulus |
+| Data migration fixture | Riwayat lama dipertahankan; downgrade yang kehilangan owner ditolak |
+| Mypy | 174 file, tanpa error |
+| Pyright | 0 error/0 warning |
+| Ruff dan pre-commit | Lulus, termasuk migration dan test baru |
+| Frontend TypeScript dan ESLint | Lulus |
+| Frontend Vitest | 11 file / 22 test lulus |
+| Git diff whitespace | Lulus |
+
+IMP-008 ditutup. Container MySQL sudah dibersihkan. UI belum diuji melalui browser yang terhubung ke deployment hasil migration; validasi frontend tahap ini mencakup typecheck, lint, dan unit test. Workflow remote dan seluruh backlog belum dinyatakan selesai.
+
+Tahap berikutnya: IMP-005, transactional outbox untuk memisahkan pengiriman Telegram dari transaksi dan lock alert. Pekerjaan itu memerlukan migration, worker retry, dan pengujian rollback/restart tersendiri.
+
+| Tanggal | Progres implementasi |
+| --- | --- |
+| 2026-09-08 | Tahap 3A selesai: IMP-008 Done; identitas status per owner, interval worker, API/Prometheus/UI/CSV, serta migration dan test concurrency tervalidasi. |
+
+## Koreksi startup Compose setelah tahap 3A (2026-09-08)
+
+Image baru sudah dibangun, tetapi schema lokal masih revision 20260828_0024. Health readiness gagal HTTP 500 karena kolom scheduler_job_statuses.agent_id belum ada; scheduler restart berulang dan frontend menunggu backend healthy.
+
+Pada penanganan ini migration 20260908_0025 diterapkan ke database Compose lokal yang aktif, setelah scheduler dihentikan. Readiness kemudian terverifikasi HTTP 200. Ini memperbarui catatan sebelumnya bahwa migration baru sebatas fixture. Rebuild image saja tidak menjalankan migration; jalur service migrate berprofil ops masih harus dijalankan saat upgrade schema.
+
+## Progres tahap 3B — Fondasi transactional outbox (2026-09-08)
+
+ID: IMP-005 In progress. Batas tahap ini adalah infrastruktur antrean persisten dan satu unit delivery yang dapat diuji. Integrasi engine alert dan aktivasi worker produksi merupakan tahap 3C; kriteria selesai IMP-005 belum terpenuhi.
+
+### Implementasi fondasi
+
+- Migration 20260908_0026 menambah notification_outbox dengan idempotency key unik, channel, stream, snapshot pesan, status, attempt count, waktu tersedia, token/deadline lease, hasil delivery, dan timestamp.
+- Repository enqueue tidak melakukan commit tersembunyi. Pemanggil menyimpan domain state dan job outbox dalam transaksi yang sama. Pemakaian ulang key untuk isi berbeda ditolak.
+- Claim mengambil kandidat dari jendela maksimal 32 ID, kemudian mengunci row primary key terpilih. MySQL memakai SKIP LOCKED dan conditional update; worker lain dapat mengklaim stream berbeda.
+- Klaim dan acknowledgement memakai transaksi pendek. deliver_one menutup session claim sebelum memanggil sender, membatasi durasi send, kemudian membuka transaksi acknowledgement tersendiri.
+- Lease token mencegah worker lama mengubah hasil worker pengganti. Crash/cancellation dapat dipulihkan setelah lease kedaluwarsa. Attempt yang habis menjadi dead.
+- Retry memakai exponential backoff dengan batas maksimum. Default: lease 60 detik, timeout pengiriman 20 detik, maksimal 5 attempt, backoff 5–300 detik. Retry policy divalidasi dan disuntikkan ke service.
+- Status sent bersifat terminal. Pekerjaan yang belum sent, termasuk dead, menahan pekerjaan berikutnya dalam stream yang sama; stream lain tetap boleh diproses.
+- Error provider hanya disimpan sebagai kategori, bukan exception berisi kemungkinan credential. Pengujian hanya memakai sender palsu, tanpa pengiriman Telegram.
+- Downgrade menolak tabel yang masih berisi job, termasuk history sent, agar tidak menghilangkan antrean secara diam-diam.
+
+### Kontrak yang harus dipertahankan saat integrasi
+
+- FIFO berlaku atas job yang sudah committed dan terlihat, diurutkan berdasarkan ID dalam channel/stream. Producer pada stream yang sama harus diserialisasi sampai commit melalui koordinasi transaksi alert; ID database bukan bukti urutan commit dari transaksi producer yang bebas berjalan paralel.
+- Satu pemanggilan deliver_one memproses paling banyak satu delivery. Batas concurrency, interval polling, graceful shutdown, serta observability worker produksi belum diaktifkan.
+- Crash setelah provider menerima pesan tetapi sebelum acknowledgement dapat menghasilkan pengiriman ulang. Semantik eksternal adalah at-least-once, bukan exactly-once.
+- Job dead menahan stream sampai direkonsiliasi secara eksplisit. Redrive/cancel administratif, kebijakan retention outbox, dan pelaporan backlog/umur job perlu dituntaskan sebelum aktivasi.
+- Snapshot pesan pada fondasi belum memuat relasi event domain yang diperlukan untuk acknowledgement telegram_notified_at dan timeline incident. Relasi/korelasi tersebut harus ditambahkan pada tahap integrasi.
+- Routing/kredensial channel ditentukan sender yang disuntikkan. Konfigurasi tujuan tidak boleh diubah sembarangan ketika ada backlog; strategi snapshot tujuan menjadi bagian kontrak integrasi.
+- Indeks dan batas kandidat mengendalikan bentuk operasi; kapasitas antrean besar belum diukur melalui load test/query plan representatif.
+
+### Pengujian
+
+- Rollback domain state dan outbox bersama; job yang belum committed tidak dikirim.
+- Enqueue idempotent, konflik key ditolak, serta enqueue serentak pada MySQL menghasilkan satu job.
+- Klaim eksklusif, retry/backoff, lease expiry, stale acknowledgement, exhaustion, serta cancellation.
+- Pengiriman dilakukan tanpa session database terbuka; koneksi lain dapat commit saat sender sedang berjalan.
+- Crash setelah send sebelum acknowledgement diuji dan menghasilkan kemungkinan duplikasi yang terdokumentasi.
+- ACTIVE/RESOLVED fixture dalam stream yang sama tidak saling mendahului ketika predecessor retry/dead.
+- Seleksi kandidat dipisahkan dari penguncian primary key untuk membatasi row yang dikunci. Test akhir sengaja menahan transaksi worker pertama sambil meminta worker kedua mengklaim stream lain.
+- Kegagalan test MySQL ditelusuri hingga timestamp yang dibulatkan ke detik berikutnya, sehingga kandidat belum jatuh tempo pada waktu test tetap. Kolom outbox memakai DATETIME(6) pada MySQL; regression test memakai pecahan 750000 mikrodetik dan memeriksa roundtrip waktu tersedia/lease.
+- Migration fixture menolak downgrade tabel berisi job dan mempertahankan payloadnya.
+
+### Tindak lanjut tahap 3B — status diselaraskan 2026-09-11
+
+Checklist lanjutan dipusatkan pada [IMP-005](#imp-005--pisahkan-pengiriman-notifikasi-dari-transaksi-alert) agar tidak ada dua daftar status yang berbeda. Referensi/acknowledgement domain selesai pada 3C1; transaksi writer pada 3C3; adapter opt-in, snapshot tujuan dan idempotency pada 3C4; pemecahan grup antar-event pada 3C5; urutan lock/reminder pada 3C6; lifecycle service worker pada 3C7; observability backlog pada 3C8.
+
+Pemasangan adapter/worker operasional, heartbeat, korelasi routing/lifecycle yang tersisa, event tunggal multipart, redrive/retention, benchmark, serta restart deployment tetap terbuka. Penyelesaian service dan fixture tidak menandakan worker produksi sudah aktif.
+
+Migration 0026 baru diuji di fixture. Database Compose operasional tidak diubah pada tahap ini; jalur pengiriman engine yang aktif belum dialihkan. IMP-005 tetap In progress.
+
+### Hasil akhir tahap 3B
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Backend non-MySQL | 216 lulus, 14 MySQL deselected; 2 warning dependency lama |
+| Regression outbox + migration setelah perubahan akhir | 11 lulus |
+| MySQL 8.4 setelah perbaikan presisi timestamp | 14 integration test lulus |
+| Concurrency MySQL | Worker pertama menahan transaksi; worker kedua tetap memperoleh stream lain |
+| Timestamp MySQL | Roundtrip available_at dan lease_until dengan 750000 mikrodetik lulus |
+| Migration | Single head 20260908_0026, upgrade, no model drift, downgrade–upgrade lulus |
+| Mypy | 179 file, tanpa error |
+| Pyright | 0 error/0 warning |
+| Ruff dasar/staged, format, pre-commit | Lulus, termasuk file baru |
+| Git diff whitespace | Lulus |
+
+Seluruh test delivery memakai sender fixture. Container MySQL sudah dibersihkan. Fondasi tahap 3B selesai; IMP-005 tetap In progress hingga checklist integrasi tahap 3C selesai. Tidak ada pengiriman Telegram dari test, aktivasi worker baru, atau penerapan migration 0026 ke database Compose operasional.
+
+| Tanggal | Progres implementasi |
+| --- | --- |
+| 2026-09-08 | Tahap 3B selesai: outbox persisten, claim/lease, retry, acknowledgement, crash recovery, dan migration tervalidasi. IMP-005 In progress; tahap 3C mengintegrasikan lifecycle alert. |
+
+## Progres tahap 3C1 — Referensi alert dan acknowledgement atomik (2026-09-08)
+
+ID: IMP-005 tetap In progress. Tahap ini menyelesaikan kontrak service antara antrean dan state delivery domain. Engine alert dan scheduler belum memakai service baru; checklist aktivasi 3C belum selesai.
+
+### Perubahan
+
+- Migration 20260908_0027 menambah notification_outbox_alerts, dengan identitas gabungan job/alert/action dan indeks lookup alert/action/job. Referensi mengikuti umur job; alert_id sengaja tidak memakai foreign key agar retention alert tidak menghapus referensi historis.
+- enqueue_alert_notification memvalidasi channel, keberadaan alert, dan 1–250 referensi unik; job dan referensi mengikuti transaksi pemanggil tanpa commit tersembunyi. Penggunaan ulang idempotency key dengan referensi berbeda ditolak.
+- Enqueue tidak mengisi telegram_notified_at dan tidak mencatat timeline delivery. Status tersebut baru diperbarui setelah sender berhasil dan acknowledgement dengan lease token diterima.
+- deliver_alert_notification mengikat callback domain ke service delivery. Transaksi acknowledgement memperbarui status job, timestamp Telegram untuk action active/active_reminder/summary_active, dan timeline incident bersama-sama. Action created/resolved tidak mengubah timestamp notifikasi aktif.
+- Alert dikunci dalam urutan ID saat acknowledgement dan timestamp tidak dimundurkan. Kegagalan pembaruan timeline membatalkan acknowledgement, sehingga job tetap dapat dipulihkan setelah lease berakhir. Semantik pengiriman eksternal tetap at-least-once.
+- Alert yang telah dihapus retention dilewati tanpa dibuat ulang. Referensi job tetap tersedia. Ketiadaan seluruh referensi pada job yang diproses melalui service domain dianggap kesalahan konfigurasi.
+- Fixture database outbox dipusatkan di tests/services/conftest.py agar test repository dan domain memakai setup yang sama.
+
+### Validasi
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Backend non-MySQL | 223 lulus, 15 MySQL deselected; 2 warning dependency lama |
+| Outbox/domain/migration setelah tambahan test downgrade | 19 lulus, termasuk 1 test migration tambahan setelah suite penuh |
+| MySQL 8.4 fixture | 15 lulus, termasuk acknowledgement job/alert/incident atomik |
+| Migration MySQL | Single head 20260908_0027; upgrade, alembic check tanpa drift, downgrade–upgrade lulus |
+| Perlindungan data migration | Downgrade referensi berisi data ditolak; history tetap ada |
+| Mypy | 183 file, tanpa error |
+| Pyright | 0 error/0 warning |
+
+Regression mencakup rollback enqueue bersama domain, idempotency, retry tanpa menandai terkirim, acknowledgement berhasil, rollback saat timeline gagal, stale lease, alert yang dihapus retention, serta action created/resolved. Semua sender berupa fixture; container MySQL terisolasi sudah dibersihkan.
+
+### Batas dan kelanjutan
+
+Relasi alert/action dan acknowledgement domain selesai pada lapisan service. Snapshot tujuan pengiriman dan kebutuhan metadata kebijakan tetap harus ditentukan saat integrasi engine. Berikutnya audit enqueue pada jalur commit=True/False, pending/retry terhadap grouping/cooldown/reminder/grace/flap, dan korelasi ACTIVE/RESOLVED. Setelah kontrak tersebut lulus regression, integrasikan worker beserta observability, prosedur dead-job, dan retention.
+
+Migration 0026 dan 0027 belum diterapkan ke database Compose operasional oleh tahap ini. Worker baru belum diaktifkan. Tidak ada perubahan UI pada tahap 3C1.
+
+## Rekonsiliasi indeks database lokal setelah 0027 (2026-09-08)
+
+Database lokal sudah mencapai revision 0027, tetapi alembic check menemukan drift indeks dari schema lama. Pemeriksaan langsung mengonfirmasi dua indeks lookup arsip/rollup belum ada, enam indeks redundan masih ada, serta indeks unik metric_id/key memakai bentuk berbeda. Penyebab historis perubahan schema belum dapat dipastikan dari revision saja.
+
+Migration 20260908_0028 merekonsiliasi hanya daftar indeks yang teridentifikasi. Definisi nama yang sudah ada diperiksa sebelum DDL; definisi tak terduga ditolak. Indeks unik pengganti dibuat sebelum indeks unik lama dilepas, dan indeks redundan hanya dilepas bila primary key/indeks dengan prefix yang sama tetap tersedia. Foreign key dan baris domain tidak dihapus atau diubah. Tahap yang sudah selesai dikenali ketika migration diulang setelah kegagalan DDL MySQL.
+
+Downgrade 0028 sengaja tidak mengembalikan drift: schema kanonik revision 0027 memang sudah memerlukan indeks hasil perbaikan ini. Migration memerlukan koneksi MySQL aktif untuk introspeksi; bukan jalur SQL offline. Ini adalah perbaikan drift operasional, bukan penyelesaian IMP-005.
+
+### Hasil akhir rekonsiliasi indeks
+
+- MySQL 8.4 fixture: 16 integration test lulus, termasuk reproduksi drift lokal, migration terputus lalu diulang, preservasi data/foreign key/keunikan, penolakan definisi indeks tak terduga, dan schema kanonik tanpa drift. Container fixture dibersihkan.
+- Mypy: 183 file tanpa error. Pyright: 0 error/0 warning. Ruff, format, pre-commit dan git diff whitespace lulus.
+- Migration 0028 berhasil diterapkan ke database Compose lokal pada penanganan ini. Backend dan scheduler dibangun ulang dan dijalankan dengan kode terbaru.
+- Verifikasi langsung database operasional lokal: alembic current = 20260908_0028 (head); alembic check = No new upgrade operations detected.
+- Readiness backend setelah pembaruan container: HTTP 200.
+- Tidak ada reset database atau penghapusan baris domain. Perbaikan hanya merekonsiliasi indeks yang teridentifikasi. Pencatatan ini menggantikan batas penerapan lokal tahap 3C1: database lokal kini sudah melewati 0026/0027 dan mencapai 0028; worker outbox tetap belum diaktifkan.
+
+## Progres tahap 3C2 — Pisahkan kebijakan dan formatting notifikasi (2026-09-08)
+
+IMP-005 tetap In progress; IMP-010 kini In progress. Saat menyiapkan integrasi outbox, audit menemukan pemilihan event, rendering pesan, dan pengiriman masih bercampur di impl.py. Jalur commit=True juga menyimpan perubahan domain sebelum pengiriman. Tahap ini memisahkan tanggung jawab sebagai prasyarat integrasi; belum mengalihkan engine ke antrean.
+
+- notification_policy.py memiliki normalisasi konfigurasi dan pemilihan event: grace period, cooldown, reminder per jenis perangkat, flap/repeat, freshness, summary, dan penggabungan site outage. Tidak ada operasi repository atau pengiriman jaringan di modul ini.
+- notification_formatting.py memiliki deduplikasi batch, grouping, urutan action, rendering pesan, ringkasan HTTP/DNS, severity, dan durasi.
+- impl.py mempertahankan orchestration, akses repository, lifecycle alert/incident, serta jalur transport yang sudah ada. Import facade lama tetap tersedia melalui re-export eksplisit, termasuk settings dan konstanta yang masih dipakai konsumen lama.
+- Pemilihan event menerima current_time eksplisit untuk pengujian deterministik. Default tetap utcnow(); pemanggil lama tidak perlu diubah.
+- Delapan regression test memanggil modul kebijakan langsung dengan policy dan waktu eksplisit, tanpa mengubah global settings atau mengirim Telegram: batas grace/flap switch dan VoIP, reminder masing-masing perangkat, cooldown pengganti setelah flap, summary printer, isolasi policy, dan syarat acknowledgement untuk RESOLVED.
+
+Pemecahan ini memperjelas lokasi perubahan aturan dan format pesan. Belum ada klaim peningkatan throughput: pengiriman masih memakai jalur lama, dan worker outbox belum aktif. Tahap berikutnya tetap snapshot tujuan/metadata, enqueue atomik termasuk commit=True/False, korelasi pending ACTIVE–RESOLVED, lalu integrasi worker dengan batas concurrency dan observability. Refactor tahap ini tidak memerlukan migration atau perubahan database lokal.
+
+### Hasil akhir tahap 3C2
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Backend non-MySQL | 232 lulus, 16 MySQL deselected; 2 warning dependency lama |
+| Kebijakan dengan waktu eksplisit | 8 regression test lulus, juga tercakup suite penuh |
+| Mypy | 186 file tanpa error |
+| Pyright | 0 error/0 warning |
+| Ruff, format, pre-commit, whitespace | Lulus pada file yang berubah dan file baru |
+
+Validasi awal menemukan settings/konstanta yang masih diperlukan facade lama terhapus sebagai unused import saat ekstraksi. Ekspor eksplisit dipulihkan sebelum seluruh suite dan typecheck dinyatakan lulus. Tidak ada migration, deployment container, atau aktivasi worker pada tahap 3C2. MySQL integration tidak diulang karena tahap ini memindahkan kebijakan/formatting tanpa mengubah SQL/schema; hasil 16 test MySQL tahap rekonsiliasi tetap tercatat terpisah.
+
+## Progres tahap 3C3 — Batas transaksi engine dan status delivery pending (2026-09-08)
+
+IMP-005 tetap In progress. Engine kini menerima notification_writer opsional melalui kontrak NotificationBatchWriter. Writer wajib hanya menyimpan job memakai session pemanggil, tanpa commit atau pengiriman jaringan. Pemanggil produksi belum memasang writer; jalur default tetap pengiriman lama.
+
+### Implementasi
+
+- Ketika writer diberikan, inisialisasi threshold dan perubahan alert/incident hanya di-flush sebelum enqueue. commit=True melakukan commit setelah writer sukses; commit=False menyerahkan commit ke transaksi pemanggil. Error diteruskan agar transaksi pemanggil dapat rollback.
+- Enqueue menerima event yang sudah dideduplikasi, diperiksa ulang dan diurutkan ACTIVE sebelum RESOLVED. Writer produksi tetap harus menjaga stream dan urutan commit producer; pengurutan list saja bukan jaminan FIFO antar-transaksi.
+- Query pending_active_notification_ids membaca referensi alert/action dan job Telegram dalam batch maksimal 500 ID. Status pending, processing, dan dead tetap dianggap memiliki pekerjaan delivery; sent melepaskan status pending. Ini mencegah retry/dead dilewati dengan membuat ACTIVE baru.
+- Hanya jalur writer yang membaca status pending. Alert yang sudah memiliki job ACTIVE tidak dipilih lagi untuk ACTIVE/reminder/summary pada evaluasi tersebut.
+- RESOLVED untuk alert yang mempunyai ACTIVE pending tetap diteruskan ke writer walaupun telegram_notified_at masih kosong. Timestamp tidak dipalsukan sebagai sudah terkirim. Job RESOLVED fixture memakai stream yang sama sehingga delivery mengikuti ACTIVE.
+- Kontrak writer dipisahkan dari facade engine untuk memudahkan dependency injection. Belum ada perubahan schema atau konfigurasi deployment.
+
+### Validasi dan batas
+
+Suite backend: 241 test non-MySQL lulus, 16 MySQL deselected, 2 warning dependency lama. Setelah penambahan dua test rollback alert baru dan pemeriksaan ulang/urutan event pada jalur writer, 26 test terfokus engine/outbox/policy lulus. Test mencakup commit=True/False, rollback writer, rollback outer transaction setelah enqueue sukses, default threshold yang ikut rollback, pending/dead suppression, pelepasan ownership setelah sent, serta ACTIVE–RESOLVED dengan sender fixture.
+
+MySQL 8.4 terisolasi: 16 integration test lulus, termasuk query pending sebelum acknowledgement dan kosong setelah sent. Migration gate tetap single head 0028, tanpa drift, downgrade–upgrade lulus. Container fixture dibersihkan.
+
+Integrasi yang masih diperlukan: adapter grouping dan snapshot tujuan/metadata, identitas idempotency event/reminder, serialisasi producer hingga commit, korelasi lintas alert pengganti/site yang berubah, serta worker/observability/dead-job/retention. State pending tahap ini dikorelasikan berdasarkan alert ID yang sama; belum menyelesaikan seluruh kebijakan lintas alert. Pengujian enqueue menggunakan adapter fixture, bukan adapter produksi yang sudah diaktifkan. Tidak ada deploy atau pengiriman Telegram pada tahap ini.
+
+Pemeriksaan akhir 3C3: Mypy 188 file tanpa error; Pyright 0 error/0 warning; Ruff, format, pre-commit dan git diff whitespace lulus. Batas transaksi engine dan pembacaan pending selesai pada kontrak opt-in; IMP-005 belum ditutup sampai adapter dan worker produksi terintegrasi.
+
+## Progres tahap 3C4 — Adapter grouping, snapshot tujuan, dan koordinasi producer (2026-09-08)
+
+IMP-005 tetap In progress. TelegramOutboxWriter(destination) kini dapat dipasangkan ke notification_writer engine. Adapter memakai grouping/formatting yang sudah dipisahkan, menyimpan job melalui enqueue_alert_notification, dan tidak melakukan commit atau pengiriman jaringan. Adapter belum dipasang pada scheduler operasional.
+
+### Implementasi
+
+- Migration 20260908_0029 menambah destination nullable pada notification_outbox serta notification_outbox_streams dengan primary key channel/stream_key. Job lama tetap destination=NULL; migration tidak mengarang tujuan historis dari konfigurasi saat ini.
+- Destination adapter harus berupa chat ID numerik yang eksplisit. Pesan dan tujuan tersimpan bersama job; token bot tidak disimpan. Claim membawa destination, dan delivery memerlukan routed_sender(destination, message) untuk job tersebut. Tanpa routed_sender, job masuk retry tanpa memanggil sender legacy. Job lama tanpa destination tetap memakai sender legacy yang diberikan eksplisit.
+- Repository mengunci row stream melalui insert atomik/no-op sebelum enqueue. Lock ditahan oleh transaksi pemanggil hingga commit/rollback. Adapter mengunci semua stream batch dalam urutan deterministik. Stream berbeda tetap dapat berjalan paralel; stream yang sama tidak mengandalkan urutan ID dari producer bebas.
+- Lookup idempotency awal menghindari locking read pada key yang belum ada agar tidak menahan gap indeks untuk stream lain. Insert atomik dan current read menangani winner yang belum terlihat pada snapshot transaksi.
+- Adapter menghapus duplikasi input per identitas event, mengurutkan grouping secara deterministik, serta membuat hash versi v1 dari destination/group/referensi/action/generasi timestamp. Snapshot message dan destination tetap immutable; penggunaan ulang identitas dengan payload berbeda ditolak repository.
+- Pending ACTIVE/reminder/summary diperiksa ulang dengan locking read sesudah memperoleh stream lock, dalam batch maksimal 500 ID. Job pending/processing/dead mencegah enqueue ACTIVE ulang. ACTIVE dan RESOLVED untuk tujuan/site yang sama memakai stream yang sama.
+- Jika ACTIVE pending mempunyai stream/tujuan berbeda atau belum mempunyai snapshot tujuan, RESOLVED ditolak untuk rekonsiliasi eksplisit sehingga tidak melewati pendahulunya lewat stream baru.
+- Group di atas 250 referensi atau 4096 unit UTF-16 ditolak; caller wajib rollback ketika writer gagal. Pemecahan otomatis group besar belum diterapkan dan masih menjadi syarat sebelum aktivasi.
+
+### Bukti dan batas integrasi
+
+Test adapter mencakup grouping, input berulang/urutan berbeda, referensi bersama, snapshot routing, penolakan fallback sender, ACTIVE–RESOLVED satu stream, perubahan route saat ACTIVE pending, rollback payload terlalu besar, dan validasi chat ID. Test tambahan menjalankan evaluator dengan adapter ini dan rule decision fixture untuk memeriksa RESOLVED benar-benar masuk outbox tanpa direct sender.
+
+Test MySQL menahan transaksi producer pertama, memastikan producer kedua pada stream sama menunggu, dan membuktikan stream lain tetap enqueue sebelum producer pertama commit. Downgrade fixture menolak pembuangan destination yang masih tersimpan. Seluruh pengiriman memakai sender fixture.
+
+Belum diaktifkan: worker production, redrive/dead-job/retention, pemecahan group besar, korelasi lintas alert pengganti/perubahan site atau tujuan, validasi freshness/reminder saat acknowledgement bersamaan dengan evaluasi, serta load test adapter pada workload representatif. Kasus routing yang belum didukung ditolak, bukan diarahkan ulang otomatis. Uji concurrency tahap ini memverifikasi primitive enqueue MySQL; contention evaluator/acknowledgement end-to-end masih perlu diuji sebelum worker aktif.
+
+Migration 0029 baru diterapkan pada fixture terisolasi. Database Compose lokal tetap pada revision 0028 dari tahap perbaikan sebelumnya; tidak ada rebuild/deploy container atau pengiriman Telegram pada tahap ini.
+
+### Hasil akhir tahap 3C4
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Backend non-MySQL | 253 lulus, 17 MySQL deselected; 2 warning dependency lama |
+| Adapter/migration terfokus, termasuk tambahan integrasi evaluator | 13 lulus |
+| Repository, adapter, dan transaksi engine saat pengembangan | 30 lulus |
+| MySQL 8.4 | 17 integration test lulus; fixture dibersihkan |
+| Migration fixture | Head 0029, upgrade, no drift, downgrade–upgrade lulus |
+| Mypy | 191 file tanpa error |
+| Pyright | 0 error/0 warning |
+| Ruff, format, pre-commit, whitespace | Lulus |
+
+Tahap 3C4 selesai pada adapter opt-in, snapshot routing, dan primitive koordinasi stream. IMP-005 tetap In progress sampai batas integrasi di atas dituntaskan dan worker diaktifkan melalui rollout yang tervalidasi.
+
+## Progres tahap 3C5 — Pemecahan grup pesan dan acknowledgement per potongan (2026-09-09)
+
+IMP-005 tetap In progress. Grup yang sebelumnya ditolak karena total pesan/referensinya terlalu besar kini dipecah oleh telegram_notification_batches.py. Writer tetap memegang koordinasi stream dan transaksi; perencanaan ukuran pesan dipisahkan dari akses database.
+
+- TelegramMessageBatch menyimpan message dan tuple referensi yang immutable. Planner mempertahankan urutan event dari writer dan membentuk potongan dengan maksimal 4096 unit UTF-16 serta 250 referensi.
+- Setiap potongan memakai stream/routing yang sama dan idempotency key berdasarkan referensi/generasi potongan. Enqueue ulang ketika semua potongan masih pending tidak menambah job.
+- Referensi antar-event yang bertumpang tindih ditolak agar satu acknowledgement tidak ambigu. Karakter Unicode tidak dipotong, dan teks pesan tidak ditruncate.
+- Satu event tetap merupakan unit acknowledgement. Event tunggal yang melebihi ukuran pesan atau jumlah referensi ditolak, termasuk site-outage event besar yang memuat banyak alert. Dukungan multipart untuk satu event memerlukan kontrak acknowledgement terpisah dan belum diimplementasikan.
+- Keberhasilan pengiriman potongan pertama hanya memperbarui alert pada potongan tersebut. Potongan berikutnya tetap pending. Writer memeriksa ID alert yang sudah mempunyai telegram_notified_at melalui current locking read untuk initial ACTIVE/summary, sehingga event lama dari sebelum acknowledgement tidak mengantrekan ulang potongan yang sudah terkirim.
+- Query pemeriksaan tersebut dibatasi batch 500 ID. Reminder saat acknowledgement/evaluasi bersamaan tetap memerlukan validasi concurrency tersendiri; perubahan ini belum menyelesaikan seluruh race lifecycle.
+
+Test planner memeriksa batas ukuran persis dan satu unit di bawahnya, emoji UTF-16, batas referensi, input kosong/invalid, referensi overlap, serta event tunggal yang tidak dapat dipecah. Test writer memeriksa job/referensi terpisah, identitas dan urutan stream, enqueue ulang dalam urutan input berbeda, acknowledgement parsial, serta evaluasi ulang memakai objek event lama setelah sebagian/seluruh potongan terkirim.
+
+Tahap ini tidak menambah migration atau mengaktifkan worker. Tidak ada pengiriman Telegram atau deploy container. Validasi berlangsung pada fixture SQLite; concurrency evaluator/acknowledgement MySQL dan load test representatif tetap syarat sebelum aktivasi. Hasil MySQL tahap 3C4 tidak dianggap sebagai bukti untuk pemeriksaan baru tersebut.
+
+### Hasil akhir tahap 3C5
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Backend non-MySQL | 265 lulus, 17 MySQL deselected; 2 warning dependency lama |
+| Planner dan writer setelah perlindungan acknowledgement parsial | 21 test terfokus lulus |
+| Mypy | 193 file tanpa error |
+| Pyright | 0 error/0 warning |
+| Ruff, format, pre-commit, whitespace | Lulus |
+
+Tahap 3C5 selesai untuk pemecahan grup antar-event. IMP-005 tetap In progress: event tunggal besar, routing/lifecycle lintas alert, concurrency MySQL end-to-end, dan worker operasional masih terbuka. Checklist utama diperbarui untuk membedakan infrastruktur/adapter yang sudah teruji dari integrasi operasional yang belum aktif.
+
+## Progres tahap 3C6 — Urutan lock dan validasi generasi reminder (2026-09-09)
+
+IMP-005 tetap In progress. Audit jalur writer/acknowledgement menemukan urutan berlawanan: writer/evaluator dapat memegang alert lalu meminta job, sementara acknowledgement sebelumnya memperbarui job sebelum mengunci alert. Tahap ini menyatukan urutan domain-before-job untuk jalur outbox yang terlibat.
+
+### Perubahan
+
+- lock_alert_notification_state mengambil row alert menurut ID dalam batch 500, membaca kolom status/notified_at/resolved_at saat ini, dan mengembalikan snapshot dataclass immutable. Pembacaan tidak bergantung pada objek ORM lama di identity map.
+- Evaluator pada mode writer mengunci seluruh alert aktif yang sudah ada sebelum perubahan incident/stream/job. Adapter langsung juga mengunci alert sebelum stream dan memakai snapshot tersebut untuk identitas generasi, sehingga tidak perlu query ulang alert per potongan pesan.
+- Delivery domain mempunyai hook preparation yang mengunci alert terkait sebelum acknowledgement mengunci job. Status outbox dan timeline/timestamp domain tetap diperbarui atomik setelah token/lease diterima.
+- Repository menyediakan lock_for_acknowledgement. Clock untuk validasi lease diambil setelah preparation domain dan lock job selesai. Lease yang habis selama menunggu salah satu lock tidak diterima memakai waktu sebelum antre.
+- Writer menangkap timestamp delivery yang dipakai saat memilih reminder. Jika current read menunjukkan timestamp berubah, atau alert sudah tidak aktif, event reminder dilewati agar evaluasi berikutnya menghitung ulang cooldown. ACTIVE/summary awal tetap melewati alert yang sudah diakui terkirim.
+
+### Pengujian
+
+- Test MySQL menggunakan evaluator dan TelegramOutboxWriter sebenarnya, dengan keputusan rule dan sender fixture. Transaksi evaluator menahan alert yang akan resolved; delivery mengklaim ACTIVE dan menunggu domain lock. Evaluator tetap berhasil enqueue RESOLVED dan commit; acknowledgement kemudian selesai, disusul delivery RESOLVED pada stream yang sama. Tidak ada pengiriman eksternal.
+- Test reminder membandingkan snapshot selection yang tetap berlaku dengan timestamp yang berubah pada transaksi lain: hanya snapshot yang masih berlaku menghasilkan satu job, termasuk enqueue berulang.
+- Test expiry mensimulasikan waktu yang melewati deadline saat menunggu lock domain maupun job. Keduanya menghasilkan lease_lost tanpa mengubah telegram_notified_at, delivered_at, atau timeline.
+
+Validasi ini mencakup contention evaluator/acknowledgement untuk alert yang sama dan stale reminder snapshot. Ini bukan bukti seluruh kemungkinan deadlock, performa kapasitas besar, atau restart lifecycle worker. Worker operasional, korelasi alert pengganti/site/tujuan, redrive/dead-job/retention, dan event tunggal terlalu besar tetap terbuka. Tidak ada migration baru, deploy container, atau aktivasi worker pada tahap ini.
+
+### Hasil akhir tahap 3C6
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Backend non-MySQL, kode akhir | 269 lulus, 18 MySQL deselected; 2 warning dependency lama |
+| MySQL 8.4, setelah pemeriksaan waktu pasca-lock job | 18 integration test lulus; fixture dibersihkan |
+| Migration fixture | Single head 0029, upgrade, no drift, downgrade–upgrade lulus |
+| Mypy | 193 file tanpa error |
+| Pyright | 0 error/0 warning |
+| Ruff, format, pre-commit, whitespace | Lulus |
+
+Tahap 3C6 selesai pada urutan lock, validasi lease setelah antre, dan deteksi generasi reminder yang berubah. IMP-005 belum ditutup: hasil ini menjadi dasar untuk integrasi lifecycle worker dan gate aktivasi berikutnya.
+
+## Progres tahap 3C7 — Lifecycle worker terbatas (2026-09-09)
+
+IMP-005 tetap In progress. Service notification_worker.py memisahkan pengelolaan polling dan shutdown dari transport, transaksi delivery, serta kepemilikan database engine. run_alert_notification_worker mengikat setiap iterasi ke service acknowledgement alert/incident yang sudah ada. Belum ada pendaftaran worker pada scheduler atau Compose.
+
+- Policy immutable memvalidasi concurrency 1–16 (default 2), polling idle 1 detik, error backoff 5 detik, dan shutdown grace 25 detik. Jumlah task delivery tetap dibatasi; tidak membuat task baru untuk setiap job.
+- Stop event menghentikan iterasi berikutnya dan memberi waktu delivery aktif selesai. Setelah grace habis, task tersisa dibatalkan dan ditunggu cleanup-nya. Cancellation dari pemanggil langsung membatalkan seluruh task. Cleanup memerlukan callback yang kooperatif terhadap cancellation; grace bukan jaminan penghentian paksa proses.
+- Error iterasi memakai backoff dan log kategori tetap tanpa menyalin exception provider/database yang berpotensi memuat secret. Polling yang sedang menunggu segera bangun ketika stop diminta.
+- Report mencatat sent, retry, dead, lease_lost, error, idle poll, dan task yang dibatalkan selama satu run. Report ini belum menggantikan metrik backlog persisten atau observability lintas proses.
+- Test fixture menyimulasikan sender sudah menerima pesan lalu worker dibatalkan sebelum acknowledgement. Runner baru memakai database fixture yang sama, memulihkan lease kedaluwarsa, dan menyelesaikan acknowledgement domain. Pesan bisa diterima dua kali: semantik tetap at-least-once.
+
+### Validasi tahap 3C7
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Test lifecycle baru | 14 lulus: batas concurrency, drain, cancellation/cleanup, backoff, stop saat idle, policy, dan lease recovery |
+| Suite backend non-MySQL | 283 passed, 18 deselected; 2 deprecation warning dependency |
+| Mypy | 195 source files tanpa error |
+| Pyright | 0 error, 0 warning |
+| Pre-commit kode worker dan test | Lulus |
+
+Tidak ada perubahan SQL/schema; suite MySQL tidak diulang pada tahap ini. Recovery diuji melalui pemanggilan runner baru dalam proses test dengan SQLite persisten, bukan restart container atau proses OS. Startup CLI, signal handler, konfigurasi runtime, transport/routing operasional, metrik backlog, redrive/retention, dan pengujian restart deployment masih terbuka. Korelasi alert pengganti/site/tujuan serta event tunggal terlalu besar tetap mengikuti backlog sebelumnya.
+
+Tahap 3C7 selesai pada lifecycle service yang dapat diuji. Tidak ada migration baru, deploy, aktivasi worker, atau pengiriman Telegram nyata. IMP-005 belum ditutup sampai integrasi operasional dan gate aktivasi selesai.
+
+## Progres tahap 3C8 — Observability backlog persisten (2026-09-09)
+
+IMP-005 tetap In progress. Report worker sebelumnya hanya hidup selama satu run. Tahap ini menambah snapshot dari database bersama agar backlog tetap terlihat setelah restart atau dari replika API lain.
+
+- notification_outbox_health_repository.py menjalankan satu SELECT agregat untuk channel Telegram dengan status pending/processing/dead. Query tidak memuat entity/payload pesan, tidak meminta row lock, dan mengecualikan history sent dari agregasi. Hasil paling banyak tiga row; biaya database tetap mengikuti ukuran backlog, bukan konstan.
+- notification_outbox_health.py memisahkan perhitungan umur dan rendering metrik dari query serta route. Kontrak immutable dipakai untuk JSON dan Prometheus. Tidak ada cache/counter global baru yang dapat tertinggal setelah restart.
+- /observability/summary yang sudah dilindungi akses admin kini memiliki notification_outbox. /observability/metrics mengekspor delapan seri gauge dengan label tetap: jumlah dan umur tertua tiap status, pending jatuh tempo, serta lease kedaluwarsa. Pesan, destination, stream key, dan ID job tidak diekspos.
+- Umur dihitung sejak job dibuat dan dibatasi minimum nol; status kosong menghasilkan nol. Pending jatuh tempo dapat tertahan predecessor, termasuk dead job, sehingga bukan claimable count. Lease null tidak dihitung sebagai kedaluwarsa. Antrean kosong tidak menyatakan worker aktif.
+- Metrik adalah snapshot antrean bersama, bukan counter per replika; README menjelaskan agar scrape replika tidak dijumlahkan sebagai total backlog. Heartbeat worker dan alert rule operasional belum disediakan.
+
+### Validasi tahap 3C8
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Test service baru | 3 lulus: status/kanal, batas due/lease, queue kosong, clock skew, satu query tanpa payload, dan cardinality metrik |
+| Test endpoint observability/health | 5 lulus; regression yang ada diperluas untuk JSON dan Prometheus dengan job dead fixture |
+| Suite backend non-MySQL | 286 passed, 18 deselected; 2 deprecation warning dependency |
+| Mypy / Pyright | 198 source files tanpa error / 0 error dan 0 warning |
+| Pre-commit / whitespace diff | Lulus |
+
+Validasi database menggunakan SQLite fixture. Query plan, benchmark MySQL dengan backlog besar, dan dampak scrape paralel belum diukur; hasil ini tidak mengklaim kapasitas produksi. Tidak ada perubahan schema, migration, deployment container, aktivasi worker, atau pengiriman Telegram nyata pada tahap ini.
+
+Tahap berikutnya tetap integrasi proses worker dengan konfigurasi/signal handler dan heartbeat, kontrak routing/lifecycle sebelum aktivasi, prosedur redrive/dead-job, retention, serta uji restart deployment. Tahap 3C8 selesai untuk observability backlog di backend; IMP-005 belum ditutup.
+
+## Progres tahap 3C9 — Signal lifecycle proses worker (2026-09-11)
+
+IMP-005 tetap In progress. notification_worker_process.py menyediakan run_notification_process(worker): callback menerima stop event yang dipicu SIGTERM/SIGINT lalu menjalankan runner delivery yang sudah ada. Adapter tidak membuat database engine atau transport, dan tidak mendaftarkan service pada Compose.
+
+- Instalasi signal handler hanya di main thread proses khusus. Adapter tidak ditujukan untuk dipasang di server API yang sudah memiliki lifecycle signal sendiri.
+- Signal meminta graceful stop; runner tetap memiliki concurrency, polling, serta grace deadline. Signal berulang bersifat idempotent dan tidak memperpanjang deadline.
+- Handler lama dipulihkan ketika worker selesai, gagal, atau mengalami cancellation. Setup yang hanya berhasil sebagian juga dipulihkan; handler lama yang tidak dapat direpresentasikan untuk restore menyebabkan startup ditolak sebelum worker berjalan.
+- Callback signal menjadwalkan stop melalui event loop. Disposal database/transport tetap tanggung jawab pemanggil dalam finally, agar kepemilikan resource tidak tersembunyi di lapisan signal.
+- Enam skenario subprocess menjalankan runner sebenarnya dengan callback fixture, lalu mengirim SIGTERM/SIGINT ke proses sendiri setelah delivery siap. Masing-masing menguji stop saat idle, drain delivery, dan pembatalan setelah grace; test memeriksa handler pulih dan tidak ada task tertinggal. Tiga skenario tambahan mencakup exception, cancellation, dan kegagalan setup sebagian.
+
+Pengujian signal menggunakan proses OS terpisah, tetapi tidak memakai database atau provider. Ini belum membuktikan restart proses dengan antrean persisten, recovery setelah SIGKILL, atau rollout container. Bukti lease recovery SQLite dalam proses pada 3C7 dan contention MySQL pada 3C6 tetap terpisah. Main CLI, konfigurasi runtime, heartbeat, transport/routing operasional, redrive/retention, dan gate aktivasi masih terbuka. Tidak ada migration, deployment, aktivasi worker, atau pengiriman Telegram pada tahap ini.
+
+### Validasi tahap 3C9
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Suite backend non-MySQL | 295 passed, 18 deselected; termasuk 9 test signal lifecycle baru; 2 deprecation warning dependency |
+| Mypy / Pyright | 200 source files tanpa error / 0 error dan 0 warning |
+| Pre-commit / whitespace diff | Lulus untuk perubahan tahap ini |
+
+Suite MySQL tidak diulang karena tidak ada perubahan query, schema, atau transaksi delivery. Tahap 3C9 selesai untuk adapter signal dan pengujian shutdown proses; IMP-005 belum ditutup.
+
+## Perubahan UI — Toggle tema quick menu (2026-09-11)
+
+Permintaan tambahan: toggle dark/light mode di kiri bawah quick menu, berdampingan dengan tombol Keluar. Preferensi disimpan di browser dan diterapkan sebelum render awal; perubahan tersinkron antar-tab. Jika storage tidak tersedia, toggle tetap berfungsi selama halaman aktif. Palet light mencakup menu, sidebar, form, tabel, badge, overview, dan latar/teks/grid grafik. Hook tema, komponen toggle, serta stylesheet tema dipisahkan agar perubahan tampilan terlokalisasi. Sesuai tindak lanjut pengguna, light menjadi default untuk pengunjung tanpa preferensi tersimpan, termasuk fallback storage dan render server; pilihan dark yang tersimpan tetap dihormati. Typecheck, lint, dan 22 test frontend lulus pada implementasi toggle; perubahan ini tidak menutup backlog IMP-005.
+
+## Perubahan collector — Multi-target MikroTik (2026-09-15)
+
+Collector RouterOS sebelumnya hanya memakai satu target `MIKROTIK_*`; variabel Regional Office di `.env` diabaikan oleh settings dan Compose. Konfigurasi kini menyediakan daftar target immutable. `MIKROTIK_TARGETS` JSON menjadi bentuk scalable dan authoritative bila diisi, sementara `MIKROTIK_*` serta `RO_MIKROTIK_*` tetap didukung untuk rollout saat ini.
+
+- Parser memvalidasi struktur, field, credential wajib, rentang port, serta host unik agar typo tidak diam-diam dilewati. Secret JSON dapat dibaca dari file pada production.
+- Setiap target wajib cocok dengan IP device MikroTik aktif. Fallback satu device lama dipertahankan hanya ketika memang ada satu target; konfigurasi multi-target tidak boleh menempelkan metrik ke device yang salah.
+- Snapshot metrik tiap device dibaca berurutan melalui AsyncSession. Pengumpulan RouterOS antar-target kemudian berjalan dengan bounded gather; hasil diratakan setelah seluruh target selesai. Exception ditangani per target sehingga satu kantor gagal tidak menghapus metrik kantor lain.
+- Compose dan `.env.example` memuat kontrak baru. `.env` operator tidak ditulis ulang dan nilai rahasia tidak dicatat di dokumen.
+
+Validasi terfokus mencakup dua target compatibility, JSON untuk site berikutnya, konfigurasi invalid/duplikat, pemasangan CPU/API metric ke dua device berbeda, serta regression collector lama. Pekerjaan ini memperbaiki scalability dan pemisahan konfigurasi collector dalam IMP-010, tetapi IMP-010 tetap In progress hingga tanggung jawab lain yang tercatat selesai.
+
+
+## Progres tahap 1C — Kesetaraan quality gate dan audit environment baru (2026-09-15)
+
+IMP-003 tetap In progress. Tahap ini melanjutkan fondasi 1A/1B sebelum aktivasi worker IMP-005. Fokusnya membuat hasil validasi dapat diulang dan kegagalan CI mudah ditelusuri.
+
+### Perubahan
+
+- `make backend-check` menjadi kumpulan gate backend: pemeriksaan dependency terpasang, lint dasar, aturan lint bertahap, format check tanpa perubahan file, mypy, pyright, dan test. `make ci` menyertakan target tersebut serta frontend. Resep agregat `just` meneruskan ke Make agar daftar gate tidak disalin ke beberapa tempat.
+- CI memakai target Make untuk gate yang bersesuaian, menambahkan `pip check` dan format check, serta memasukkan seluruh file requirements yang relevan ke cache key. Runtime Node job backend diselaraskan ke Node 22 yang juga digunakan job frontend.
+- `requirements/security.txt` menjadi sumber pin pip-audit/Bandit/Semgrep untuk development dan CI. Bandit serta Semgrep tetap dijalankan ketika audit sebelumnya gagal, tanpa mengubah kegagalan menjadi sukses atau menonaktifkan aturan.
+- `just` tidak lagi menyuntikkan `.env` operator ke proses test. Aplikasi dan Compose tetap membaca konfigurasi melalui mekanisme masing-masing; environment yang diekspor secara eksplisit tetap menjadi tanggung jawab pemanggil.
+- `pydantic-settings` dinaikkan dari 2.13.1 ke 2.14.2 untuk advisory GHSA-4xgf-cpjx-pc3j/CVE-2026-58203 yang menggagalkan audit remote. Rujukan: https://github.com/pydantic/pydantic-settings/security/advisories/GHSA-4xgf-cpjx-pc3j . Audit setelah pembaruan tidak menemukan kerentanan backend yang diketahui.
+- Test API frontend mengisolasi environment dan state modul pada tiap test. Ditambahkan kasus fallback, URL API non-default, dan trailing slash; ini memperbaiki kegagalan test ketika `NEXT_PUBLIC_API_URL` diberikan dari proses luar.
+- `.pnpm-store/` diabaikan Git agar cache dependency tidak tercampur dengan source baru. README membedakan gate fungsional lokal, gate integrasi/security, dan bukti checkout commit.
+
+### Bukti dan batasan
+
+Validasi menggunakan salinan kandidat source ke direktori sementara: file tracked pada working tree beserta file source baru yang tidak diabaikan Git. `.env`, node_modules, virtual environment, dan cache proyek tidak disalin. Dependency Python dipasang pada virtual environment baru dan frontend dipasang dari frozen lockfile dengan store sementara. Ini **bukan checkout commit bersih**: banyak implementasi sebelumnya masih modified/untracked pada repository utama. Tidak ada commit, push, atau deployment pada tahap ini.
+
+- Instalasi Python 3.12 dari `requirements/dev.txt` dan `pip check`: lulus.
+- Backend pada salinan source dengan dependency baru: **304 passed, 18 skipped**; yang dilewati adalah fixture MySQL. Dua deprecation warning dependency tetap ada.
+- Ruff dasar, lint aturan bertahap, dan format check: lulus; mypy memeriksa 200 source files tanpa error; pyright 0 error/0 warning.
+- Audit requirements backend: **No known vulnerabilities found** pada run tahap ini.
+- Build `Dockerfile.backend` dari salinan source: lulus, image lokal `network-monitoring-backend:imp003-validation`. Tidak menjalankan image atau mengganti container operasional. Arsitektur lokal ARM64; job CI Linux x86_64 belum diverifikasi untuk kandidat ini.
+- Frontend: lint/typecheck, **25 test pada 11 file**, dan production build (13 static pages) lulus dengan `NEXT_PUBLIC_API_URL=https://api.example.test`. Build masih melaporkan warning Autoprefixer untuk nilai alignment `end` pada stylesheet lama. Runtime lokal Node 24.19.0, sedangkan CI menetapkan Node 22; hasil lokal belum menggantikan gate CI.
+- YAML workflow berhasil diparse; pre-commit untuk konfigurasi/requirements yang diubah dan `git diff --check` lulus.
+
+### Temuan yang masih harus ditutup
+
+1. Audit frontend: **5 advisory** (1 critical, 2 high, 2 moderate), pada `maplibre-gl` transitif melalui Plotly dan `postcss` melalui Next.js. Pembaruan MapLibre dari major 5 ke versi patched major 6 perlu ditinjau kompatibilitasnya; jangan menerapkan override mayor tanpa validasi grafik/peta. Detail advisory ada pada hasil `pnpm audit --prod`.
+2. Bandit: **19 temuan** pada baseline source (assert runtime, token-type literal, cleanup exception, serta SHA-1 nama lock). Temuan perlu ditriase dan diperbaiki/diterangkan per lokasi; jumlah ini bukan klaim 19 kerentanan yang dapat dieksploitasi. Tidak ditambahkan blanket skip atau baseline untuk meloloskan gate.
+3. Secret-scan remote: 4 temuan aturan `curl-auth-header` pada README di commit historis `553f5ce98ff0ed248db7136fa347c9115f158829`; perlu menentukan placeholder versus credential nyata sebelum tindakan. Nilai yang ditemukan tidak disalin ke dokumen ini.
+4. Semgrep belum dijalankan ulang pada kandidat tahap ini. Migrasi dan integrasi MySQL, smoke non-functional, frontend Docker, dan E2E juga belum dijalankan ulang pada tahap ini.
+5. Run remote terakhir yang diperiksa, https://github.com/MochAndimas/network_monitoring/actions/runs/34807854059 (2026-09-14, commit `32806b038fb0cd8dea3b907d752d516bc73baad0`), masih memakai workflow lama. Job dependency setup, migrasi schema drift, Docker dashboard lama, dependency audit, dan secret-scan gagal. Build backend pada run lama lulus, tetapi bukan bukti untuk source kandidat ini.
+
+### Urutan berikutnya
+
+- Tahap 1D: remediasi dependency frontend dengan uji kompatibilitas, triase Bandit/Semgrep dan secret-scan, lalu ulang gate terkait.
+- Setelah seluruh source baru masuk commit: validasi fresh checkout dan CI remote, termasuk fixture MySQL dan smoke non-functional. Baru tandai IMP-003 Done jika seluruh kriteria terpenuhi.
+- Lanjutkan IMP-005 dengan kontrak routing/lifecycle dan integrasi worker secara bertahap; IMP-006/007/009 tetap memerlukan benchmark workload representatif. Refactor IMP-010 diterapkan pada area yang disentuh tanpa mengubah kontrak operator secara diam-diam.
+
+
+## Tindak lanjut — Distribusi Live Monitoring versus alert aktif (2026-09-15)
+
+Permintaan pengguna: tuntaskan laporan tahap 1C, kemudian periksa perbedaan screenshot distribusi 28 up / 2 down / 3 warning dengan dua alert `ping_latency_anomaly`.
+
+### Diagnosis
+
+- Distribusi menghitung satu status per device berdasarkan seluruh latest metric: `down`, `critical`, atau `error` diringkas sebagai down; warning/degraded/unavailable sebagai warning. Ini adalah kesehatan agregat, bukan hanya hasil ping dan bukan hitungan alert.
+- Alert aktif merupakan hasil evaluator rule. Anomali ping memakai nilai minimal tiga kali baseline, sehingga dapat muncul saat status ping masih up. Sebagian metrik printer seperti persentase toner dan detail tray tidak mempunyai rule langsung; rule printer saat ini memakai status ink/paper/error yang terpisah. Karena itu jumlah perangkat bermasalah tidak harus sama dengan jumlah alert, dan satu perangkat bisa menghasilkan beberapa alert.
+- Pemeriksaan database lokal bersifat read-only. Pada waktu pemeriksaan, ringkasan sudah berubah menjadi 29 up / 2 down / 2 warning. Dua perangkat down adalah Canon ADV 4551 dan Canon E4500 series: latest metric toner hitam melaporkan 0 dengan status error. Dua warning adalah Canon GX7000 series dan HP Laser 103/107/108 dengan status warning pada metrik toner. Ini menjelaskan contoh perbedaan semantik; data berjalan tersebut tidak merekonstruksi persis keadaan saat screenshot diambil.
+
+### Perbaikan
+
+- Ditemukan bug nyata pada ringkasan perangkat terpilih: service menghitung status hanya dari halaman metrik yang sedang terlihat. Ringkasan sekarang membaca seluruh latest metric untuk `device_id` terkait, dengan filter di query repository, sehingga status tidak berubah karena pagination. Query global dan aturan rollup dipertahankan.
+- KPI Device terpantau memakai total distribusi perangkat, bukan nama perangkat pada satu halaman tabel. KPI metrik bermasalah diberi label cakupan halaman agar tidak dianggap jumlah alert aktif.
+- Judul dan penjelasan distribusi menyebut unit perangkat serta makna down/error. Deskripsi Alerts menjelaskan unit alert dan bahwa satu device bisa memiliki beberapa alert. Tidak ada perubahan threshold, rule printer/ping, lifecycle alert, atau penulisan data operasional.
+- Regression test menaruh ping up di halaman pertama dan toner error di halaman kedua, serta menguji halaman kosong dan isolasi device lain. Test gagal pada source sebelum perbaikan (`up` alih-alih `down`), kemudian lulus setelah perbaikan; 9 test snapshot/live terkait lulus. Lint/typecheck frontend, 25 test frontend, production build, serta pre-commit pada file yang diubah juga lulus. Gate backend lengkap (`make backend-check`) lulus: Ruff/format, mypy/pyright, dan **305 passed, 18 skipped** (MySQL) dengan dua deprecation warning dependency.
+
+Perubahan tersedia pada source lokal. Container operasional tidak di-rebuild/restart pada pemeriksaan ini. Tahap 1C selesai untuk perubahan dan validasi lokal yang tercatat; IMP-003 tetap In progress dengan sisa gate security/fresh-checkout/remote pada bagian 1C. IMP-005 dan backlog scalability lainnya tidak ditandai selesai oleh perbaikan tampilan ini.
+
+## Tindak lanjut — Ringkasan alert konsisten di kedua halaman (2026-09-15)
+
+Pengguna menyerahkan pilihan desain setelah membandingkan 3 warning + 1 critical pada Alerts dengan 2 warning + 2 down pada agregat metrik perangkat. Keputusan: tampilkan **Distribusi Alert Aktif** yang sama pada Live Monitoring dan Alerts, serta pertahankan **Kesehatan Perangkat dari Metrik** sebagai informasi terpisah. Alert dihitung per kejadian; kesehatan dihitung per perangkat. Rule dan threshold tidak diubah.
+
+- Endpoint `/alerts/active/summary` memberikan agregasi global severity dari alert aktif. Payload hanya jumlah per severity, tanpa mengirim seluruh pesan/baris alert. Live Monitoring memuatnya sekali per refresh 15 detik, dengan cancellation signal, waktu pembaruan, link detail, serta empty/error state yang terpisah dari data metrik.
+- `/alerts/active/paged` menambahkan `severity_counts` untuk seluruh hasil filter. Total, distribusi severity, dan KPI Critical / High tidak lagi dihitung dari satu halaman tabel. Agregasi menggantikan query count terpisah; jumlah query endpoint tetap dua (baris halaman dan agregasi).
+- Filter list/count/summary memakai helper repository yang sama untuk severity, site, tipe, device, dan pencarian. Agregasi dilakukan dengan SQL GROUP BY; join perangkat hanya diperlukan pada summary/count jika filter site/pencarian dipakai.
+- Kedua halaman memakai komponen distribusi yang sama agar urutan severity, warna, unit, dan empty state tetap konsisten. Ringkasan Live Monitoring selalu global dan terkini, termasuk ketika melihat riwayat/perangkat tertentu; cakupan ditulis eksplisit. Angka sama ketika filter dan waktu data sama, dengan kemungkinan jeda antarpolling pada data berjalan.
+- Regression API menguji 4 alert pada 3 perangkat, resolved yang tidak ikut dihitung, halaman pertama/terakhir/kosong, semua filter dan kombinasi filter. Test UI memeriksa hitungan, kondisi kosong, dan kegagalan request yang tidak ditampilkan sebagai nol alert.
+- Validasi: `make backend-check` lulus (306 passed, 18 MySQL skipped; mypy/pyright/Ruff/format lulus); frontend lint/typecheck, 28 test, dan production build lulus. Pre-commit pada file perubahan dan whitespace diff lulus. Tidak ada migrasi schema.
+
+Batasan: grafik/KPI perangkat terdampak pada halaman Alerts masih berasal dari baris halaman tabel; tahap ini menyelaraskan distribusi severity dan total alert. Gate security/fresh-checkout/remote IMP-003 tetap terbuka sesuai catatan 1C.
+
+### Penerapan dan verifikasi lokal (2026-09-16)
+
+- Proses Compose yang sempat terinterupsi selesai dengan exit code 0. Image backend dan frontend berhasil dibangun, kedua container dibuat ulang dan berjalan sehat. Database dan scheduler tidak di-restart oleh perintah ini; tidak ada migrasi schema.
+- Endpoint ringkasan baru terpasang pada container backend. Pemeriksaan HTTP terautentikasi secara read-only membandingkan `/alerts/active/summary`, `/alerts/active/paged?limit=1`, lalu summary lagi untuk mendeteksi perubahan selama pemeriksaan. Ketiganya konsisten: **5 warning + 4 critical = 9 alert**, sementara halaman tabel hanya berisi 1 baris. Kredensial tidak dicetak.
+- Browser saat dilanjutkan berada di halaman login. Verifikasi visual setelah deployment masih menunggu pengguna login; hasil API dan health container tidak dianggap sebagai bukti visual. Validasi source sebelumnya tetap 306 test backend dan 28 test frontend lulus.
+
+
+## Progres tahap 1D1 — Triase Bandit dan ketahanan runtime (2026-09-22)
+
+Subtahap pertama 1D berfokus pada gate Bandit backend; IMP-003 tetap In progress. Tujuan clean code dan maintainability dijaga dengan perubahan terlokalisasi, diagnostik eksplisit, dan kontrak runtime yang tetap berjalan pada Python optimasi. Tidak ada penambahan query, polling, worker, atau concurrency pada jalur operasional.
+
+### Perubahan dan alasan
+
+- Guard DNS/HTTP dan ketersediaan client RouterOS tidak lagi bergantung pada `assert` yang hilang saat Python memakai `-O`. Nilai latest latency yang tidak numerik sementara rule historis cocok ditolak dengan `ValueError`; client RouterOS yang tidak tersedia ditolak dengan `RuntimeError`. Jalur data valid dan keputusan threshold tidak diubah.
+- Inisialisasi Prometheus memeriksa ketersediaan dependency pada kondisi percabangan, tanpa assert redundan.
+- Cleanup dispatcher SNMP dan koneksi HTTP tetap tidak menutupi hasil operasi utama, tetapi kegagalannya kini memiliki pesan debug statis. Isi exception, alamat target, dan community SNMP tidak dicetak pada diagnostik cleanup.
+- SHA-1 untuk pemendekan nama advisory lock diberi `usedforsecurity=False`. Algoritma dan hasil nama lock dipertahankan agar worker lama/baru tetap berkoordinasi pada identitas yang sama; ini bukan hash password/signature.
+- Tujuh temuan B105/B106 pada literal jenis JWT `access`/`refresh` ditriase sebagai false positive. Setiap lokasi mempunyai alasan di komentar dan `nosec` yang hanya menyebut rule spesifik. Tidak ada blanket skip, perubahan severity threshold scanner, ataupun pelonggaran autentikasi.
+- Lima regression test baru memverifikasi hasil SNMP tetap tersedia ketika cleanup gagal, diagnostik tidak memuat exception sensitif, guard latest latency invalid, dan nama lock panjang tetap kompatibel dengan vektor tetap.
+
+### Validasi
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| Bandit dengan scope/opsi CI (`backend scripts`, exclude tests/venv) | 0 temuan tersisa, 0 error scanner; 7 pengecualian rule spesifik tercatat |
+| Regression baru | 5 passed |
+| Regression pada `python -O` | 5 passed; warning pytest tentang optimasi sesuai kondisi yang diuji |
+| `make backend-check` | Lulus: pip check, Ruff dasar/bertahap, format, mypy (203 source files), pyright (0 error/0 warning), 311 passed / 18 MySQL skipped |
+| Pre-commit pada file perubahan / whitespace diff | Lulus |
+
+Dua deprecation warning dependency pada suite normal tetap ada. Instalasi menggunakan virtual environment sementara baru dari requirements yang dipin; source masih working tree dengan perubahan sebelumnya dan file baru, bukan checkout commit bersih. Tidak ada deployment, perubahan `.env`, pengiriman notifikasi, atau operasi database produksi pada tahap ini.
+
+### Temuan setup Semgrep dan langkah berikutnya
+
+Semgrep 1.89.0 belum berhasil memulai scan. Pada macOS, startup pertama gagal menemukan trust anchors; pemberian path CA bundle certifi melalui `SSL_CERT_FILE` melewati kegagalan tersebut tanpa menonaktifkan verifikasi TLS. Kegagalan berikutnya adalah `ModuleNotFoundError: pkg_resources` dari `opentelemetry.instrumentation`, sementara resolver memasang setuptools 84.0.0. `pip check` tetap lulus, sehingga smoke startup scanner diperlukan selain pemeriksaan metadata dependency. Tidak ada hasil Semgrep yang dapat diklaim lulus.
+
+1. Subtahap berikutnya: perbaiki kompatibilitas dependency alat Semgrep dalam environment terisolasi, jalankan ruleset CI, dan triase hasilnya. Perbarui pin/constraint dengan bukti startup dan scan sebelum dipakai di CI.
+2. Lanjut remediasi advisory frontend (MapLibre/PostCSS) dengan uji kompatibilitas dan triase secret-scan historis. Angka advisory yang tercatat pada 1C adalah hasil audit saat itu, bukan audit ulang 22 September.
+3. Setelah gate security lokal ditutup, verifikasi checkout bersih/CI remote serta gate MySQL/non-functional yang tersisa. IMP-005/006/007/009 dan refactor lanjutan IMP-010 belum ditutup oleh tahap ini.
+
+Catatan 19 temuan Bandit pada 1C adalah baseline historis; status lokal terbaru digantikan hasil 1D1 di atas. Penutupan gate Bandit tidak berarti keseluruhan audit security atau IMP-003 sudah selesai.
+
+## Penyesuaian cakupan chart Live Monitoring (2026-09-22)
+
+- Panel Distribusi Alert Aktif hanya dimuat ketika filter Device bernilai Semua device. Memilih perangkat individual, Semua VoIP, atau Semua Ruijie melepas komponen ringkasan global beserta polling-nya; memilih Semua device kembali memuatnya lagi.
+- Aturan ini menggantikan perilaku historis ringkasan global yang tetap tampil pada filter perangkat tertentu. Keputusan tampilan memakai nilai filter asli, sehingga grup tidak dianggap sebagai Semua device hanya karena parameter API device_id kosong.
+- Lint, TypeScript, production build, dan whitespace check lulus. Assertion lama `/4 alert aktif/` diperbarui menjadi pemeriksaan pasangan severity/jumlah pada baris tabel yang tersedia; teks total tersebut sudah tidak ada sebelum perubahan visibility ini. Suite frontend terbaru: 28 passed (12 files).
+- Frontend lokal berhasil dibangun dan container diperbarui. Verifikasi browser: panel tersembunyi pada perangkat Canon E4500, Semua VoIP, dan Semua Ruijie; muncul kembali ketika memilih Semua device. Filter dikembalikan ke Semua device setelah pemeriksaan.
+
+## Progres tahap 1D2 — Startup dan scan Semgrep (2026-09-22)
+
+IMP-003 tetap In progress. Tahap ini menutup kegagalan startup Semgrep yang tercatat pada 1D1 dan memvalidasi ruleset CI terhadap kandidat source lokal.
+
+### Perubahan
+
+- `requirements/security.txt` memin setuptools 80.9.0 karena OpenTelemetry instrumentation 0.46b0 milik Semgrep 1.89 masih mengimpor `pkg_resources`. Pin hanya berada pada requirements alat audit/development, bukan requirements backend runtime. Ini jembatan kompatibilitas sementara; hapus setelah upgrade Semgrep lolos startup dan scan.
+- CI memeriksa `pip check` dan `semgrep --version` setelah instalasi alat audit. Pemeriksaan startup melengkapi validasi metadata dependency, yang sebelumnya tetap lulus meski scanner gagal dimulai.
+- README mendokumentasikan smoke startup dan penggunaan CA bundle valid pada macOS tanpa menonaktifkan TLS. Path environment sementara tidak dimasukkan ke konfigurasi proyek.
+- Satu temuan SHA-1 pada `_scoped_lock_name` ditriase sebagai identifier non-keamanan. Pengecualian `nosemgrep` menyebut hanya rule SHA-1 pada lokasi tersebut dengan alasan menjaga identitas advisory lock antarversi worker. Algoritma, nama lock, dan kontrak runtime tidak berubah; tidak ada blanket skip rule.
+
+### Bukti validasi
+
+- Instalasi seluruh `requirements/security.txt` pada virtual environment Python 3.12 baru berhasil; `pip check` dan `semgrep --version` lulus. Peringatan deprecation `pkg_resources` masih ada dan tidak disembunyikan.
+- Ruleset `p/security-audit` dan `p/python`, scope `backend shared scripts`, serta opsi `--error --metrics=off --exclude venv --exclude tests` sesuai CI: 200 rule dijalankan pada 153 file, 0 finding dan 0 error scanner; exit code 0. Scan awal menemukan satu SHA-1 sebelum triase.
+- Daftar file hasil scan mencakup source outbox/worker yang masih untracked. `scripts/test_canon_snmp.py` lokal yang diabaikan Git tidak masuk scan; cakupan ini mengikuti pengabaian Git bawaan scanner, bukan klaim seluruh file lokal dipindai.
+- Regression runtime/lock: 14 passed, termasuk vektor tetap nama lock panjang untuk kompatibilitas worker lama/baru. Ruff lint dan format pada file perubahan lulus.
+- Bandit pada scope backend/scripts kembali lulus. Pre-commit pada requirements audit, workflow CI, pipeline control, dan README lulus (YAML, whitespace, private-key check, Ruff lint/format).
+
+Environment dependency baru tidak sama dengan checkout commit bersih. Ruleset registry tetap dapat berubah. Tidak ada perubahan rule alert, query operasional, pengiriman notifikasi, migrasi, atau deployment pada tahap ini. Tindak lanjut: remediasi advisory frontend dengan uji kompatibilitas, triase secret-scan historis, lalu seluruh gate dari checkout bersih dan CI remote sebelum menutup IMP-003.
+
+## Progres tahap 1D3 — Remediasi dependency frontend (2026-09-22)
+
+IMP-003 tetap In progress. Audit `pnpm audit --prod` sebelum perubahan mengonfirmasi 5 advisory: 1 critical pada MapLibre serta 2 high/2 moderate pada PostCSS. Angka ini hasil audit ulang, bukan penyalinan baseline 1C.
+
+### Perubahan dan alasan
+
+- `plotly.js` 4.1.1 menjadi dependency langsung yang dipin. Sebelumnya wrapper `react-plotly.js` memakai peer otomatis Plotly 4.0.0; versi 4.1.1 memakai MapLibre 6.9.0 dari upstream sehingga tidak membutuhkan override major MapLibre. API komponen chart tetap sama.
+- Hapus `plotly.js-dist-min` 2.35.3 yang tidak diimpor oleh source. Wrapper aktual mengimpor `plotly.js/dist/plotly`; deklarasi dependency kini sesuai jalur runtime dan menghindari dua distribusi Plotly yang berbeda.
+- Override `next@15>postcss` ke 8.5.26 dibatasi pada dependency Next 15. Next 15.5.24 yang dipakai proyek, bahkan metadata 15.5.25 yang diperiksa, masih memin 8.4.31. Next tidak di-upgrade pada tahap ini. Alasan dan syarat penghapusan override dicatat di workspace config dan README.
+- Lockfile diperbarui oleh pnpm 11.19.0; tidak mengedit integrity hash atau menyembunyikan advisory. Tidak ada penambahan request, polling, atau perubahan kontrak API.
+
+### Validasi
+
+- Audit production setelah perubahan: 0 advisory pada semua severity, exit code 0. Referensi baseline: https://github.com/advisories/GHSA-jrc7-96c5-q579 (MapLibre) dan https://github.com/advisories/GHSA-fxqj-rqcc-2cmp (batas patch PostCSS terbaru dari audit).
+- Frontend lint, TypeScript, 28 test pada 12 file lulus. Pre-commit konfigurasi dependency/dokumentasi dan whitespace diff lulus.
+- Production build Docker Node 22 lulus dengan instalasi `pnpm install --frozen-lockfile --ignore-scripts`; seluruh 13 halaman berhasil dibangun. Pengujian lokal memakai Node 24, sehingga build Docker juga memeriksa environment Node 22 yang digunakan CI.
+- Container frontend lokal berhasil diperbarui. Browser setelah reload memverifikasi SVG/path grafik tren NAS, pie status, serta bar severity alert terisi; screenshot tren mengonfirmasi garis, sumbu, label, dan stylesheet dark tampil. Pergantian Semua device/perangkat tetap mengatur visibilitas panel alert; filter dikembalikan ke NAS semula. Ini smoke browser terfokus, bukan klaim suite E2E lengkap atau pengujian fitur peta MapLibre.
+
+Gate dependency production frontend ditutup untuk lockfile dan advisory database saat audit ini. Ini tidak menyatakan seluruh dependency development atau seluruh IMP-003 selesai. Secret-scan historis, checkout commit bersih, CI remote dan gate integrasi/non-functional yang tersisa masih harus dituntaskan. Catatan advisory frontend 1C/1D1/1D2 di atas adalah riwayat sebelum remediasi ini.
+
+## Progres tahap 1D4 — Triase secret-scan historis (2026-09-22)
+
+IMP-003 tetap In progress. Log run GitHub Actions 34807854059 menunjukkan Gitleaks 8.24.3 melaporkan empat fingerprint `curl-auth-header` pada README commit `553f5ce98ff0ed248db7136fa347c9115f158829`, baris 778/854/862/868. Nilai temuan tidak disalin ke catatan ini.
+
+### Hasil triase dan perubahan
+
+- Keempat temuan berasal dari contoh curl development localhost yang memakai literal contoh API key yang sama. Literal itu juga tersedia pada `.env.example` saat diperiksa; `.env` lokal saat ini tidak memakai literal tersebut. Ini bukti konteks contoh development, bukan bukti bahwa literal tidak pernah digunakan oleh deployment lain. Nilai contoh publik tidak boleh digunakan sebagai kredensial operasional.
+- Tambahkan `.gitleaksignore` dengan empat fingerprint lengkap commit/path/rule/baris tersebut. Tidak ada allowlist seluruh README, rule API key, atau commit; tidak ada rewrite riwayat atau perubahan credential.
+- README menjelaskan scan riwayat lengkap dengan redaction dan batas cakupannya. Mekanisme fingerprint mengikuti dokumentasi resmi https://github.com/gitleaks/gitleaks#gitleaksignore .
+
+### Validasi
+
+- Unduh binary resmi Gitleaks 8.24.3 untuk macOS ARM64 dan verifikasi SHA-256 terhadap checksum rilis sebelum menjalankannya. Versi sama dengan scanner pada log CI yang ditriase.
+- Repository bukan shallow clone. `gitleaks git --redact --log-opts=--all` sebelum perubahan: 122 commit, 4 temuan yang persis sama dengan log CI; sesudah pengecualian: exit code 0, tidak ada temuan tersisa.
+- Fixture repository sementara dengan file ignore yang sama dan header sintetis baru pada README baris 778 tetap menghasilkan exit code 1 dan rule `curl-auth-header`. Ini memverifikasi pengecualian historis tidak menyembunyikan temuan pada commit baru di lokasi sama.
+- Scan Git tidak memeriksa working tree yang belum di-commit. Hasil ini tidak menggantikan validasi kandidat source dari checkout commit bersih atau run CI remote. Tidak ada deployment maupun perubahan perilaku aplikasi pada tahap ini.
+
+Langkah berikutnya: siapkan seluruh kandidat source/config agar dapat diuji dari checkout bersih, lalu jalankan gate fungsional, migrasi/integrasi MySQL terisolasi, non-functional/E2E, audit dan CI remote. IMP-005/006/007/009/010 tetap mengikuti checklist utama; tahap ini hanya menutup triase historis lokal IMP-003.
+
+## Progres tahap 1E1 — Checkout kandidat dan integrasi terisolasi (2026-09-23)
+
+IMP-003 tetap In progress. Seluruh file tracked yang tersedia dan source untracked yang tidak diabaikan Git disalin sebagai kandidat ke repository sementara, dibuat commit snapshot lokal `96acd1b7da950e8d1879a11d87dda5831e70cac6`, lalu di-clone ke checkout bersih. Tidak menyalin `.env`, node_modules, virtual environment, cache, atau artefak build. Index, commit, branch, dan remote repository kerja utama tidak diubah.
+
+### Validasi reproduktibilitas
+
+- Virtual environment Python 3.12 baru dipasang dari `requirements/dev.txt` pada checkout kandidat. Frontend dipasang dengan pnpm 11.19.0 menggunakan frozen lockfile. Tidak memakai node_modules atau virtual environment proyek asal.
+- `make backend-check` lulus: pip check, Ruff lint dasar/bertahap, format (202 file), mypy (202 source file), pyright (0 error/0 warning), 311 passed dan 18 MySQL skipped. Dua warning deprecation dependency masih ada.
+- `make frontend-check` lulus: lint, TypeScript, 28 test pada 12 file, dan production build 13 halaman. Build memakai URL API fixture eksplisit; runtime lokal Node 24.19.0, bukan pengganti job CI Node 22. Bukti build Docker Node 22 terdapat pada 1D3.
+- `pre-commit run --all-files` lulus. Checkout kandidat tetap bersih sesudah seluruh pemeriksaan; hook tidak mengubah file.
+
+### MySQL fixture
+
+- Container MySQL 8.4 tersendiri dibuat dengan database/credential test dan port loopback 13316. Tidak menggunakan database, volume, atau container aplikasi.
+- Alembic upgrade dari database kosong sampai `20260908_0029` lulus; hanya satu head; `alembic check` melaporkan tidak ada operasi upgrade baru/schema drift.
+- Downgrade satu revisi lalu upgrade kembali lulus. Seluruh 18 test MySQL lulus, termasuk contention lock, latest snapshot, retention, rekonsiliasi indeks, stream outbox, dan koordinasi evaluator/acknowledgement.
+
+### Smoke non-functional
+
+- API fixture dijalankan pada port loopback 18006 dengan SQLite sementara serta akun admin sintetis. Tidak memakai kredensial operator dan tidak menjalankan scheduler/collector operasional.
+- Benchmark profile CI (3 run), concurrency profile CI (10 request/concurrency 5), serta pemeriksaan counter payload observability lulus. Contoh p95 tertinggi concurrency pada run ini: devices 147.30 ms, alerts 101.71 ms, incidents 76.49 ms; seluruh request berhasil.
+- Kontrol threshold mustahil 0.01 ms gagal sesuai harapan (exit 1), membuktikan jalur kegagalan gate tetap bekerja. Angka smoke berasal dari fixture kecil, bukan klaim kapasitas produksi atau benchmark workload representatif.
+- API fixture dihentikan setelah selesai; container MySQL sementara dihentikan dengan auto-remove. Tidak ada deployment aplikasi pada tahap ini.
+
+### Batas dan tahap berikutnya
+
+Snapshot ini membuktikan kandidat lokal dapat dipasang dan diuji dari clone bersih, tetapi bukan commit pada branch proyek atau run GitHub Actions. Source utama masih modified/untracked. Gate E2E browser lengkap, audit ulang kandidat sesuai CI, build backend kandidat, serta workflow remote belum ditutup oleh tahap ini. Lanjutkan pemeriksaan tersebut sebelum menandai IMP-003 Done; jangan menyamakan hasil smoke fixture dengan gate performa IMP-005/006/007/009.

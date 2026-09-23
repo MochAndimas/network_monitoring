@@ -22,17 +22,20 @@ JWT_ALGORITHM = "HS256"
 
 class JWTValidationError(ValueError):
     """Exception raised for jwtvalidationerror conditions."""
+
     pass
 
 
 class AuthConfigurationError(RuntimeError):
     """Exception raised for authconfigurationerror conditions."""
+
     pass
 
 
 @dataclass(slots=True)
 class TokenPayload:
     """Helper object for security controls."""
+
     token_type: str
     subject: int
     jwt_id: str
@@ -165,7 +168,9 @@ def verify_password(password: str, password_hash: str) -> bool:
             return False
         salt = bytes.fromhex(salt_hex)
         expected = bytes.fromhex(digest_hex)
-        derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt + _password_secret(), int(iterations_raw))
+        derived = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt + _password_secret(), int(iterations_raw)
+        )
         return hmac.compare_digest(derived, expected)
     except Exception:
         return False
@@ -191,7 +196,8 @@ def create_access_token(
     *, subject: int, username: str, role: str, jwt_id: str, expires_at: datetime, access_nonce: str | None = None
 ) -> str:
     """Create access token for configuration, time, or security helpers."""
-    return _create_signed_token(
+    # Public JWT kind discriminator, not a credential.
+    return _create_signed_token(  # nosec B106
         token_type="access",
         subject=subject,
         username=username,
@@ -206,7 +212,8 @@ def create_refresh_token(
     *, subject: int, username: str, role: str, jwt_id: str, refresh_nonce: str, expires_at: datetime
 ) -> str:
     """Create refresh token for configuration, time, or security helpers."""
-    return _create_signed_token(
+    # Public JWT kind discriminator, not a credential.
+    return _create_signed_token(  # nosec B106
         token_type="refresh",
         subject=subject,
         username=username,

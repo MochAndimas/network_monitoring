@@ -11,6 +11,7 @@ from ..core.time import utcnow
 
 class AdminAuditLog(Base):
     """SQLAlchemy ORM model for AdminAuditLog records."""
+
     __tablename__ = "admin_audit_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

@@ -17,6 +17,7 @@ from ..models.metric_daily_rollup import MetricDailyRollup
 
 class DeviceRepository:
     """Database access object for Device records."""
+
     def __init__(self, db: AsyncSession):
         """Initialize the object with its runtime dependencies."""
         self.db = db
@@ -193,11 +194,7 @@ class DeviceRepository:
         search_filter = self._search_filter(search)
         if search_filter is not None:
             query = query.where(search_filter)
-        rows = (
-            await self.db.execute(
-                query.order_by(Device.name.asc()).offset(offset).limit(limit)
-            )
-        ).all()
+        rows = (await self.db.execute(query.order_by(Device.name.asc()).offset(offset).limit(limit))).all()
         return [
             {
                 "id": row.id,
@@ -263,9 +260,7 @@ class DeviceRepository:
             search=search,
         )
         rows = (
-            await self.db.execute(
-                query.order_by(Device.name.asc(), Device.id.asc()).offset(offset).limit(limit)
-            )
+            await self.db.execute(query.order_by(Device.name.asc(), Device.id.asc()).offset(offset).limit(limit))
         ).all()
         if offset == 0 and len(rows) < limit:
             total = len(rows)
@@ -302,11 +297,7 @@ class DeviceRepository:
                 and_(Device.name == cursor_name, Device.id > cursor_id),
             )
         )
-        rows = (
-            await self.db.execute(
-                query.order_by(Device.name.asc(), Device.id.asc()).limit(limit + 1)
-            )
-        ).all()
+        rows = (await self.db.execute(query.order_by(Device.name.asc(), Device.id.asc()).limit(limit + 1))).all()
         has_more = len(rows) > limit
         return [self._device_status_row_payload(row) for row in rows[:limit]], has_more
 
@@ -539,11 +530,7 @@ class DeviceRepository:
         ip_addresses = [item["ip_address"] for item in payloads]
         existing = {
             device.ip_address: device
-            for device in (
-                await self.db.scalars(
-                    select(Device).where(Device.ip_address.in_(ip_addresses))
-                )
-            ).all()
+            for device in (await self.db.scalars(select(Device).where(Device.ip_address.in_(ip_addresses)))).all()
         }
 
         devices: list[Device] = []

@@ -10,8 +10,10 @@ from ..db.base import Base
 
 class LatestMetric(Base):
     """SQLAlchemy ORM model for LatestMetric records."""
+
     __tablename__ = "latest_metrics"
     __table_args__ = (
+        UniqueConstraint("metric_id", name="uq_latest_metrics_metric_id"),
         UniqueConstraint("device_id", "metric_name", name="uq_latest_metrics_device_metric"),
         Index("ix_latest_metrics_device_checked", "device_id", "checked_at"),
         Index("ix_latest_metrics_device_metric_checked", "device_id", "metric_name", "checked_at"),
@@ -19,8 +21,8 @@ class LatestMetric(Base):
         Index("ix_latest_metrics_status_checked", "status", "checked_at"),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    metric_id: Mapped[int] = mapped_column(ForeignKey("metrics.id"), nullable=False, unique=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    metric_id: Mapped[int] = mapped_column(ForeignKey("metrics.id"), nullable=False, index=True)
     device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), nullable=False, index=True)
     metric_name: Mapped[str] = mapped_column(String(100), nullable=False)
     metric_value: Mapped[str] = mapped_column(Text, nullable=False)

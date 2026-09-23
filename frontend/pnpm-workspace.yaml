@@ -1,2 +1,8 @@
 allowBuilds:
-  es5-ext: set this to true or false
+  es5-ext: false
+  unrs-resolver: false
+
+# Next 15 pins PostCSS 8.4.31, affected by source-map disclosure and CSS XSS.
+# Remove when upstream uses a patched PostCSS (>=8.5.23); validate the build first.
+overrides:
+  'next@15>postcss': 8.5.26

@@ -1,0 +1,6 @@
+# Reviewed development examples in historical README (IMP-003, stage 1D4).
+# Exact commit/path/rule/line only; new occurrences must still be reported.
+553f5ce98ff0ed248db7136fa347c9115f158829:README.md:curl-auth-header:778
+553f5ce98ff0ed248db7136fa347c9115f158829:README.md:curl-auth-header:854
+553f5ce98ff0ed248db7136fa347c9115f158829:README.md:curl-auth-header:862
+553f5ce98ff0ed248db7136fa347c9115f158829:README.md:curl-auth-header:868

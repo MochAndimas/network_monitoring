@@ -11,6 +11,8 @@ from shared.device_utils import is_mikrotik_device
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.config import settings
+from ....core.settings_groups import MikrotikSettings
+from ....models.device import Device
 from ....models.metric import Metric
 from ....repositories.device_repository import DeviceRepository
 from ....repositories.metric_repository import MetricRepository
@@ -40,18 +42,45 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
         )
         for metric in device_metrics
     ]
-
-    mikrotik_settings = settings.mikrotik
-    if not devices or not mikrotik_settings.host or connect is None:
+    targets = settings.configured_mikrotik_targets
+    if not devices or not targets or connect is None:
         return metrics
 
-    target_device = _resolve_api_target_device(devices)
-    if target_device is None:
-        logger.warning(
-            "Skipping Mikrotik API metrics because MIKROTIK_HOST=%s does not match any active Mikrotik device",
-            mikrotik_settings.host,
+    work: list[tuple[Device, MikrotikSettings, dict[str, Metric]]] = []
+    allow_single_fallback = len(targets) == 1
+    for target in targets:
+        target_device = _resolve_api_target_device(
+            devices,
+            target.host,
+            allow_single_device_fallback=allow_single_fallback,
         )
-        return metrics
+        if target_device is None:
+            logger.warning(
+                "Skipping Mikrotik API target %s because host %s does not match an active Mikrotik device",
+                target.name,
+                target.host,
+            )
+            continue
+        # AsyncSession is not safe for concurrent use. Snapshot reads happen in
+        # order; only independent RouterOS network work runs concurrently.
+        work.append((target_device, target, await _latest_metric_map(db, target_device.id)))
+
+    api_results = await bounded_gather(
+        [_collect_mikrotik_api_metrics(device, target, previous) for device, target, previous in work]
+    )
+    metrics.extend(metric for target_metrics in api_results for metric in target_metrics)
+    return metrics
+
+
+async def _collect_mikrotik_api_metrics(
+    target_device: Device,
+    mikrotik_settings: MikrotikSettings,
+    previous_metrics: dict[str, Metric],
+) -> list[dict]:
+    """Collect one RouterOS target; failures stay scoped to that device."""
+    if connect is None:
+        raise RuntimeError("RouterOS client is unavailable")
+    metrics: list[dict] = []
 
     api = None
     try:
@@ -101,7 +130,6 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
         )
         resource = resources[0] if resources else {}
         checked_at = utcnow()
-        previous_metrics = await _latest_metric_map(db, target_device.id)
 
         metrics.extend(
             [
@@ -267,7 +295,17 @@ def _mikrotik_api_error_category(error: Exception) -> str:
         return "timeout"
     if any(keyword in message for keyword in ("auth", "login", "credential", "password", "username")):
         return "authentication_failed"
-    if any(keyword in message for keyword in ("connection refused", "network is unreachable", "no route", "connection reset")):
+    if any(
+        keyword in message
+        for keyword in (
+            "connection refused",
+            "connection unexpectedly closed",
+            "connection closed",
+            "network is unreachable",
+            "no route",
+            "connection reset",
+        )
+    ):
         return "connection_failed"
     return "collector_error"
 
@@ -283,15 +321,20 @@ def _should_collect_ping(device) -> bool:
     return is_mikrotik_device(device.device_type, device.name)
 
 
-def _resolve_api_target_device(devices: list):
+def _resolve_api_target_device(
+    devices: list[Device],
+    host: str | None = None,
+    *,
+    allow_single_device_fallback: bool = True,
+) -> Device | None:
     """Select the active Mikrotik device that matches the configured RouterOS host."""
-    host = str(settings.mikrotik.host or "").strip().lower()
-    if not host:
+    normalized_host = str(host if host is not None else settings.mikrotik.host or "").strip().lower()
+    if not normalized_host:
         return None
     for device in devices:
-        if str(device.ip_address or "").strip().lower() == host:
+        if str(device.ip_address or "").strip().lower() == normalized_host:
             return device
-    if len(devices) == 1:
+    if allow_single_device_fallback and len(devices) == 1:
         return devices[0]
     return None
 
@@ -441,8 +484,16 @@ def _queue_metrics(
         prefix = _dynamic_metric_name("queue", name)
         rx_bytes, tx_bytes = _split_counter_pair(queue.get("bytes"))
         rx_rate, tx_rate = _split_counter_pair(queue.get("rate"))
-        rx_mbps = _bits_to_mbps(rx_rate) if rx_rate else _counter_rate(rx_bytes, previous_metrics.get(f"{prefix}:rx_bytes"), checked_at)
-        tx_mbps = _bits_to_mbps(tx_rate) if tx_rate else _counter_rate(tx_bytes, previous_metrics.get(f"{prefix}:tx_bytes"), checked_at)
+        rx_mbps = (
+            _bits_to_mbps(rx_rate)
+            if rx_rate
+            else _counter_rate(rx_bytes, previous_metrics.get(f"{prefix}:rx_bytes"), checked_at)
+        )
+        tx_mbps = (
+            _bits_to_mbps(tx_rate)
+            if tx_rate
+            else _counter_rate(tx_bytes, previous_metrics.get(f"{prefix}:tx_bytes"), checked_at)
+        )
         metrics.extend(
             [
                 _metric(device_id, f"{prefix}:rx_bytes", rx_bytes, "ok", "bytes", checked_at),
@@ -454,7 +505,9 @@ def _queue_metrics(
     return metrics
 
 
-def _metric(device_id: int, metric_name: str, value: int | float | str, status: str, unit: str | None, checked_at: datetime) -> dict:
+def _metric(
+    device_id: int, metric_name: str, value: int | float | str, status: str, unit: str | None, checked_at: datetime
+) -> dict:
     """Return metric for Mikrotik monitoring."""
     if isinstance(value, float):
         metric_value = f"{value:.2f}"

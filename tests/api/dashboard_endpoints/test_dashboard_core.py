@@ -24,8 +24,10 @@ from .common import (
     utcnow,
 )
 
+
 def test_dashboard_summary_and_alerts_endpoint():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -95,8 +97,10 @@ def test_dashboard_summary_and_alerts_endpoint():
         assert history_response.status_code == 200
         assert len(history_response.json()) == 3
 
+
 def test_alerts_and_incidents_paged_endpoints_include_meta_and_keep_legacy_contracts():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -218,6 +222,7 @@ def test_alerts_and_incidents_paged_endpoints_include_meta_and_keep_legacy_contr
 
 def test_incident_workflow_actions_timeline_and_escalations():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -263,7 +268,9 @@ def test_incident_workflow_actions_timeline_and_escalations():
             headers=API_HEADERS,
             json={"note": "Sedang dicek", "assignee": "andi"},
         )
-        escalation_after_ack_response = client.get("/incidents/escalations?critical_after_minutes=15", headers=API_HEADERS)
+        escalation_after_ack_response = client.get(
+            "/incidents/escalations?critical_after_minutes=15", headers=API_HEADERS
+        )
         resolve_response = client.post(
             f"/incidents/{incident_id}/resolve",
             headers=API_HEADERS,
@@ -308,8 +315,10 @@ def test_incident_workflow_actions_timeline_and_escalations():
         timeline_types = [item["event_type"] for item in timeline_response.json()["items"]]
         assert timeline_types == ["updated", "acknowledged", "resolved", "reopened"]
 
+
 def test_dashboard_summary_uses_mikrotik_api_health_without_ping():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -337,10 +346,19 @@ def test_dashboard_summary_uses_mikrotik_api_health_without_ping():
         assert summary_response.status_code == 200
         assert summary_response.json()["mikrotik_status"] == "up"
 
+
 def test_write_routes_ignore_cookie_even_when_cookie_user_is_admin():
     with client_context() as (client_a, session_factory):
-        run(_create_user(session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"))
-        run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer", full_name="Viewer User"))
+        run(
+            _create_user(
+                session_factory, username="adminuser", password="StrongPass123!", role="admin", full_name="Admin User"
+            )
+        )
+        run(
+            _create_user(
+                session_factory, username="viewer", password="StrongPass123!", role="viewer", full_name="Viewer User"
+            )
+        )
 
         admin_login = client_a.post("/auth/login", json={"username": "adminuser", "password": "StrongPass123!"})
         assert admin_login.status_code == 200
@@ -357,6 +375,7 @@ def test_write_routes_ignore_cookie_even_when_cookie_user_is_admin():
 
         assert mixed_write_response.status_code == 403
 
+
 def test_refresh_cookie_cannot_authenticate_api_requests_directly():
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
@@ -372,6 +391,7 @@ def test_refresh_cookie_cannot_authenticate_api_requests_directly():
 
         restore_response = client.post("/auth/restore")
         assert restore_response.status_code == 200
+
 
 def test_logout_clears_refresh_cookie_even_when_access_token_has_expired():
     with client_context() as (client, session_factory):
@@ -399,6 +419,7 @@ def test_logout_clears_refresh_cookie_even_when_access_token_has_expired():
 
         restore_response = client.post("/auth/restore")
         assert restore_response.status_code == 401
+
 
 def test_bearer_read_requests_do_not_update_last_seen_until_refresh():
     with client_context() as (client, session_factory):
@@ -433,6 +454,7 @@ def test_bearer_read_requests_do_not_update_last_seen_until_refresh():
         assert restore_response.status_code == 200
         assert run(get_last_seen()) > baseline_seen_at
 
+
 def test_access_cookie_cannot_be_used_as_refresh_token_when_refresh_cookie_is_missing():
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
@@ -446,6 +468,7 @@ def test_access_cookie_cannot_be_used_as_refresh_token_when_refresh_cookie_is_mi
         restore_response = client.post("/auth/restore")
         assert restore_response.status_code == 401
 
+
 def test_login_rate_limit_blocks_repeated_failed_attempts():
     with client_context() as (client, session_factory):
         run(_create_user(session_factory, username="viewer", password="StrongPass123!", role="viewer"))
@@ -457,6 +480,7 @@ def test_login_rate_limit_blocks_repeated_failed_attempts():
         rate_limited_response = client.post("/auth/login", json={"username": "viewer", "password": "wrong-password"})
         assert rate_limited_response.status_code == 429
         assert rate_limited_response.json()["detail"] == "Too many login attempts. Please try again later."
+
 
 def test_login_uses_forwarded_ip_only_for_trusted_proxy():
     import backend.app.api.routes.auth as auth_route_module
@@ -484,8 +508,10 @@ def test_login_uses_forwarded_ip_only_for_trusted_proxy():
     finally:
         auth_route_module.settings.trusted_proxy_ips = original_trusted_proxies
 
+
 def test_dashboard_overview_panels_and_problem_devices_endpoints():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -550,9 +576,13 @@ def test_dashboard_overview_panels_and_problem_devices_endpoints():
 
 
 def test_dashboard_overview_payload_uses_backend_cache_until_invalidated():
-    from backend.app.services.dashboard_overview_service import get_overview_payload, invalidate_dashboard_overview_cache
+    from backend.app.services.dashboard_overview_service import (
+        get_overview_payload,
+        invalidate_dashboard_overview_cache,
+    )
 
     with client_context() as (_client, session_factory):
+
         async def scenario():
             invalidate_dashboard_overview_cache()
             async with session_factory() as db:
@@ -612,4 +642,3 @@ def test_dashboard_overview_cache_is_invalidated_after_device_mutation():
         assert create_response.status_code == 201
         assert refreshed_response.status_code == 200
         assert refreshed_response.json()["device_counts"]["total"] == 1
-

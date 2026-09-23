@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -43,6 +45,7 @@ def _split_csv(raw_value: str) -> list[str]:
 
 class Settings(BaseSettings):
     """Typed application settings loaded from environment variables and optional secret files."""
+
     app_name: str = "Network Monitoring"
     app_env: AppEnv = "development"
     database_url: str = "mysql+pymysql://network_monitoring:change-me@localhost:3306/network_monitoring"
@@ -78,6 +81,11 @@ class Settings(BaseSettings):
     mikrotik_port: int = 8728
     mikrotik_username: str = ""
     mikrotik_password: str = ""
+    mikrotik_targets: str = ""
+    ro_mikrotik_host: str = ""
+    ro_mikrotik_port: int = 8728
+    ro_mikrotik_username: str = ""
+    ro_mikrotik_password: str = ""
     mikrotik_dynamic_sections: str = "interface,firewall,queue"
     mikrotik_dynamic_firewall_section_allowlist: str = "filter,nat"
     mikrotik_dynamic_interface_allowlist: str = ""
@@ -156,6 +164,8 @@ class Settings(BaseSettings):
     telegram_bot_token_file: str | None = None
     telegram_chat_id_file: str | None = None
     mikrotik_password_file: str | None = None
+    mikrotik_targets_file: str | None = None
+    ro_mikrotik_password_file: str | None = None
     internal_api_key_file: str | None = None
     auth_password_secret_file: str | None = None
     printer_snmp_communities_file: str | None = None
@@ -163,7 +173,11 @@ class Settings(BaseSettings):
     bootstrap_admin_password_file: str | None = None
     auth_jwt_secret_file: str | None = None
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=os.environ.get("APP_ENV_FILE", ".env") or None,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     @model_validator(mode="after")
     def load_file_backed_secrets(self) -> "Settings":
@@ -172,6 +186,8 @@ class Settings(BaseSettings):
             "telegram_bot_token": self.telegram_bot_token_file,
             "telegram_chat_id": self.telegram_chat_id_file,
             "mikrotik_password": self.mikrotik_password_file,
+            "mikrotik_targets": self.mikrotik_targets_file,
+            "ro_mikrotik_password": self.ro_mikrotik_password_file,
             "internal_api_key": self.internal_api_key_file,
             "auth_password_secret": self.auth_password_secret_file,
             "printer_snmp_communities": self.printer_snmp_communities_file,
@@ -196,10 +212,14 @@ class Settings(BaseSettings):
             try:
                 file_value = file_path.read_text(encoding="utf-8").strip()
             except OSError as exc:
-                raise ValueError(
-                    f"Unable to read file-backed secret for `{field_name}` from `{file_path}`."
-                ) from exc
+                raise ValueError(f"Unable to read file-backed secret for `{field_name}` from `{file_path}`.") from exc
             object.__setattr__(self, field_name, file_value)
+        return self
+
+    @model_validator(mode="after")
+    def validate_mikrotik_config(self) -> "Settings":
+        """Reject malformed or ambiguous MikroTik targets during application startup."""
+        self.configured_mikrotik_targets
         return self
 
     @model_validator(mode="after")
@@ -280,6 +300,46 @@ class Settings(BaseSettings):
             dynamic_max_firewall_rules=self.mikrotik_dynamic_max_firewall_rules,
             dynamic_max_queues=self.mikrotik_dynamic_max_queues,
         )
+
+    @property
+    def configured_mikrotik_targets(self) -> tuple[MikrotikSettings, ...]:
+        """Return explicit JSON targets or the backward-compatible named targets."""
+        base = self.mikrotik
+        raw_targets = str(self.mikrotik_targets or "").strip()
+        if raw_targets:
+            try:
+                parsed = json.loads(raw_targets)
+            except json.JSONDecodeError as exc:
+                raise ValueError("MIKROTIK_TARGETS must be a valid JSON object") from exc
+            if not isinstance(parsed, dict):
+                raise ValueError("MIKROTIK_TARGETS must map target names to connection objects")
+            targets = tuple(_mikrotik_target_from_mapping(base, str(name), value) for name, value in parsed.items())
+        else:
+            targets = tuple(
+                target
+                for target in (
+                    replace(
+                        base,
+                        name="primary",
+                        host=str(self.mikrotik_host or "").strip(),
+                        username=str(self.mikrotik_username or "").strip(),
+                        password=str(self.mikrotik_password or ""),
+                    ),
+                    replace(
+                        base,
+                        name="regional-office",
+                        host=str(self.ro_mikrotik_host or "").strip(),
+                        port=self.ro_mikrotik_port,
+                        username=str(self.ro_mikrotik_username or "").strip(),
+                        password=str(self.ro_mikrotik_password or ""),
+                    ),
+                )
+                if target.host
+            )
+        normalized_hosts = [target.host.strip().lower() for target in targets]
+        if len(normalized_hosts) != len(set(normalized_hosts)):
+            raise ValueError("Mikrotik target hosts must be unique")
+        return targets
 
     @property
     def monitor(self) -> MonitorSettings:
@@ -470,6 +530,26 @@ class Settings(BaseSettings):
     def is_development(self) -> bool:
         """Return True when running in local development mode."""
         return self.app.is_development
+
+
+def _mikrotik_target_from_mapping(base: MikrotikSettings, name: str, value: object) -> MikrotikSettings:
+    """Validate one target without allowing silent configuration typos."""
+    normalized_name = name.strip()
+    if not normalized_name or not isinstance(value, dict):
+        raise ValueError("Each MIKROTIK_TARGETS entry must have a name and connection object")
+    allowed = {"host", "port", "username", "password"}
+    unknown = sorted(set(value) - allowed)
+    if unknown:
+        raise ValueError(f"Unknown MIKROTIK_TARGETS fields for {normalized_name}: {', '.join(unknown)}")
+    host = str(value.get("host") or "").strip()
+    username = str(value.get("username") or "").strip()
+    password = str(value.get("password") or "")
+    raw_port = value.get("port", 8728)
+    if not host or not username or not password:
+        raise ValueError(f"Mikrotik target {normalized_name} requires host, username, and password")
+    if isinstance(raw_port, bool) or not isinstance(raw_port, int) or not 1 <= raw_port <= 65535:
+        raise ValueError(f"Mikrotik target {normalized_name} port must be an integer in 1..65535")
+    return replace(base, name=normalized_name, host=host, port=raw_port, username=username, password=password)
 
 
 settings = Settings()

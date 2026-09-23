@@ -1,4 +1,4 @@
-.PHONY: setup precommit-install precommit-run lint format typecheck test test-fast test-unit test-integration test-slow test-mysql migration-check ci backend scheduler dashboard docker-up docker-logs security
+.PHONY: setup precommit-install precommit-run lint lint-staged format format-check dependency-check typecheck test test-fast test-unit test-integration test-slow test-mysql migration-check ci backend-check backend scheduler frontend-check docker-up docker-logs security security-dependencies security-bandit security-semgrep
 
 setup:
 	python -m pip install --upgrade pip
@@ -11,10 +11,19 @@ precommit-run:
 	pre-commit run --all-files
 
 lint:
-	ruff check backend dashboard scripts tests
+	ruff check backend shared scripts tests
+
+lint-staged:
+	ruff check --select B,I,UP,SIM backend/app/services/auth backend/app/repositories/alert_repository.py backend/app/repositories/incident_repository.py
 
 format:
-	ruff format backend dashboard scripts tests
+	ruff format backend shared scripts tests
+
+format-check:
+	ruff format --check backend shared scripts tests
+
+dependency-check:
+	python -m pip check
 
 typecheck:
 	mypy --config-file mypy.ini
@@ -42,7 +51,12 @@ migration-check:
 	test "$$(alembic heads | grep -c '(head)' || true)" -eq 1
 	alembic check
 
-ci: lint typecheck test
+frontend-check:
+	cd frontend && pnpm lint && pnpm typecheck && pnpm test && pnpm build
+
+backend-check: dependency-check lint lint-staged format-check typecheck test
+
+ci: backend-check frontend-check
 
 backend:
 	uvicorn backend.app.main:app --reload
@@ -56,7 +70,13 @@ docker-up:
 docker-logs:
 	docker compose logs --tail=100 backend scheduler frontend
 
-security:
+security: security-dependencies security-bandit security-semgrep
+
+security-dependencies:
 	pip-audit -r requirements/backend.txt
+
+security-bandit:
 	bandit -q -r backend scripts -x tests,venv
-	semgrep scan --config p/security-audit --config p/python --error --metrics=off --exclude venv --exclude tests backend scripts
+
+security-semgrep:
+	semgrep scan --config p/security-audit --config p/python --error --metrics=off --exclude venv --exclude tests backend shared scripts

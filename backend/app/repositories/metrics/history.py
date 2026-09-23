@@ -80,6 +80,9 @@ class MetricHistoryMixin(MetricRepositoryBase):
         status: str | None = None,
         checked_from: datetime | None = None,
         checked_to: datetime | None = None,
+        *,
+        site: str | None = None,
+        device_type: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return recent metric rows in API dictionary form."""
         query = self._recent_metric_rows_query(
@@ -90,6 +93,10 @@ class MetricHistoryMixin(MetricRepositoryBase):
             checked_from=checked_from,
             checked_to=checked_to,
         )
+        if site:
+            query = query.where(Device.site == site)
+        if device_type:
+            query = query.where(Device.device_type == device_type)
         rows = (await self.db.execute(query.order_by(desc(Metric.checked_at), desc(Metric.id)).limit(limit))).all()
         return [self._metric_row_payload(row) for row in rows]
 
@@ -187,11 +194,7 @@ class MetricHistoryMixin(MetricRepositoryBase):
                     and_(Metric.checked_at == cursor_checked_at, Metric.id < cursor_id),
                 )
             )
-        rows = (
-            await self.db.execute(
-                query.order_by(desc(Metric.checked_at), desc(Metric.id)).limit(limit + 1)
-            )
-        ).all()
+        rows = (await self.db.execute(query.order_by(desc(Metric.checked_at), desc(Metric.id)).limit(limit + 1))).all()
         has_more = len(rows) > limit
         return [self._metric_row_payload(row) for row in rows[:limit]], has_more
 

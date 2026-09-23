@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 import statistics
 import time
@@ -80,13 +81,28 @@ def _write_json(path: str | None, payload: dict) -> None:
     target.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
 
 
+def _auth_headers(*, api_key: str, bearer_token: str) -> dict[str, str]:
+    """Select one credential so service-key scopes cannot mask an admin token."""
+    if api_key and bearer_token:
+        raise ValueError("Choose an API key or a bearer token, not both.")
+    if bearer_token:
+        return {"authorization": f"Bearer {bearer_token}"}
+    return {"x-api-key": api_key} if api_key else {}
+
+
 async def main() -> None:
     """Run the command-line workflow from parsed arguments."""
     parser = argparse.ArgumentParser(description="Benchmark a set of backend endpoints.")
     parser.add_argument("--base-url", default="http://localhost:8000", help="Base backend URL.")
     parser.add_argument("--runs", type=int, default=5, help="Number of runs per endpoint.")
     parser.add_argument("--path", action="append", dest="paths", help="Endpoint path to benchmark. Can be repeated.")
-    parser.add_argument("--api-key", default="", help="Optional x-api-key header.")
+    auth = parser.add_mutually_exclusive_group()
+    auth.add_argument("--api-key", default="", help="Optional x-api-key header.")
+    auth.add_argument(
+        "--bearer-token",
+        default=os.environ.get("BENCHMARK_BEARER_TOKEN", ""),
+        help="Admin access token; prefer BENCHMARK_BEARER_TOKEN to keep it out of command arguments.",
+    )
     parser.add_argument(
         "--profile",
         choices=["custom", "ci", "strict"],
@@ -99,7 +115,10 @@ async def main() -> None:
     args = parser.parse_args()
 
     paths = args.paths or DEFAULT_PATHS
-    headers = {"x-api-key": args.api_key} if args.api_key else {}
+    try:
+        headers = _auth_headers(api_key=args.api_key, bearer_token=args.bearer_token)
+    except ValueError as exc:
+        parser.error(str(exc))
     resolved_max_p95_ms, resolved_max_max_ms = _resolve_thresholds(
         profile=str(args.profile),
         max_p95_ms=float(args.max_p95_ms),
@@ -110,9 +129,7 @@ async def main() -> None:
         results = await asyncio.gather(*[_measure_path(client, path, args.runs) for path in paths])
 
     print(f"Benchmark base URL: {args.base_url}")
-    print(
-        f"Threshold profile={args.profile} max_p95_ms={resolved_max_p95_ms:.2f} max_max_ms={resolved_max_max_ms:.2f}"
-    )
+    print(f"Threshold profile={args.profile} max_p95_ms={resolved_max_p95_ms:.2f} max_max_ms={resolved_max_max_ms:.2f}")
     threshold_failures: list[str] = []
     for result in results:
         print(

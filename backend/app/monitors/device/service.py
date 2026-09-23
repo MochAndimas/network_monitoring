@@ -12,9 +12,13 @@ from .printer_snmp import collect_printer_snmp_metrics
 DEVICE_TYPES = ["nas", "nvr", "switch", "access_point", "voip", "printer"]
 
 
-async def run_device_checks(db: AsyncSession, *, site: str | None = None, excluded_sites: set[str] | None = None) -> list[dict]:
+async def run_device_checks(
+    db: AsyncSession, *, site: str | None = None, excluded_sites: set[str] | None = None
+) -> list[dict]:
     """Run device checks for monitoring collection."""
-    devices = await DeviceRepository(db).list_by_types(DEVICE_TYPES, active_only=True, site=site, excluded_sites=excluded_sites)
+    devices = await DeviceRepository(db).list_by_types(
+        DEVICE_TYPES, active_only=True, site=site, excluded_sites=excluded_sites
+    )
     return [
         metric
         for device_metrics in await bounded_gather([_build_device_metrics(device) for device in devices])

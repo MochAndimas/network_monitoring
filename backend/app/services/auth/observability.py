@@ -47,4 +47,3 @@ async def build_auth_observability_summary(db: AsyncSession) -> dict[str, int]:
         "login_rate_limited_window": int(login_rate_limited_window or 0),
         "revoked_sessions_window": int(revoked_sessions_window or 0),
     }
-

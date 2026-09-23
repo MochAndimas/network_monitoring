@@ -1,5 +1,6 @@
 """Latest metric snapshot query operations."""
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import and_, case, desc, func, or_, select, tuple_
@@ -73,24 +74,21 @@ class MetricLatestMixin(MetricRepositoryBase):
             metric_name_sort,
             metric_id_sort,
         ) = MetricLatestMixin._latest_metric_sort_columns()
-        query = (
-            select(
-                LatestMetric.metric_id.label("id"),
-                LatestMetric.device_id,
-                Device.name.label("device_name"),
-                LatestMetric.metric_name,
-                LatestMetric.metric_value,
-                LatestMetric.metric_value_numeric,
-                LatestMetric.status,
-                LatestMetric.unit,
-                LatestMetric.checked_at,
-                device_type_priority.label("sort_device_type_priority"),
-                internet_target_name_priority.label("sort_internet_target_name_priority"),
-                device_name_sort.label("sort_device_name"),
-                metric_name_sort.label("sort_metric_name"),
-            )
-            .outerjoin(Device, Device.id == LatestMetric.device_id)
-        )
+        query = select(
+            LatestMetric.metric_id.label("id"),
+            LatestMetric.device_id,
+            Device.name.label("device_name"),
+            LatestMetric.metric_name,
+            LatestMetric.metric_value,
+            LatestMetric.metric_value_numeric,
+            LatestMetric.status,
+            LatestMetric.unit,
+            LatestMetric.checked_at,
+            device_type_priority.label("sort_device_type_priority"),
+            internet_target_name_priority.label("sort_internet_target_name_priority"),
+            device_name_sort.label("sort_device_name"),
+            metric_name_sort.label("sort_metric_name"),
+        ).outerjoin(Device, Device.id == LatestMetric.device_id)
         if device_id is not None:
             query = query.where(LatestMetric.device_id == device_id)
         return query.order_by(
@@ -120,7 +118,9 @@ class MetricLatestMixin(MetricRepositoryBase):
         device_id: int | None = None,
     ) -> tuple[list[dict], int]:
         """Return paginated latest snapshot rows and the matching total count."""
-        rows = (await self.db.execute(self._latest_metrics_query(device_id=device_id).offset(offset).limit(limit))).all()
+        rows = (
+            await self.db.execute(self._latest_metrics_query(device_id=device_id).offset(offset).limit(limit))
+        ).all()
         payload = [self._metric_row_payload(row) for row in rows]
         if offset == 0 and len(payload) < limit:
             return payload, len(payload)
@@ -254,9 +254,14 @@ class MetricLatestMixin(MetricRepositoryBase):
             query = query.where(LatestMetric.device_id == device_id)
         return int(await self.db.scalar(query) or 0)
 
-    async def summarize_collector_health(self, *, checked_from) -> list[dict]:
+    async def summarize_collector_health(self, *, checked_from: datetime) -> list[dict]:
         """Aggregate recent collector outcomes by site, device type, and protocol."""
-        collection_names = {"ping_collection_status", "printer_snmp_collection_status", "nas_snmp_collection_status", "mikrotik_api"}
+        collection_names = {
+            "ping_collection_status",
+            "printer_snmp_collection_status",
+            "nas_snmp_collection_status",
+            "mikrotik_api",
+        }
         collector_name = case(
             (Metric.metric_name == "ping_collection_status", "icmp"),
             (Metric.metric_name == "printer_snmp_collection_status", "printer_snmp"),
@@ -265,34 +270,67 @@ class MetricLatestMixin(MetricRepositoryBase):
             else_="unknown",
         ).label("collector")
         site_name = func.coalesce(func.nullif(Device.site, ""), "Unassigned").label("site")
-        protocol = func.coalesce(func.nullif(Metric.unit, ""), case((Metric.metric_name == "ping_collection_status", "icmp"), (Metric.metric_name == "mikrotik_api", "routeros_api"), else_="unknown")).label("protocol")
-        rows = (await self.db.execute(
-            select(collector_name, site_name, Device.device_type.label("device_type"), protocol,
-                   func.count(Metric.id).label("sample_count"),
-                   func.sum(case((Metric.metric_value == "ok", 1), else_=0)).label("success_count"),
-                   func.sum(case((Metric.metric_value == "timeout", 1), else_=0)).label("timeout_count"),
-                   func.sum(case((Metric.metric_value == "unsupported_oid", 1), else_=0)).label("unsupported_oid_count"),
-                   func.max(Metric.checked_at).label("last_checked_at"))
-            .select_from(Metric).join(Device, Device.id == Metric.device_id)
-            .where(Device.is_active.is_(True), Metric.metric_name.in_(collection_names), Metric.checked_at >= checked_from)
-            .group_by(collector_name, site_name, Device.device_type, protocol)
-            .order_by(collector_name.asc(), site_name.asc(), Device.device_type.asc(), protocol.asc())
-        )).all()
-        return [{"collector": str(row.collector), "site": str(row.site), "device_type": str(row.device_type), "protocol": str(row.protocol), "sample_count": int(row.sample_count or 0), "success_count": int(row.success_count or 0), "timeout_count": int(row.timeout_count or 0), "unsupported_oid_count": int(row.unsupported_oid_count or 0), "last_checked_at": row.last_checked_at} for row in rows]
-
-    async def summarize_latest_snapshot_status_counts(self) -> dict[str, int]:
-        """Summarize latest metric statuses into device-level health counts."""
+        protocol = func.coalesce(
+            func.nullif(Metric.unit, ""),
+            case(
+                (Metric.metric_name == "ping_collection_status", "icmp"),
+                (Metric.metric_name == "mikrotik_api", "routeros_api"),
+                else_="unknown",
+            ),
+        ).label("protocol")
         rows = (
             await self.db.execute(
                 select(
-                    LatestMetric.device_id,
-                    func.lower(func.coalesce(LatestMetric.status, "unknown")).label("status"),
+                    collector_name,
+                    site_name,
+                    Device.device_type.label("device_type"),
+                    protocol,
+                    func.count(Metric.id).label("sample_count"),
+                    func.sum(case((Metric.metric_value == "ok", 1), else_=0)).label("success_count"),
+                    func.sum(case((Metric.metric_value == "timeout", 1), else_=0)).label("timeout_count"),
+                    func.sum(case((Metric.metric_value == "unsupported_oid", 1), else_=0)).label(
+                        "unsupported_oid_count"
+                    ),
+                    func.max(Metric.checked_at).label("last_checked_at"),
                 )
+                .select_from(Metric)
+                .join(Device, Device.id == Metric.device_id)
+                .where(
+                    Device.is_active.is_(True),
+                    Metric.metric_name.in_(collection_names),
+                    Metric.checked_at >= checked_from,
+                )
+                .group_by(collector_name, site_name, Device.device_type, protocol)
+                .order_by(collector_name.asc(), site_name.asc(), Device.device_type.asc(), protocol.asc())
             )
         ).all()
+        return [
+            {
+                "collector": str(row.collector),
+                "site": str(row.site),
+                "device_type": str(row.device_type),
+                "protocol": str(row.protocol),
+                "sample_count": int(row.sample_count or 0),
+                "success_count": int(row.success_count or 0),
+                "timeout_count": int(row.timeout_count or 0),
+                "unsupported_oid_count": int(row.unsupported_oid_count or 0),
+                "last_checked_at": row.last_checked_at,
+            }
+            for row in rows
+        ]
+
+    async def summarize_latest_snapshot_status_counts(self, *, device_id: int | None = None) -> dict[str, int]:
+        """Summarize all metrics in the device scope, independently of pagination."""
+        query = select(
+            LatestMetric.device_id,
+            func.lower(func.coalesce(LatestMetric.status, "unknown")).label("status"),
+        )
+        if device_id is not None:
+            query = query.where(LatestMetric.device_id == device_id)
+        rows = (await self.db.execute(query)).all()
         device_statuses: dict[int, list[str]] = {}
-        for device_id, status in rows:
-            device_statuses.setdefault(int(device_id), []).append(str(status or "unknown"))
+        for current_device_id, status in rows:
+            device_statuses.setdefault(int(current_device_id), []).append(str(status or "unknown"))
 
         counts: dict[str, int] = {}
         for statuses in device_statuses.values():
@@ -342,10 +380,7 @@ class MetricLatestMixin(MetricRepositoryBase):
             if status.lower() in UP_STATUSES
         ]
         if not up_pairs:
-            return {
-                f"{device_id}:{metric_name}": "-"
-                for device_id, metric_name, _checked_at, _status in latest_pairs
-            }
+            return {f"{device_id}:{metric_name}": "-" for device_id, metric_name, _checked_at, _status in latest_pairs}
 
         streak_rows = (
             await self.db.execute(
@@ -354,8 +389,7 @@ class MetricLatestMixin(MetricRepositoryBase):
                     LatestMetric.metric_name,
                     LatestMetric.checked_at,
                     LatestMetric.uptime_streak_started_at,
-                )
-                .where(tuple_(LatestMetric.device_id, LatestMetric.metric_name).in_(up_pairs))
+                ).where(tuple_(LatestMetric.device_id, LatestMetric.metric_name).in_(up_pairs))
             )
         ).all()
         streak_map = {

@@ -72,6 +72,7 @@ class MikrotikSettings:
     dynamic_max_interfaces: int
     dynamic_max_firewall_rules: int
     dynamic_max_queues: int
+    name: str = "primary"
 
 
 @dataclass(frozen=True)

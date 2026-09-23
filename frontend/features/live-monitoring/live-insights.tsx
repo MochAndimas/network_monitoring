@@ -1,6 +1,7 @@
 import { PlotlyChart, statusChartColor } from "@/components/charts/plotly-chart";
 import { DataTable } from "@/components/ui/data-table";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { LiveActiveAlertSummary } from "@/features/alerts/active-alert-summary";
 import type { MetricSample } from "./types";
 
 function countBy(items: readonly MetricSample[], field: "device_name" | "metric_name" | "status") {
@@ -11,22 +12,23 @@ function countBy(items: readonly MetricSample[], field: "device_name" | "metric_
   }, new Map<string, number>())].sort(([, left], [, right]) => right - left);
 }
 
-export function LiveInsights({ samples, statusSummary }: { samples: MetricSample[]; statusSummary: Record<string, number> }) {
+export function LiveInsights({ samples, statusSummary, showActiveAlerts }: { samples: MetricSample[]; statusSummary: Record<string, number>; showActiveAlerts: boolean }) {
   const statuses = Object.entries(statusSummary);
   const activeDevices = countBy(samples, "device_name").slice(0, 6);
   const frequentMetrics = countBy(samples, "metric_name").slice(0, 6);
 
   return <section>
     <h2>Insight Analisis</h2>
+    {showActiveAlerts ? <LiveActiveAlertSummary /> : null}
     <div className="two-column">
       <section className="insight-distribution">
-        <h3>Distribusi Status</h3>
+        <h3>Kesehatan Perangkat dari Metrik</h3>
         <PlotlyChart
-          ariaLabel="Distribusi status snapshot"
+          ariaLabel="Distribusi status perangkat berdasarkan snapshot metrik"
           data={[{ type: "pie", labels: statuses.map(([status]) => status), values: statuses.map(([, total]) => total), marker: { colors: statuses.map(([status]) => statusChartColor(status)) }, textinfo: "none", hovertemplate: "%{label}: %{value}<extra></extra>" }]}
           layout={{ showlegend: true, margin: { l: 24, r: 24, t: 24, b: 24 } }}
         />
-        <DataTable columns={[{ key: "status", label: "Status", render: ([status]) => <StatusBadge value={status} /> }, { key: "total", label: "Jumlah", render: ([, total]) => total }]} rows={statuses} />
+        <DataTable columns={[{ key: "status", label: "Status agregat", render: ([status]) => <StatusBadge value={status} /> }, { key: "total", label: "Jumlah perangkat", render: ([, total]) => total }]} rows={statuses} pageSize={null} />
       </section>
       <section className="insight-stack">
         <h3>Device Paling Aktif</h3>

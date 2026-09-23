@@ -11,10 +11,12 @@ from ..core.time import now
 
 class Threshold(Base):
     """SQLAlchemy ORM model for Threshold records."""
+
     __tablename__ = "thresholds"
+    __table_args__ = (Index("ix_thresholds_key", "key"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     value: Mapped[float] = mapped_column(Float, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
@@ -33,7 +35,7 @@ class ThresholdOverride(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     threshold_key: Mapped[str] = mapped_column(String(100), nullable=False)
     value: Mapped[float] = mapped_column(Float, nullable=False)
-    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id"), nullable=True, index=True)
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id"), nullable=True)
     device_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     site: Mapped[str | None] = mapped_column(String(100), nullable=True)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -54,7 +56,7 @@ class MaintenanceWindow(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
-    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id"), nullable=True, index=True)
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id"), nullable=True)
     site: Mapped[str | None] = mapped_column(String(100), nullable=True)
     starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     ends_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

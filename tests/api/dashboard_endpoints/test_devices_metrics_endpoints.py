@@ -4,6 +4,7 @@ This module contains automated regression and validation scenarios.
 """
 
 from .common import (
+    _admin_headers,
     _seed_devices_and_metrics,
     Alert,
     API_HEADERS,
@@ -18,6 +19,7 @@ from .common import (
     timedelta,
     utcnow,
 )
+
 
 def test_devices_endpoint_returns_latest_status():
     with client_context() as (client, session_factory):
@@ -59,6 +61,7 @@ def test_devices_endpoint_returns_latest_status():
         assert status_summary_response.status_code == 200
         assert status_summary_response.json() == {"down": 1, "up": 1}
 
+
 def test_create_update_and_delete_device_endpoint():
     with client_context() as (client, session_factory):
         create_response = client.post(
@@ -83,7 +86,7 @@ def test_create_update_and_delete_device_endpoint():
         assert created_payload["latest_status"] == "unknown"
 
         update_response = client.put(
-            f'/devices/{created_payload["id"]}',
+            f"/devices/{created_payload['id']}",
             headers=API_HEADERS,
             json={
                 "name": "AP Lobby Updated",
@@ -127,8 +130,8 @@ def test_create_update_and_delete_device_endpoint():
 
         run(seed_related_rows())
 
-        delete_response = client.delete(f'/devices/{created_payload["id"]}', headers=API_HEADERS)
-        get_deleted_response = client.get(f'/devices/{created_payload["id"]}', headers=API_HEADERS)
+        delete_response = client.delete(f"/devices/{created_payload['id']}", headers=API_HEADERS)
+        get_deleted_response = client.get(f"/devices/{created_payload['id']}", headers=API_HEADERS)
 
         async def fetch_alert_device_id():
             async with session_factory() as db:
@@ -137,6 +140,7 @@ def test_create_update_and_delete_device_endpoint():
         assert delete_response.status_code == 204
         assert get_deleted_response.status_code == 404
         assert run(fetch_alert_device_id()) is None
+
 
 def test_device_type_metadata_and_validation():
     with client_context() as (client, _session_factory):
@@ -177,8 +181,10 @@ def test_device_site_cannot_be_empty_or_whitespace():
         assert missing_site_response.status_code == 422
         assert blank_site_response.status_code == 422
 
+
 def test_metrics_history_filters():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -233,6 +239,7 @@ def test_metrics_history_filters():
         assert names_response.status_code == 200
         assert names_response.json() == ["cpu_percent", "memory_percent"]
 
+
 def test_devices_endpoint_supports_filters_and_pagination():
     with client_context() as (client, session_factory):
         run(
@@ -241,7 +248,12 @@ def test_devices_endpoint_supports_filters_and_pagination():
                 [
                     {"name": "AP Lobby", "ip_address": "192.168.1.40", "device_type": "access_point"},
                     {"name": "Switch Core", "ip_address": "192.168.1.30", "device_type": "switch"},
-                    {"name": "Printer Finance", "ip_address": "192.168.1.50", "device_type": "printer", "is_active": False},
+                    {
+                        "name": "Printer Finance",
+                        "ip_address": "192.168.1.50",
+                        "device_type": "printer",
+                        "is_active": False,
+                    },
                 ],
                 lambda devices: [
                     {
@@ -286,6 +298,7 @@ def test_devices_endpoint_supports_filters_and_pagination():
         assert paged_payload["meta"]["limit"] == 1
         assert len(paged_payload["items"]) == 1
 
+
 def test_devices_paged_supports_cursor_pagination():
     with client_context() as (client, session_factory):
         run(
@@ -318,7 +331,7 @@ def test_devices_paged_supports_cursor_pagination():
         assert first_payload["meta"]["next_cursor"]
 
         second_response = client.get(
-            f'/devices/paged?limit=2&cursor={first_payload["meta"]["next_cursor"]}',
+            f"/devices/paged?limit=2&cursor={first_payload['meta']['next_cursor']}",
             headers=API_HEADERS,
         )
         assert second_response.status_code == 200
@@ -329,8 +342,10 @@ def test_devices_paged_supports_cursor_pagination():
         assert second_payload["meta"]["has_more"] is False
         assert second_payload["meta"]["next_cursor"] is None
 
+
 def test_metrics_history_supports_time_window_filters():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -383,8 +398,10 @@ def test_metrics_history_supports_time_window_filters():
         assert paged_payload["meta"]["total"] == 1
         assert len(paged_payload["items"]) == 1
 
+
 def test_metrics_history_paged_supports_bulk_metric_names_with_per_metric_limit():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -445,6 +462,7 @@ def test_metrics_history_paged_supports_bulk_metric_names_with_per_metric_limit(
 
 def test_metrics_history_paged_supports_cursor_pagination():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -513,6 +531,7 @@ def test_metrics_history_paged_rejects_deep_offset_pagination():
 
 def test_metrics_daily_summary_reads_rollup_table_with_filters():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -570,8 +589,10 @@ def test_metrics_daily_summary_reads_rollup_table_with_filters():
         assert payload["items"][0]["average_ping_ms"] == 15.5
         assert payload["items"][0]["average_packet_loss_percent"] == 1.25
 
+
 def test_metrics_daily_summary_supports_pagination():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -608,8 +629,10 @@ def test_metrics_daily_summary_supports_pagination():
         assert len(payload["items"]) == 1
         assert payload["items"][0]["rollup_date"] == "2026-04-21"
 
+
 def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -677,8 +700,10 @@ def test_latest_snapshot_endpoint_is_unfiltered_and_paged():
         assert uptime_map
         assert any(value == "300" for value in uptime_map.values())
 
+
 def test_latest_snapshot_paged_supports_cursor_pagination():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -731,7 +756,7 @@ def test_latest_snapshot_paged_supports_cursor_pagination():
         assert first_payload["meta"]["next_cursor"]
 
         second_response = client.get(
-            f'/metrics/latest-snapshot/paged?limit=2&cursor={first_payload["meta"]["next_cursor"]}',
+            f"/metrics/latest-snapshot/paged?limit=2&cursor={first_payload['meta']['next_cursor']}",
             headers=API_HEADERS,
         )
         assert second_response.status_code == 200
@@ -763,6 +788,7 @@ def test_latest_snapshot_uptime_map_rejects_deep_offset_pagination():
 
 def test_metric_freshness_summary_groups_by_collector_and_site():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -827,6 +853,7 @@ def test_metric_freshness_summary_groups_by_collector_and_site():
 
 def test_metrics_history_context_endpoint():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -872,8 +899,10 @@ def test_metrics_history_context_endpoint():
         assert "latest_snapshot_status_summary" in payload
         assert "snapshot_uptime_map" in payload
 
+
 def test_metrics_history_live_endpoint_returns_lightweight_sample():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -930,6 +959,7 @@ def test_metrics_history_live_endpoint_returns_lightweight_sample():
 
 def test_metrics_history_live_accepts_expanded_selected_device_trend_limit():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -990,6 +1020,7 @@ def test_metrics_history_live_accepts_expanded_selected_device_trend_limit():
 
 def test_metrics_history_live_global_snapshot_summary_remains_representative_when_paged():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -1033,8 +1064,55 @@ def test_metrics_history_live_global_snapshot_summary_remains_representative_whe
         assert len(payload["latest_snapshot"]["items"]) == 1
         assert payload["latest_snapshot_status_summary"] == {"down": 1, "up": 1}
 
+
+def test_live_device_health_summary_is_independent_of_snapshot_page():
+    with client_context() as (client, session_factory):
+
+        async def scenario():
+            async with session_factory() as db:
+                devices = await DeviceRepository(db).upsert_devices(
+                    [
+                        {"name": "Printer A", "ip_address": "192.0.2.10", "device_type": "printer"},
+                        {"name": "Printer B", "ip_address": "192.0.2.11", "device_type": "printer"},
+                    ]
+                )
+                await MetricRepository(db).create_metrics(
+                    [
+                        {
+                            "device_id": device.id,
+                            "metric_name": metric_name,
+                            "metric_value": value,
+                            "status": status,
+                            "checked_at": utcnow(),
+                        }
+                        for device, metric_name, value, status in [
+                            (devices[0], "ping", "10", "up"),
+                            (devices[0], "printer_toner_black_percent", "0", "error"),
+                            (devices[1], "ping", "20", "up"),
+                        ]
+                    ]
+                )
+                return devices[0].id
+
+        device_id = run(scenario())
+        # The first page only shows successful ping; the error is on page two.
+        # Even an empty page must retain the whole selected device's health.
+        for offset in (0, 1, 2):
+            response = client.get(
+                "/metrics/history/live",
+                params={"device_id": device_id, "snapshot_limit": 1, "snapshot_offset": offset},
+                headers=API_HEADERS,
+            )
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["latest_snapshot"]["meta"]["total"] == 2
+            assert len(payload["latest_snapshot"]["items"]) == (1 if offset < 2 else 0)
+            assert payload["latest_snapshot_status_summary"] == {"down": 1}
+
+
 def test_latest_snapshot_status_summary_preserves_fallback_first_status_behavior():
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -1064,7 +1142,9 @@ def test_latest_snapshot_status_summary_preserves_fallback_first_status_behavior
 
         run(scenario())
         response = client.get("/metrics/latest-snapshot/status-summary", headers=API_HEADERS)
-        context_response = client.get("/metrics/history/context?snapshot_limit=10&snapshot_offset=0", headers=API_HEADERS)
+        context_response = client.get(
+            "/metrics/history/context?snapshot_limit=10&snapshot_offset=0", headers=API_HEADERS
+        )
 
         assert response.status_code == 200
         assert context_response.status_code == 200
@@ -1073,9 +1153,11 @@ def test_latest_snapshot_status_summary_preserves_fallback_first_status_behavior
         assert status_summary == {"ok": 1}
         assert context_summary == status_summary
 
+
 def test_threshold_endpoints_and_update():
     with client_context() as (client, _session_factory):
-        list_response = client.get("/thresholds", headers=API_HEADERS)
+        admin_headers = _admin_headers(client, _session_factory)
+        list_response = client.get("/thresholds", headers=admin_headers)
 
         assert list_response.status_code == 200
         payload = list_response.json()
@@ -1111,17 +1193,19 @@ def test_threshold_endpoints_and_update():
         assert any(item["key"] == "printer_ink_warning" for item in payload)
         assert any(item["key"] == "printer_ink_critical" for item in payload)
 
-        update_response = client.put("/thresholds/cpu_warning", headers=API_HEADERS, json={"value": 92})
+        update_response = client.put("/thresholds/cpu_warning", headers=admin_headers, json={"value": 92})
         assert update_response.status_code == 200
         assert update_response.json()["value"] == 92
 
-        list_response_after = client.get("/thresholds", headers=API_HEADERS)
+        list_response_after = client.get("/thresholds", headers=admin_headers)
         cpu_threshold = next(item for item in list_response_after.json() if item["key"] == "cpu_warning")
         assert cpu_threshold["value"] == 92
 
 
 def test_threshold_overrides_maintenance_windows_and_site_filters():
     with client_context() as (client, session_factory):
+        admin_headers = _admin_headers(client, session_factory)
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -1157,13 +1241,13 @@ def test_threshold_overrides_maintenance_windows_and_site_filters():
 
         override_response = client.post(
             "/thresholds/overrides",
-            headers=API_HEADERS,
+            headers=admin_headers,
             json={"threshold_key": "ping_latency_warning", "value": 150, "site": "HQ", "description": "HQ override"},
         )
-        overrides_response = client.get("/thresholds/overrides", headers=API_HEADERS)
+        overrides_response = client.get("/thresholds/overrides", headers=admin_headers)
         maintenance_response = client.post(
             "/thresholds/maintenance-windows",
-            headers=API_HEADERS,
+            headers=admin_headers,
             json={
                 "name": "HQ maintenance",
                 "site": "HQ",
@@ -1172,9 +1256,9 @@ def test_threshold_overrides_maintenance_windows_and_site_filters():
                 "reason": "planned work",
             },
         )
-        maintenance_list_response = client.get("/thresholds/maintenance-windows", headers=API_HEADERS)
-        alerts_hq_response = client.get("/alerts/active/paged?site=HQ", headers=API_HEADERS)
-        alerts_branch_response = client.get("/alerts/active/paged?site=Branch", headers=API_HEADERS)
+        maintenance_list_response = client.get("/thresholds/maintenance-windows", headers=admin_headers)
+        alerts_hq_response = client.get("/alerts/active/paged?site=HQ", headers=admin_headers)
+        alerts_branch_response = client.get("/alerts/active/paged?site=Branch", headers=admin_headers)
 
         assert override_response.status_code == 200
         assert override_response.json()["site"] == "HQ"
@@ -1194,11 +1278,11 @@ def test_threshold_overrides_maintenance_windows_and_site_filters():
 
         deactivate_override_response = client.delete(
             f"/thresholds/overrides/{override_response.json()['id']}",
-            headers=API_HEADERS,
+            headers=admin_headers,
         )
         deactivate_window_response = client.delete(
             f"/thresholds/maintenance-windows/{maintenance_response.json()['id']}",
-            headers=API_HEADERS,
+            headers=admin_headers,
         )
 
         assert deactivate_override_response.status_code == 200
@@ -1211,6 +1295,7 @@ def test_long_term_explorer_uses_rollups_and_cold_archive():
     from backend.app.models.metric_site_type_daily_summary import MetricSiteTypeDailySummary
 
     with client_context() as (client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -1273,3 +1358,37 @@ def test_system_performance_budgets_endpoint():
         endpoints = {item["endpoint"] for item in response.json()["items"]}
         assert "/metrics/long-term-explorer" in endpoints
         assert "/metrics/history/live" in endpoints
+
+
+def test_history_site_and_device_type_filters_apply_before_limit():
+    with client_context() as (client, session_factory):
+        run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [
+                    {"name": "HQ switch", "ip_address": "10.10.1.1", "device_type": "switch", "site": "HQ"},
+                    {"name": "HQ printer", "ip_address": "10.10.1.2", "device_type": "printer", "site": "HQ"},
+                    {"name": "Branch switch", "ip_address": "10.10.2.1", "device_type": "switch", "site": "Branch"},
+                ],
+                lambda devices: [
+                    {
+                        "device_id": device.id,
+                        "metric_name": "ping",
+                        "metric_value": "10",
+                        "status": "up",
+                        "unit": "ms",
+                        "checked_at": utcnow() + timedelta(seconds=index),
+                    }
+                    for index, device in enumerate(devices)
+                ],
+            )
+        )
+        for query, expected in [
+            ("site=HQ&device_type=switch&limit=1", ["HQ switch"]),
+            ("site=HQ&limit=1", ["HQ printer"]),
+            ("device_type=switch&limit=1", ["Branch switch"]),
+            ("site=Missing&limit=1", []),
+        ]:
+            response = client.get(f"/metrics/history?{query}", headers=API_HEADERS)
+            assert response.status_code == 200
+            assert [item["device_name"] for item in response.json()] == expected

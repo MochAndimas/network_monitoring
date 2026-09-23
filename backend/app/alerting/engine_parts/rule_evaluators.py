@@ -18,9 +18,21 @@ from .utils import _build_alert_payload, _metric_numeric_value
 
 RuleEvaluator = Callable[[AlertEvaluationContext], None]
 COLLECTION_DEGRADATION_RULES = (
-    ("ping_collection_status", "ping_collection_degraded", "ICMP collector; check monitoring host, VPN, and network route"),
-    ("nas_snmp_collection_status", "nas_snmp_collection_degraded", "NAS SNMP collector; check VPN/ACL UDP 161, community, and SNMP version"),
-    ("printer_snmp_collection_status", "printer_snmp_collection_degraded", "printer SNMP collector; check VPN/ACL UDP 161, community, and SNMP version"),
+    (
+        "ping_collection_status",
+        "ping_collection_degraded",
+        "ICMP collector; check monitoring host, VPN, and network route",
+    ),
+    (
+        "nas_snmp_collection_status",
+        "nas_snmp_collection_degraded",
+        "NAS SNMP collector; check VPN/ACL UDP 161, community, and SNMP version",
+    ),
+    (
+        "printer_snmp_collection_status",
+        "printer_snmp_collection_degraded",
+        "printer SNMP collector; check VPN/ACL UDP 161, community, and SNMP version",
+    ),
 )
 
 
@@ -73,8 +85,12 @@ def evaluate_reachability_alerts(context: AlertEvaluationContext) -> None:
     if ping_value is None:
         return
 
-    warning_threshold = threshold_for_device(context.thresholds, context.threshold_overrides, device, "ping_latency_warning")
-    critical_threshold = threshold_for_device(context.thresholds, context.threshold_overrides, device, "ping_latency_critical")
+    warning_threshold = threshold_for_device(
+        context.thresholds, context.threshold_overrides, device, "ping_latency_warning"
+    )
+    critical_threshold = threshold_for_device(
+        context.thresholds, context.threshold_overrides, device, "ping_latency_critical"
+    )
     if ping_value >= critical_threshold:
         if not _recent_numeric_values_exceed_threshold(context, metric_name="ping", threshold=critical_threshold):
             return
@@ -108,7 +124,9 @@ def evaluate_quality_alerts(context: AlertEvaluationContext) -> None:
         warning_threshold = threshold_for_device(context.thresholds, context.threshold_overrides, device, warning_key)
         critical_threshold = threshold_for_device(context.thresholds, context.threshold_overrides, device, critical_key)
         if value >= critical_threshold:
-            if not _recent_numeric_values_exceed_threshold(context, metric_name=metric_name, threshold=critical_threshold):
+            if not _recent_numeric_values_exceed_threshold(
+                context, metric_name=metric_name, threshold=critical_threshold
+            ):
                 continue
             context.expected_alerts[(device.id, critical_alert)] = _build_alert_payload(
                 device_id=device.id,
@@ -116,7 +134,9 @@ def evaluate_quality_alerts(context: AlertEvaluationContext) -> None:
                 message=f"{device.name} {metric_name} reached {value:.2f}{metric.unit or ''}",
             )
         elif value >= warning_threshold:
-            if not _recent_numeric_values_exceed_threshold(context, metric_name=metric_name, threshold=warning_threshold):
+            if not _recent_numeric_values_exceed_threshold(
+                context, metric_name=metric_name, threshold=warning_threshold
+            ):
                 continue
             context.expected_alerts[(device.id, warning_alert)] = _build_alert_payload(
                 device_id=device.id,
@@ -133,7 +153,13 @@ def evaluate_baseline_anomaly_alerts(context: AlertEvaluationContext) -> None:
     ping_metric = context.latest_metrics.get((device.id, "ping"))
     ping_value = _metric_numeric_value(ping_metric) if ping_metric is not None else None
     ping_baseline = _recent_numeric_average(context, metric_name="ping", skip_latest=True)
-    if ping_value is not None and ping_baseline is not None and ping_baseline >= 1 and ping_value >= ping_baseline * 3:
+    if (
+        ping_metric is not None
+        and ping_value is not None
+        and ping_baseline is not None
+        and ping_baseline >= 1
+        and ping_value >= ping_baseline * 3
+    ):
         context.expected_alerts[(device.id, "ping_latency_anomaly")] = _build_alert_payload(
             device_id=device.id,
             alert_type="ping_latency_anomaly",
@@ -174,7 +200,8 @@ def evaluate_internet_service_alerts(context: AlertEvaluationContext) -> None:
             metric_name="dns_resolution_time",
             threshold=context.thresholds["dns_resolution_warning"],
         ):
-            assert dns_value is not None
+            if dns_value is None:
+                raise ValueError("Latest DNS latency must be numeric when its rolling rule matches")
             context.expected_alerts[(device.id, "slow_dns_resolution")] = _build_alert_payload(
                 device_id=device.id,
                 alert_type="slow_dns_resolution",
@@ -195,7 +222,8 @@ def evaluate_internet_service_alerts(context: AlertEvaluationContext) -> None:
             metric_name="http_response_time",
             threshold=context.thresholds["http_response_warning"],
         ):
-            assert http_value is not None
+            if http_value is None:
+                raise ValueError("Latest HTTP latency must be numeric when its rolling rule matches")
             context.expected_alerts[(device.id, "slow_http_response")] = _build_alert_payload(
                 device_id=device.id,
                 alert_type="slow_http_response",
@@ -258,7 +286,9 @@ def _recent_status_values_match(
     if len(recent_metrics) < required_samples:
         return True
     normalized_status = str(status or "").lower()
-    return sum(1 for metric in recent_metrics if str(metric.status or "").lower() == normalized_status) >= required_samples
+    return (
+        sum(1 for metric in recent_metrics if str(metric.status or "").lower() == normalized_status) >= required_samples
+    )
 
 
 def _recent_numeric_average(
@@ -273,8 +303,7 @@ def _recent_numeric_average(
     recent_metrics = list(device_history.get(metric_name, []))[:sample_window]
     if skip_latest and recent_metrics:
         recent_metrics = recent_metrics[1:]
-    values = [safe_float(metric.metric_value) for metric in recent_metrics]
-    values = [value for value in values if value is not None]
+    values = [value for metric in recent_metrics if (value := safe_float(metric.metric_value)) is not None]
     if len(values) < 3:
         return None
     return sum(values) / len(values)

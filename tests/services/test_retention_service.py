@@ -23,6 +23,7 @@ from backend.app.core.time import utcnow
 from backend.app.services.retention_service import cleanup_monitoring_data
 from tests.test_utils import create_all, drop_all, run
 
+
 def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatch):
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -51,9 +52,7 @@ def test_cleanup_rolls_up_old_raw_metrics_and_prunes_resolved_records(monkeypatc
             remaining_alerts,
             remaining_incidents,
             site_type_summaries,
-        ) = run(
-            _cleanup_old_metrics(SessionLocal, old_timestamp, recent_timestamp, very_old_timestamp)
-        )
+        ) = run(_cleanup_old_metrics(SessionLocal, old_timestamp, recent_timestamp, very_old_timestamp))
 
         assert result["rolled_up_days"] == 2
         assert result["archived_metric_groups"] == 5
@@ -109,7 +108,9 @@ def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypa
     yesterday = now - timedelta(days=1)
 
     try:
-        result, second_result, rollups, remaining_metrics, markers = run(_cleanup_yesterday_metrics(SessionLocal, yesterday))
+        result, second_result, rollups, remaining_metrics, markers = run(
+            _cleanup_yesterday_metrics(SessionLocal, yesterday)
+        )
 
         assert result["rolled_up_days"] == 1
         assert result["archived_metric_groups"] == 0
@@ -419,9 +420,7 @@ async def _cleanup_with_active_down_alert(session_factory, old_timestamp):
                 [{"name": "AP Hallway", "ip_address": "192.168.1.41", "device_type": "access_point"}]
             )
         )[0]
-        await MetricRepository(db).create_metrics(
-            [_metric(device.id, "ping", "timeout", "down", None, old_timestamp)]
-        )
+        await MetricRepository(db).create_metrics([_metric(device.id, "ping", "timeout", "down", None, old_timestamp)])
 
         created_notifications = await evaluate_alerts(db)
         assert [notification["action"] for notification in created_notifications] == ["created"]

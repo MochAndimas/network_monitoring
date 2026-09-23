@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import logging
 import os
 
 from pysnmp.hlapi.asyncio import (
@@ -44,7 +45,7 @@ async def snmp_get(ip: str, community: str, oid: str, timeout: int, retries: int
         try:
             engine.transport_dispatcher.close_dispatcher()
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Transport cleanup failed")
 
 
 async def run_targets(targets: list[tuple[str, str, str]], timeout: int, retries: int) -> None:

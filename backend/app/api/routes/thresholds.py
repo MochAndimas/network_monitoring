@@ -117,7 +117,9 @@ async def deactivate_threshold_override_endpoint(
     return {"ok": True}
 
 
-@router.get("/maintenance-windows", response_model=list[MaintenanceWindowItem], dependencies=[Depends(require_admin_access)])
+@router.get(
+    "/maintenance-windows", response_model=list[MaintenanceWindowItem], dependencies=[Depends(require_admin_access)]
+)
 async def list_maintenance_windows(db: AsyncSession = Depends(get_db)) -> list[MaintenanceWindowItem]:
     """List maintenance windows."""
     return [MaintenanceWindowItem(**row) for row in await list_maintenance_window_rows(db)]

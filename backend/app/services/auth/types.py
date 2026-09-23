@@ -44,4 +44,3 @@ class SessionTokens:
     refresh_token: str
     access_expires_at: datetime
     refresh_expires_at: datetime
-

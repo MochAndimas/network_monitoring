@@ -44,7 +44,10 @@ DEFAULT_THRESHOLDS = {
     "http_response_warning": (1000.0, "HTTP response warning threshold in milliseconds"),
     "mikrotik_connected_clients_warning": (170.0, "Mikrotik connected clients warning threshold"),
     "mikrotik_interface_mbps_warning": (250.0, "Mikrotik interface traffic warning threshold in Mbps"),
-    "mikrotik_firewall_spike_pps_warning": (1000.0, "Mikrotik firewall rule packet-rate spike threshold in packets per second"),
+    "mikrotik_firewall_spike_pps_warning": (
+        1000.0,
+        "Mikrotik firewall rule packet-rate spike threshold in packets per second",
+    ),
     "mikrotik_firewall_spike_mbps_warning": (50.0, "Mikrotik firewall rule traffic spike threshold in Mbps"),
     "printer_ink_warning": (20.0, "Printer ink warning threshold in percent"),
     "printer_ink_critical": (10.0, "Printer ink critical threshold in percent"),
@@ -126,7 +129,9 @@ async def create_threshold_override(db: AsyncSession, payload: dict) -> dict:
         str(payload.get("site") or "").strip() or None,
     ]
     if sum(value is not None for value in scope_values) != 1:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Exactly one override scope is required")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Exactly one override scope is required"
+        )
     row = await ThresholdRepository(db).create_threshold_override(
         {
             "threshold_key": threshold_key,
@@ -160,7 +165,9 @@ async def create_maintenance_window(db: AsyncSession, payload: dict, *, actor: s
     device_id = payload.get("device_id")
     site = str(payload.get("site") or "").strip() or None
     if (device_id is None and site is None) or (device_id is not None and site is not None):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Exactly one maintenance scope is required")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Exactly one maintenance scope is required"
+        )
     row = await ThresholdRepository(db).create_maintenance_window(
         {
             "name": str(payload.get("name") or "").strip() or "Maintenance",
