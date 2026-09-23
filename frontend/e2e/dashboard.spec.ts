@@ -13,7 +13,8 @@ test.describe("dashboard critical path", () => {
       ["Thresholds", "/thresholds"], ["System Health", "/system-health"]
     ] as const;
     for (const [label, path] of routes) {
-      await page.getByRole("link", { name: label }).click();
+      await page.getByRole("button", { name: "Buka navigasi", exact: true }).focus();
+      await page.getByRole("navigation", { name: "Navigasi utama" }).getByRole("link", { name: label, exact: true }).click();
       await expect(page).toHaveURL(new RegExp(`${path === "/" ? "\\/$" : path}$`));
       await expect(page.getByRole("main")).toBeVisible();
     }

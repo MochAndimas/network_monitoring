@@ -10,7 +10,7 @@ export function RequireAuth({ children }: Readonly<{ children: React.ReactNode }
   const router = useRouter();
 
   useEffect(() => {
-    if (!auth.isRestoring && !auth.isAuthenticated) router.replace("/login");
+    if (!auth.isRestoring && !auth.isAuthenticated) router.replace("/login?reason=session-expired");
   }, [auth.isAuthenticated, auth.isRestoring, router]);
 
   if (!auth.isAuthenticated) return <LoadingState label="Memeriksa sesi…" />;
