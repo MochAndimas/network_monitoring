@@ -8,4 +8,7 @@ export async function login(page: Page) {
   await page.getByLabel("Password").fill(process.env.E2E_PASSWORD ?? "");
   await page.getByRole("button", { name: "Masuk" }).click();
   await expect(page).toHaveURL(/\/$/);
+  // The URL changes before cookie-based session restoration has completed.
+  // Navigating away sooner can abort a rotating refresh-token response.
+  await expect(page.getByRole("button", { name: "Buka navigasi cepat", exact: true })).toBeVisible();
 }
