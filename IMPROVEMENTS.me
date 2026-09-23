@@ -1,8 +1,8 @@
 # Backlog Improvement — Network Monitoring
 
 Tanggal audit: 2026-09-08
-Terakhir diselaraskan: 2026-09-22
-Status: In progress — IMP-001/002/004/008 Done; fondasi outbox mencakup service worker (3C7), observability backlog (3C8), dan adapter signal proses (3C9), tetapi worker operasional belum aktif. IMP-003/005/010 In progress; IMP-006/007/009 Open. Toggle tema selesai dengan default light mode.
+Terakhir diselaraskan: 2026-09-23
+Status: In progress — IMP-001/002/003/004/008 Done; fondasi outbox mencakup service worker (3C7), observability backlog (3C8), dan adapter signal proses (3C9), tetapi worker operasional belum aktif. IMP-005/010 In progress; IMP-006/007/009 Open. Toggle tema selesai dengan default light mode.
 Scope: clean code, scalability, maintainability backend, frontend, collector, database, deployment, dan pengujian.
 
 Dokumen ini melengkapi PRD.me. Status selesai di PRD frontend tidak otomatis berarti temuan audit berikut sudah ditutup.
@@ -28,7 +28,7 @@ P2: perbaikan reliability, scalability, dan kemudahan pemeliharaan.
 | --- | --- | --- | --- |
 | IMP-001 | P1 | Hentikan operasi saat gagal memperoleh pipeline lock | Done |
 | IMP-002 | P1 | Selaraskan lock dan ownership collector dengan siklus manual | Done |
-| IMP-003 | P1 | Pulihkan setup development dan CI untuk stack aktual | In progress |
+| IMP-003 | P1 | Pulihkan setup development dan CI untuk stack aktual | Done |
 | IMP-004 | P1 | Perbaiki konfigurasi URL API frontend dalam Docker | Done |
 | IMP-005 | P2 | Pisahkan pengiriman notifikasi dari transaksi alert | In progress |
 | IMP-006 | P2 | Batasi biaya query rolling alert | Open |
@@ -89,7 +89,7 @@ Dampak: fresh checkout tidak memiliki jalur setup dan quality gate yang dapat di
 - [x] Remediasi advisory dependency production frontend dan validasi lint/typecheck/test serta build Docker Node 22 (1D3).
 - [x] Triase empat temuan secret-scan historis; validasi pengecualian fingerprint spesifik dan deteksi temuan baru (1D4).
 - [x] Validasi checkout kandidat lokal bersih: dependency baru, backend/frontend quality gate, pre-commit seluruh file, migrasi MySQL dan smoke non-functional terisolasi (1E1).
-- [ ] Jalankan seluruh quality gate dari fresh checkout tanpa bergantung pada file lokal yang tidak terlacak; verifikasi workflow CI remote, termasuk audit dependency/security dan build Docker backend.
+- [x] Jalankan seluruh quality gate dari fresh checkout tanpa bergantung pada file lokal yang tidak terlacak; verifikasi workflow CI remote, termasuk audit dependency/security dan build Docker backend (1E2, run 35814523319).
 
 Kriteria selesai: setup development dan seluruh quality gate yang diwajibkan berhasil dari checkout bersih, tanpa bergantung pada file lokal yang tidak terlacak.
 
@@ -1072,3 +1072,27 @@ IMP-003 tetap In progress. Seluruh file tracked yang tersedia dan source untrack
 ### Batas dan tahap berikutnya
 
 Snapshot ini membuktikan kandidat lokal dapat dipasang dan diuji dari clone bersih, tetapi bukan commit pada branch proyek atau run GitHub Actions. Source utama masih modified/untracked. Gate E2E browser lengkap, audit ulang kandidat sesuai CI, build backend kandidat, serta workflow remote belum ditutup oleh tahap ini. Lanjutkan pemeriksaan tersebut sebelum menandai IMP-003 Done; jangan menyamakan hasil smoke fixture dengan gate performa IMP-005/006/007/009.
+
+## Penutupan IMP-003 — CI remote dan E2E (1E2, 2026-09-23)
+
+**IMP-003 Done.** Seluruh delapan job GitHub Actions lulus dari checkout commit `e77e1534a5b9fb233d16ac203351a729b11d749c` pada branch `codex/complete-imp-003`: https://github.com/MochAndimas/network_monitoring/actions/runs/35814523319 . Source dan konfigurasi yang sebelumnya hanya ada sebagai file modified/untracked sudah tercakup pada branch tersebut; job remote tidak memakai `.env`, dependency, atau cache proyek operator.
+
+| Gate remote | Hasil |
+| --- | --- |
+| quality | Pre-commit, pip check, Ruff, format, mypy, pyright lulus; 311 test passed / 18 MySQL skipped / 2 warning dependency |
+| migration-smoke | Upgrade MySQL 8.4, single head, schema drift, downgrade/upgrade lulus; 18 test MySQL passed |
+| frontend-quality | Lint, typecheck, 30 test pada 13 file, production build Node 22 lulus; audit production 0 advisory |
+| frontend-e2e | 6 skenario fungsional Chromium passed dalam 21.7 detik, tanpa retry/flaky atau test fungsional yang dilewati |
+| non-functional-smoke | Benchmark, concurrency, kontrol expected failure, observability payload dan artefak laporan lulus |
+| docker-build | Build image backend dan frontend pada runner Linux CI lulus |
+| security-audit | Audit backend 0 vulnerability yang diketahui, Bandit lulus, Semgrep 200 rule/153 file dengan 0 finding |
+| secret-scan | Scan riwayat Git lulus dengan pengecualian fingerprint development yang sudah ditriase |
+
+### Perbaikan yang ditemukan melalui E2E
+
+- Tambahkan job E2E yang sebelumnya belum ada di workflow. Job membuat API SQLite dan frontend production khusus test, memakai akun sintetis, dan menyimpan log/trace. Konfigurasi menolak CI tanpa credential fixture dan flag admin; suite tidak dapat hijau hanya karena seluruh test dilewati.
+- Run awal `35814037662` mengungkap loop pemulihan sesi: halaman login ikut memanggil restore; respons 401 menghapus query aktif sehingga request berulang dan dapat mengganggu login baru. Provider kini tidak melakukan restore di halaman login, meneruskan cancellation signal, dan membatalkan query serta menyimpan sesi kosong ketika expired. Guard memakai tujuan redirect expired yang konsisten. Dua regression test melindungi halaman login dan pencegahan refetch loop.
+- Helper login E2E menunggu tampilan terautentikasi setelah redirect sebelum navigasi selanjutnya, agar tidak memutus respons rotasi token. Test navigasi membuka sidebar lewat kontrol yang tersedia sebelum mengklik link.
+- Snapshot visual dengan baseline yang disetujui tetap merupakan suite opt-in terpisah; tidak diklaim tercakup oleh enam skenario fungsional. Build/perbaikan frontend lokal sudah diterapkan pada tahap ini. Main tidak di-merge dan database operasional tidak digunakan untuk test.
+
+Status In progress dan batasan yang disebut dalam catatan 1A–1E1 adalah riwayat sebelum run sukses di atas. IMP-005/010 tetap In progress; IMP-006/007/009 tetap Open. Penutupan quality gate bukan klaim worker outbox aktif atau benchmark kapasitas produksi selesai.
