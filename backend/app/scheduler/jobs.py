@@ -18,6 +18,7 @@ from ..services.observability_service import (
     mark_scheduler_job_succeeded,
 )
 from ..services.pipeline_control import monitoring_pipeline_guard
+from ..services.collector_ownership import device_collector_ownership
 from ..services.monitoring_service import persist_metrics
 from ..services.retention_service import cleanup_monitoring_data
 from ..models.collector_run import CollectorRun
@@ -109,33 +110,22 @@ def register_jobs(scheduler) -> None:
 
 async def run_internet_job() -> None:
     """Run internet job for scheduled monitoring execution."""
-    await _run_scheduler_job("internet_checks", lambda db: _persist_runner(run_internet_checks, db, lock_scope="internet"))
+    await _run_scheduler_job(
+        "internet_checks", lambda db: _persist_runner(run_internet_checks, db, lock_scope="internet")
+    )
 
 
 async def run_device_job() -> None:
     """Run device job for scheduled monitoring execution."""
-    agent_site = str(settings.monitor.collector_agent_site or "").strip()
-    delegated_sites = {
-        item.strip()
-        for item in str(settings.monitor.collector_agent_sites or "").split(",")
-        if item.strip()
-    }
-    if agent_site:
-        await _run_scheduler_job(
-            "device_checks",
-            lambda db: _persist_runner(
-                lambda session: run_device_checks(session, site=agent_site),
-                db,
-                lock_scope=f"device:{agent_site}",
-            ),
-        )
-        return
+    ownership = device_collector_ownership()
     await _run_scheduler_job(
         "device_checks",
         lambda db: _persist_runner(
-            lambda session: run_device_checks(session, excluded_sites=delegated_sites),
+            lambda session: run_device_checks(
+                session, site=ownership.site, excluded_sites=set(ownership.excluded_sites)
+            ),
             db,
-            lock_scope="device:central",
+            lock_scope=ownership.lock_scope,
         ),
     )
 
@@ -147,7 +137,9 @@ async def run_server_job() -> None:
 
 async def run_mikrotik_job() -> None:
     """Run mikrotik job for scheduled monitoring execution."""
-    await _run_scheduler_job("mikrotik_checks", lambda db: _persist_runner(run_mikrotik_checks, db, lock_scope="mikrotik"))
+    await _run_scheduler_job(
+        "mikrotik_checks", lambda db: _persist_runner(run_mikrotik_checks, db, lock_scope="mikrotik")
+    )
 
 
 async def run_alert_job() -> None:
@@ -169,7 +161,15 @@ async def _persist_runner(runner, db, *, lock_scope: str) -> None:
     metrics = await runner(db)
     async with monitoring_pipeline_guard(wait=True, scope=f"metrics:{lock_scope}"):
         await persist_metrics(db, metrics, commit=False)
-        db.add(CollectorRun(collector_name=f"{lock_scope}_checks", status="ok", duration_ms=(perf_counter() - started_at) * 1000, metric_count=len(metrics), checked_at=utcnow()))
+        db.add(
+            CollectorRun(
+                collector_name=f"{lock_scope}_checks",
+                status="ok",
+                duration_ms=(perf_counter() - started_at) * 1000,
+                metric_count=len(metrics),
+                checked_at=utcnow(),
+            )
+        )
         await db.commit()
     # Re-evaluate alerts immediately after fresh metrics land so alerting
     # doesn't get starved by the separate scheduler tick. Alert/incident state

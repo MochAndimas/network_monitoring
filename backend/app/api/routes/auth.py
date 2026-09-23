@@ -320,7 +320,9 @@ async def update_my_account(
 
 
 @router.get("/sessions", response_model=list[AuthSessionItem])
-async def list_my_sessions(actor=Depends(require_api_access), db: AsyncSession = Depends(get_db)) -> list[AuthSessionItem]:
+async def list_my_sessions(
+    actor=Depends(require_api_access), db: AsyncSession = Depends(get_db)
+) -> list[AuthSessionItem]:
     """Handle the my sessions endpoint."""
     if actor.user is None or actor.session is None:
         return []
@@ -386,7 +388,9 @@ async def admin_list_sessions(
     ]
 
 
-@router.post("/admin/users/{user_id}/logout-all", response_model=LogoutAllResponse, dependencies=[Depends(require_admin_access)])
+@router.post(
+    "/admin/users/{user_id}/logout-all", response_model=LogoutAllResponse, dependencies=[Depends(require_admin_access)]
+)
 async def admin_logout_all_user_sessions(
     user_id: int,
     request: Request,
@@ -496,7 +500,9 @@ async def admin_update_user(
     return UserAdminItem.model_validate(user)
 
 
-@router.post("/admin/users/{user_id}/reset-password", response_model=UserAdminItem, dependencies=[Depends(require_admin_access)])
+@router.post(
+    "/admin/users/{user_id}/reset-password", response_model=UserAdminItem, dependencies=[Depends(require_admin_access)]
+)
 async def admin_reset_password(
     user_id: int,
     payload: UserPasswordResetRequest,
@@ -531,7 +537,9 @@ async def admin_reset_password(
     return UserAdminItem.model_validate(user)
 
 
-@router.delete("/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_access)])
+@router.delete(
+    "/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_access)]
+)
 async def admin_delete_user(
     user_id: int,
     request: Request,
@@ -540,7 +548,9 @@ async def admin_delete_user(
 ) -> Response:
     """Permanently remove a user account with audit logging and admin safeguards."""
     try:
-        user = await delete_user_for_admin(db, user_id=user_id, actor_user_id=actor.user.id if actor.user else None, commit=False)
+        user = await delete_user_for_admin(
+            db, user_id=user_id, actor_user_id=actor.user.id if actor.user else None, commit=False
+        )
         client_ip, user_agent = _client_metadata(request)
         await record_admin_audit_log(
             db,

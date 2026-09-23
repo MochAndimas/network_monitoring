@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
+if (process.env.CI && (!process.env.E2E_USERNAME || !process.env.E2E_PASSWORD || process.env.E2E_ALLOW_MUTATIONS !== "1")) {
+  throw new Error("CI E2E requires isolated fixture credentials and E2E_ALLOW_MUTATIONS=1; refusing a skipped suite.");
+}
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,

@@ -11,10 +11,9 @@ from ..core.time import utcnow
 
 class User(Base):
     """SQLAlchemy ORM model for User records."""
+
     __tablename__ = "users"
-    __table_args__ = (
-        Index("ix_users_username_active", "username", "is_active"),
-    )
+    __table_args__ = (Index("ix_users_username_active", "username", "is_active"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     username: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
@@ -33,10 +32,9 @@ class User(Base):
 
 class AuthSession(Base):
     """SQLAlchemy ORM model for AuthSession records."""
+
     __tablename__ = "auth_sessions"
-    __table_args__ = (
-        Index("ix_auth_sessions_user_active", "user_id", "expires_at", "revoked_at"),
-    )
+    __table_args__ = (Index("ix_auth_sessions_user_active", "user_id", "expires_at", "revoked_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
@@ -54,13 +52,14 @@ class AuthSession(Base):
 
 class AuthLoginAttempt(Base):
     """SQLAlchemy ORM model for AuthLoginAttempt records."""
+
     __tablename__ = "auth_login_attempts"
     __table_args__ = (
         Index("ix_auth_login_attempts_lookup", "username", "client_ip", "attempted_at"),
         Index("ix_auth_login_attempts_cleanup", "attempted_at", "was_successful"),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(100), nullable=False)
     client_ip: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     was_successful: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

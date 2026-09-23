@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 class Incident(Base):
     """SQLAlchemy ORM model for Incident records."""
+
     __tablename__ = "incidents"
     __table_args__ = (
         Index("ix_incidents_status_started_at", "status", "started_at"),
@@ -57,7 +58,7 @@ class IncidentTimelineEvent(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    incident_id: Mapped[int] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False, index=True)
+    incident_id: Mapped[int] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     actor: Mapped[str | None] = mapped_column(String(100), nullable=True)
     message: Mapped[str] = mapped_column(String(500), nullable=False)

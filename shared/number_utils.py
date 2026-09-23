@@ -19,4 +19,3 @@ def safe_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-

@@ -3,7 +3,7 @@
 FROM node:22-alpine AS dependencies
 
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN --mount=type=cache,id=network-monitoring-pnpm-store,target=/pnpm/store \
   corepack enable \
   && pnpm config set store-dir /pnpm/store \
@@ -12,6 +12,8 @@ RUN --mount=type=cache,id=network-monitoring-pnpm-store,target=/pnpm/store \
 FROM node:22-alpine AS builder
 
 WORKDIR /app
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .

@@ -1,0 +1,6 @@
+pip-audit==2.9.0
+bandit==1.8.6
+semgrep==1.89.0
+# Semgrep 1.89's OpenTelemetry instrumentation imports pkg_resources.
+# Keep this audit-only compatibility pin until Semgrep is upgraded and validated.
+setuptools==80.9.0

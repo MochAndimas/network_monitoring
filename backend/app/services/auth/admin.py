@@ -65,14 +65,16 @@ async def update_user_for_admin(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     removes_last_active_admin = (
-        user.role == "admin"
-        and user.is_active
-        and (role is not None and role != "admin" or is_active is False)
+        user.role == "admin" and user.is_active and (role is not None and role != "admin" or is_active is False)
     )
     if removes_last_active_admin:
-        active_admins = await db.scalar(select(func.count(User.id)).where(User.role == "admin", User.is_active.is_(True)))
+        active_admins = await db.scalar(
+            select(func.count(User.id)).where(User.role == "admin", User.is_active.is_(True))
+        )
         if int(active_admins or 0) <= 1:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The last active administrator cannot be changed")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="The last active administrator cannot be changed"
+            )
     if actor_user_id == user.id and is_active is False:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot disable your own account")
     if full_name is not None:
@@ -152,9 +154,13 @@ async def delete_user_for_admin(
     if actor_user_id == user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot delete your own account")
     if user.role == "admin" and user.is_active:
-        active_admins = await db.scalar(select(func.count(User.id)).where(User.role == "admin", User.is_active.is_(True)))
+        active_admins = await db.scalar(
+            select(func.count(User.id)).where(User.role == "admin", User.is_active.is_(True))
+        )
         if int(active_admins or 0) <= 1:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The last active administrator cannot be deleted")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="The last active administrator cannot be deleted"
+            )
     await db.delete(user)
     await db.flush()
     if commit:

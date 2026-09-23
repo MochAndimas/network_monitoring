@@ -2,6 +2,9 @@ export type UnknownRecord = Record<string, unknown>;
 
 export type SchedulerJob = {
   job_name: string;
+  agent_id: string;
+  agent_site: string | null;
+  expected_interval_seconds: number | null;
   is_running: boolean;
   consecutive_failures: number;
   last_started_at: string | null;

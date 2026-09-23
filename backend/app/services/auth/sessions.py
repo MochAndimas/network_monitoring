@@ -12,7 +12,9 @@ from ...core.time import utcnow
 from ...models.user import AuthLoginAttempt, AuthSession, User
 
 
-async def list_active_sessions_for_user(db: AsyncSession, *, user_id: int, current_jwt_id: str | None) -> list[AuthSession]:
+async def list_active_sessions_for_user(
+    db: AsyncSession, *, user_id: int, current_jwt_id: str | None
+) -> list[AuthSession]:
     """List active sessions for user in the service layer."""
     rows = await db.scalars(
         select(AuthSession)

@@ -19,4 +19,3 @@ __all__ = [
     "_metric",
     "_queue_metrics",
 ]
-

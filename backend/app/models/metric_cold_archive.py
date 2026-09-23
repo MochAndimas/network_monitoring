@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..core.time import now
@@ -17,8 +17,10 @@ if TYPE_CHECKING:
 
 class MetricColdArchive(Base):
     """SQLAlchemy ORM model for MetricColdArchive records."""
+
     __tablename__ = "metric_cold_archives"
     __table_args__ = (
+        Index("ix_metric_cold_archives_month_metric_site_lookup", "archive_month", "metric_name", "device_id"),
         UniqueConstraint(
             "device_id",
             "archive_date",

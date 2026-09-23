@@ -3,7 +3,9 @@
 This module contains automated regression and validation scenarios.
 """
 
-from scripts.benchmark_endpoints import _resolve_thresholds
+import pytest
+
+from scripts.benchmark_endpoints import _auth_headers, _resolve_thresholds
 
 
 def test_resolve_thresholds_uses_profile_defaults():
@@ -13,3 +15,11 @@ def test_resolve_thresholds_uses_profile_defaults():
 
 def test_resolve_thresholds_custom_keeps_explicit_values():
     assert _resolve_thresholds(profile="custom", max_p95_ms=123.0, max_max_ms=456.0) == (123.0, 456.0)
+
+
+def test_benchmark_credentials_are_unambiguous():
+    assert _auth_headers(api_key="", bearer_token="") == {}
+    assert _auth_headers(api_key="service-key", bearer_token="") == {"x-api-key": "service-key"}
+    assert _auth_headers(api_key="", bearer_token="admin-token") == {"authorization": "Bearer admin-token"}
+    with pytest.raises(ValueError, match="not both"):
+        _auth_headers(api_key="service-key", bearer_token="admin-token")

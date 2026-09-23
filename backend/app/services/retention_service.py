@@ -406,15 +406,12 @@ async def _iter_archive_payloads(db: AsyncSession, cutoff: datetime):
         )
         .subquery()
     )
-    query = (
-        select(archive_aggregates)
-        .order_by(
-            archive_aggregates.c.device_id.asc(),
-            archive_aggregates.c.archive_date.asc(),
-            archive_aggregates.c.metric_name.asc(),
-            archive_aggregates.c.status.asc(),
-            archive_aggregates.c.unit.asc(),
-        )
+    query = select(archive_aggregates).order_by(
+        archive_aggregates.c.device_id.asc(),
+        archive_aggregates.c.archive_date.asc(),
+        archive_aggregates.c.metric_name.asc(),
+        archive_aggregates.c.status.asc(),
+        archive_aggregates.c.unit.asc(),
     )
     async for row in await db.stream(query):
         archive_date_value = _coerce_date(row.archive_date)
@@ -517,7 +514,9 @@ def _prepare_marker_source(payload: dict, existing_aggregate: bool) -> None:
         previous_latest_checked_at = payload.get("_previous_source_latest_checked_at")
         payload["_marker_source_metric_count"] = previous_count + source_count
         payload["_marker_source_max_metric_id"] = _max_optional(previous_max_id, source_max_id)
-        payload["_marker_source_latest_checked_at"] = _max_optional(previous_latest_checked_at, source_latest_checked_at)
+        payload["_marker_source_latest_checked_at"] = _max_optional(
+            previous_latest_checked_at, source_latest_checked_at
+        )
         return
     payload["_marker_source_metric_count"] = source_count
     payload["_marker_source_max_metric_id"] = source_max_id

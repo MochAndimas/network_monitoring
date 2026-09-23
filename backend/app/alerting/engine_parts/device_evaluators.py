@@ -86,7 +86,11 @@ def evaluate_nas_alerts(
     ]:
         metric = latest_metrics.get((device.id, metric_name))
         status_value = str(getattr(metric, "metric_value", "") or "").lower()
-        if metric is not None and str(getattr(metric, "status", "")).lower() == "error" and status_value not in {"normal", "ok"}:
+        if (
+            metric is not None
+            and str(getattr(metric, "status", "")).lower() == "error"
+            and status_value not in {"normal", "ok"}
+        ):
             expected_alerts[(device.id, alert_type)] = _build_alert_payload(
                 device_id=device.id,
                 alert_type=alert_type,
@@ -94,7 +98,9 @@ def evaluate_nas_alerts(
             )
 
     system_temperature_metric = latest_metrics.get((device.id, "nas_system_temperature_c"))
-    system_temperature = _metric_numeric_value(system_temperature_metric) if system_temperature_metric is not None else None
+    system_temperature = (
+        _metric_numeric_value(system_temperature_metric) if system_temperature_metric is not None else None
+    )
     if system_temperature is not None and system_temperature >= thresholds["nas_system_temperature_warning"]:
         expected_alerts[(device.id, "nas_system_temperature_high")] = _build_alert_payload(
             device_id=device.id,
@@ -175,7 +181,11 @@ def _add_nas_status_alert(
     normalized_ok_values = ok_values or {"normal", "ok"}
     problems = []
     for (current_device_id, metric_name), metric in latest_metrics.items():
-        if current_device_id != device.id or not str(metric_name).startswith(prefix) or not str(metric_name).endswith(suffix):
+        if (
+            current_device_id != device.id
+            or not str(metric_name).startswith(prefix)
+            or not str(metric_name).endswith(suffix)
+        ):
             continue
         value = str(getattr(metric, "metric_value", "") or "").lower()
         if str(getattr(metric, "status", "")).lower() == "error" and value not in normalized_ok_values:

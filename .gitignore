@@ -5,7 +5,10 @@ __pycache__/
 .env
 backup/
 frontend/node_modules/
+frontend/.env*
+!frontend/.env.example
 node_modules/
+.pnpm-store/
 frontend/.next/
 .venv/
 venv/

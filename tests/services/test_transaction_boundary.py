@@ -35,22 +35,28 @@ def test_run_monitoring_cycle_rolls_back_metrics_when_alerting_fails(monkeypatch
     session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
     run(create_all(engine))
 
-    async def fake_collect_monitoring_metrics():
+    async def fake_collect_monitoring_metrics_by_runner():
         return [
-            {
-                "device_id": 1,
-                "metric_name": "ping",
-                "metric_value": "12.34",
-                "status": "up",
-                "unit": "ms",
-                "checked_at": utcnow(),
-            }
+            [
+                {
+                    "device_id": 1,
+                    "metric_name": "ping",
+                    "metric_value": "12.34",
+                    "status": "up",
+                    "unit": "ms",
+                    "checked_at": utcnow(),
+                }
+            ]
         ]
 
     async def fake_evaluate_alerts(_db, *, commit: bool = True):
+        assert not commit
+        assert await _db.scalar(select(func.count()).select_from(Metric)) == 1
         raise RuntimeError("forced-alerting-failure")
 
-    monkeypatch.setattr(run_cycle_service, "collect_monitoring_metrics", fake_collect_monitoring_metrics)
+    monkeypatch.setattr(
+        run_cycle_service, "collect_monitoring_metrics_by_runner", fake_collect_monitoring_metrics_by_runner
+    )
     monkeypatch.setattr(run_cycle_service, "evaluate_alerts", fake_evaluate_alerts)
 
     async def scenario():
@@ -212,11 +218,17 @@ def test_monitoring_pipeline_guard_allows_independent_scopes(monkeypatch):
     monkeypatch.setattr(pipeline_control_module, "_monitoring_pipeline_locks", {})
 
     async def scenario():
-        async with pipeline_control_module.monitoring_pipeline_guard(wait=False, scope="metrics:internet") as first_acquired:
+        async with pipeline_control_module.monitoring_pipeline_guard(
+            wait=False, scope="metrics:internet"
+        ) as first_acquired:
             assert first_acquired is True
-            async with pipeline_control_module.monitoring_pipeline_guard(wait=False, scope="metrics:internet") as same_scope_acquired:
+            async with pipeline_control_module.monitoring_pipeline_guard(
+                wait=False, scope="metrics:internet"
+            ) as same_scope_acquired:
                 assert same_scope_acquired is False
-            async with pipeline_control_module.monitoring_pipeline_guard(wait=False, scope="metrics:server") as other_scope_acquired:
+            async with pipeline_control_module.monitoring_pipeline_guard(
+                wait=False, scope="metrics:server"
+            ) as other_scope_acquired:
                 assert other_scope_acquired is True
 
     try:
@@ -241,9 +253,13 @@ def test_monitoring_full_cycle_guard_blocks_scheduler_write_scopes(monkeypatch):
         ) as acquired:
             assert acquired is True
             for scope in MONITORING_FULL_CYCLE_LOCK_SCOPES:
-                async with pipeline_control_module.monitoring_pipeline_guard(wait=False, scope=scope) as scheduler_scope_acquired:
+                async with pipeline_control_module.monitoring_pipeline_guard(
+                    wait=False, scope=scope
+                ) as scheduler_scope_acquired:
                     assert scheduler_scope_acquired is False
-            async with pipeline_control_module.monitoring_pipeline_guard(wait=False, scope="unrelated:diagnostic") as unrelated_acquired:
+            async with pipeline_control_module.monitoring_pipeline_guard(
+                wait=False, scope="unrelated:diagnostic"
+            ) as unrelated_acquired:
                 assert unrelated_acquired is True
 
     try:
@@ -276,10 +292,14 @@ def test_monitoring_full_cycle_guard_fails_when_scheduler_scope_is_active(monkey
         run(engine.dispose())
 
 
-def test_scheduler_job_failure_rolls_back_domain_writes_and_updates_job_status(monkeypatch):
+@pytest.mark.parametrize(
+    "failure", [RuntimeError("forced-job-failure"), pipeline_control_module.PipelineLockTimeoutError("alerts")]
+)
+def test_scheduler_job_failure_rolls_back_domain_writes_and_updates_job_status(monkeypatch, failure):
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False,
+        connect_args={
+            "check_same_thread": False,
         },
         poolclass=StaticPool,
     )
@@ -296,16 +316,14 @@ def test_scheduler_job_failure_rolls_back_domain_writes_and_updates_job_status(m
             )
         )
         await db.flush()
-        raise RuntimeError("forced-job-failure")
+        raise failure
 
     async def scenario():
-        with pytest.raises(RuntimeError, match="forced-job-failure"):
+        with pytest.raises(type(failure), match=str(failure)):
             await scheduler_jobs._run_scheduler_job("phase2_atomic_job", failing_operation)
 
         async with session_factory() as db:
-            threshold = await db.scalar(
-                select(Threshold).where(Threshold.key == "phase2_atomic_threshold")
-            )
+            threshold = await db.scalar(select(Threshold).where(Threshold.key == "phase2_atomic_threshold"))
             job_status = await db.scalar(
                 select(SchedulerJobStatus).where(SchedulerJobStatus.job_name == "phase2_atomic_job")
             )
@@ -318,6 +336,6 @@ def test_scheduler_job_failure_rolls_back_domain_writes_and_updates_job_status(m
         assert job_status.is_running is False
         assert job_status.consecutive_failures == 1
         assert job_status.last_failed_at is not None
-        assert "forced-job-failure" in str(job_status.last_error or "")
+        assert str(failure) in str(job_status.last_error or "")
     finally:
         run(drop_all(engine))

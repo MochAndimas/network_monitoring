@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import cast
 
@@ -97,6 +98,7 @@ WARNING_ERROR_FLAGS = {
 @dataclass(slots=True)
 class SnmpPrinterMetric:
     """Helper object for device inventory and status."""
+
     metric_name: str
     metric_value: str
     status: str
@@ -125,7 +127,13 @@ async def collect_printer_snmp_metrics(device_id: int, ip_address: str) -> list[
     community = printer_snmp_community_for_ip(ip_address)
     checked_at = utcnow()
     if not community:
-        return [_metric_payload(device_id, SnmpPrinterMetric("printer_snmp_collection_status", "configuration_missing", "warning"), checked_at)]
+        return [
+            _metric_payload(
+                device_id,
+                SnmpPrinterMetric("printer_snmp_collection_status", "configuration_missing", "warning"),
+                checked_at,
+            )
+        ]
     base_oids = {
         "printer_uptime_ticks": SYS_UPTIME_OID,
         "printer_status_code": HR_PRINTER_STATUS_OID,
@@ -225,7 +233,9 @@ async def _fetch_oid_values_for_version(
     uptime_result = results["printer_uptime_ticks"]
     return SnmpFetchResult(
         values={key: result.value for key, result in results.items()},
-        collection_status="ok" if _safe_int(uptime_result.value) is not None else normalize_collection_status(uptime_result.error_category, fallback="invalid_response"),
+        collection_status="ok"
+        if _safe_int(uptime_result.value) is not None
+        else normalize_collection_status(uptime_result.error_category, fallback="invalid_response"),
         protocol=f"snmpv{1 if mp_model == 0 else '2c'}",
     )
 
@@ -256,7 +266,7 @@ async def _snmp_get_value(ip_address: str, community: str, oid: str, *, mp_model
         try:
             engine.transport_dispatcher.close_dispatcher()
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Transport cleanup failed")
 
 
 def _snmp_error_category(error_message: str) -> str:

@@ -18,6 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.config import settings
 from ..core.time import utcnow
 from ..models.scheduler_job_status import SchedulerJobStatus
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from .collector_ownership import device_collector_ownership
 
 try:  # pragma: no cover - optional dependency wiring
     from prometheus_client import CollectorRegistry, Counter as PromCounter, Summary, generate_latest, multiprocess
@@ -56,9 +59,7 @@ _process_identity = {
     "web_concurrency": str(os.getenv("WEB_CONCURRENCY") or "").strip(),
 }
 
-if _prometheus_multiprocess_enabled:
-    assert PromCounter is not None
-    assert Summary is not None
+if _prometheus_multiprocess_enabled and PromCounter is not None and Summary is not None:
     _prom_http_request_count: Any = PromCounter(
         "network_monitoring_http_requests",
         "HTTP requests processed by the application",
@@ -192,7 +193,9 @@ def normalized_http_metric_path(*, path: str, route_path: str | None = None) -> 
     return normalized_path or "/unknown"
 
 
-def record_http_request(*, path: str, method: str, status_code: int, duration_ms: float, route_path: str | None = None) -> None:
+def record_http_request(
+    *, path: str, method: str, status_code: int, duration_ms: float, route_path: str | None = None
+) -> None:
     """Record HTTP request counts, latency buckets, and Prometheus samples."""
     metric_path = normalized_http_metric_path(path=path, route_path=route_path)
     key = (method.upper(), metric_path, str(status_code))
@@ -331,19 +334,19 @@ async def mark_scheduler_job_failed(
 
 async def list_scheduler_job_statuses(db: AsyncSession) -> list[SchedulerJobStatus]:
     """Return scheduler job status rows ordered by job name."""
-    rows = await db.scalars(select(SchedulerJobStatus).order_by(SchedulerJobStatus.job_name.asc()))
+    rows = await db.scalars(
+        select(SchedulerJobStatus).order_by(SchedulerJobStatus.job_name.asc(), SchedulerJobStatus.agent_id.asc())
+    )
     return list(rows.all())
 
 
 def scheduler_job_is_stale(job: SchedulerJobStatus) -> bool:
     """Return scheduler job is stale used by service-layer code."""
-    expected_interval = _expected_scheduler_interval_seconds(job.job_name)
+    expected_interval = job.expected_interval_seconds or _expected_scheduler_interval_seconds(job.job_name)
     if expected_interval is None:
         return False
     references = [
-        timestamp
-        for timestamp in (job.last_finished_at, job.last_started_at, job.updated_at)
-        if timestamp is not None
+        timestamp for timestamp in (job.last_finished_at, job.last_started_at, job.updated_at) if timestamp is not None
     ]
     if not references:
         return False
@@ -357,7 +360,7 @@ def build_scheduler_job_health_rows(job_statuses: list[SchedulerJobStatus]) -> l
     now = utcnow()
     rows: list[dict] = []
     for job in job_statuses:
-        expected_interval_seconds = _expected_scheduler_interval_seconds(job.job_name)
+        expected_interval_seconds = job.expected_interval_seconds or _expected_scheduler_interval_seconds(job.job_name)
         references = [
             timestamp
             for timestamp in (job.last_finished_at, job.last_started_at, job.updated_at)
@@ -391,6 +394,8 @@ def build_scheduler_job_health_rows(job_statuses: list[SchedulerJobStatus]) -> l
         rows.append(
             {
                 "job_name": job.job_name,
+                "agent_id": job.agent_id or "central",
+                "agent_site": job.agent_site,
                 "state": state,
                 "expected_interval_seconds": expected_interval_seconds,
                 "stale_after_seconds": stale_after_seconds,
@@ -436,6 +441,8 @@ def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -
             alerts.append(
                 {
                     "job_name": job.job_name,
+                    "agent_id": job.agent_id or "central",
+                    "agent_site": job.agent_site,
                     "severity": "critical" if job.consecutive_failures >= 3 else "warning",
                     "reason": "job_failures",
                     "message": f"{job.job_name} has {job.consecutive_failures} consecutive failures",
@@ -446,6 +453,8 @@ def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -
             alerts.append(
                 {
                     "job_name": job.job_name,
+                    "agent_id": job.agent_id or "central",
+                    "agent_site": job.agent_site,
                     "severity": "warning",
                     "reason": "job_stale",
                     "message": f"{job.job_name} heartbeat is stale",
@@ -455,32 +464,39 @@ def build_scheduler_operational_alerts(job_statuses: list[SchedulerJobStatus]) -
     return alerts
 
 
-def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, scheduler_statuses: list[SchedulerJobStatus]) -> str:
+def render_prometheus_metrics(
+    *, database_up: bool, scheduler_alert_count: int, scheduler_statuses: list[SchedulerJobStatus]
+) -> str:
     """Render internal counters in Prometheus text exposition format."""
     lines = []
-    if _prometheus_multiprocess_enabled and CollectorRegistry is not None and generate_latest is not None and multiprocess is not None:
+    if (
+        _prometheus_multiprocess_enabled
+        and CollectorRegistry is not None
+        and generate_latest is not None
+        and multiprocess is not None
+    ):
         registry = CollectorRegistry()
         multiprocess.MultiProcessCollector(registry)
         lines.extend(generate_latest(registry).decode("utf-8").splitlines())
     lines.extend(
         [
-        "# HELP network_monitoring_observability_multiprocess_enabled Prometheus multiprocess collection mode",
-        "# TYPE network_monitoring_observability_multiprocess_enabled gauge",
-        f"network_monitoring_observability_multiprocess_enabled {1 if _prometheus_multiprocess_enabled else 0}",
-        "# HELP network_monitoring_observability_process_info Process-local observability runtime metadata",
-        "# TYPE network_monitoring_observability_process_info gauge",
-        (
-            'network_monitoring_observability_process_info'
-            f'{{pid="{os.getpid()}",hostname="{platform.node()}",'
-            f'prometheus_multiproc_dir="{_prometheus_multiproc_dir}",'
-            f'web_concurrency="{str(os.getenv("WEB_CONCURRENCY") or "").strip()}"}} 1'
-        ),
-        "# HELP network_monitoring_database_up Database connectivity status",
-        "# TYPE network_monitoring_database_up gauge",
-        f"network_monitoring_database_up {1 if database_up else 0}",
-        "# HELP network_monitoring_scheduler_operational_alerts Active operational alerts for scheduler jobs",
-        "# TYPE network_monitoring_scheduler_operational_alerts gauge",
-        f"network_monitoring_scheduler_operational_alerts {scheduler_alert_count}",
+            "# HELP network_monitoring_observability_multiprocess_enabled Prometheus multiprocess collection mode",
+            "# TYPE network_monitoring_observability_multiprocess_enabled gauge",
+            f"network_monitoring_observability_multiprocess_enabled {1 if _prometheus_multiprocess_enabled else 0}",
+            "# HELP network_monitoring_observability_process_info Process-local observability runtime metadata",
+            "# TYPE network_monitoring_observability_process_info gauge",
+            (
+                "network_monitoring_observability_process_info"
+                f'{{pid="{os.getpid()}",hostname="{platform.node()}",'
+                f'prometheus_multiproc_dir="{_prometheus_multiproc_dir}",'
+                f'web_concurrency="{str(os.getenv("WEB_CONCURRENCY") or "").strip()}"}} 1'
+            ),
+            "# HELP network_monitoring_database_up Database connectivity status",
+            "# TYPE network_monitoring_database_up gauge",
+            f"network_monitoring_database_up {1 if database_up else 0}",
+            "# HELP network_monitoring_scheduler_operational_alerts Active operational alerts for scheduler jobs",
+            "# TYPE network_monitoring_scheduler_operational_alerts gauge",
+            f"network_monitoring_scheduler_operational_alerts {scheduler_alert_count}",
         ]
     )
     if not _prometheus_multiprocess_enabled:
@@ -514,29 +530,53 @@ def render_prometheus_metrics(*, database_up: bool, scheduler_alert_count: int, 
         for source, count in sorted(_exception_count.items()):
             lines.append(f'network_monitoring_exceptions_total{{source="{source}"}} {count}')
     for job in scheduler_statuses:
-        lines.append(
-            f'network_monitoring_scheduler_job_consecutive_failures{{job_name="{job.job_name}"}} {job.consecutive_failures}'
+        labels = (
+            f'job_name="{_prometheus_label(job.job_name)}",agent_id="{_prometheus_label(job.agent_id or "central")}"'
         )
-        lines.append(
-            f'network_monitoring_scheduler_job_running{{job_name="{job.job_name}"}} {1 if job.is_running else 0}'
-        )
-        lines.append(
-            f'network_monitoring_scheduler_job_stale{{job_name="{job.job_name}"}} {1 if scheduler_job_is_stale(job) else 0}'
-        )
+        lines.append(f"network_monitoring_scheduler_job_consecutive_failures{{{labels}}} {job.consecutive_failures}")
+        lines.append(f"network_monitoring_scheduler_job_running{{{labels}}} {1 if job.is_running else 0}")
+        lines.append(f"network_monitoring_scheduler_job_stale{{{labels}}} {1 if scheduler_job_is_stale(job) else 0}")
         if job.last_duration_ms is not None:
-            lines.append(
-                f'network_monitoring_scheduler_job_last_duration_ms{{job_name="{job.job_name}"}} {job.last_duration_ms:.2f}'
-            )
+            lines.append(f"network_monitoring_scheduler_job_last_duration_ms{{{labels}}} {job.last_duration_ms:.2f}")
     return "\n".join(lines) + "\n"
 
 
 async def _get_or_create_scheduler_job_status(db: AsyncSession, *, job_name: str) -> SchedulerJobStatus:
     """Return get or create scheduler job status used by observability and health reporting."""
-    status = await db.scalar(select(SchedulerJobStatus).where(SchedulerJobStatus.job_name == job_name))
+    ownership = device_collector_ownership()
+    agent_id = ownership.lock_scope if ownership.site else "central"
+    owner_query = select(SchedulerJobStatus).where(
+        SchedulerJobStatus.job_name == job_name, SchedulerJobStatus.agent_id == agent_id
+    )
+    # Avoid a duplicate-key insert (and AUTO_INCREMENT consumption) on every
+    # heartbeat. The final locking read, not this existence check, supplies state.
+    existing_id = await db.scalar(owner_query.with_only_columns(SchedulerJobStatus.id))
+    if existing_id is None:
+        values = dict(
+            job_name=job_name,
+            agent_id=agent_id,
+            agent_site=ownership.site,
+            consecutive_failures=0,
+            is_running=False,
+            updated_at=utcnow(),
+        )
+        if db.get_bind().dialect.name == "mysql":
+            statement = mysql_insert(SchedulerJobStatus).values(**values)
+            await db.execute(statement.on_duplicate_key_update(agent_id=SchedulerJobStatus.agent_id))
+        else:
+            await db.execute(
+                sqlite_insert(SchedulerJobStatus)
+                .values(**values)
+                .on_conflict_do_nothing(index_elements=["job_name", "agent_id"])
+            )
+    status = await db.scalar(
+        owner_query.with_hint(SchedulerJobStatus, "FORCE INDEX (uq_scheduler_job_owner)", dialect_name="mysql")
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if status is None:
-        status = SchedulerJobStatus(job_name=job_name)
-        db.add(status)
-        await db.flush()
+        raise RuntimeError("Scheduler status initialization did not produce an owner row")
+    status.expected_interval_seconds = _expected_scheduler_interval_seconds(job_name)
     return status
 
 
@@ -552,3 +592,8 @@ def _expected_scheduler_interval_seconds(job_name: str) -> int | None:
         "retention_cleanup": scheduler_settings.cleanup_interval_hours * 3600,
     }
     return mapping.get(job_name)
+
+
+def _prometheus_label(value: str) -> str:
+    """Escape label text according to the Prometheus text exposition format."""
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')

@@ -13,3 +13,7 @@ def test_mikrotik_api_auth_failure_is_classified_without_raw_error():
 
 def test_mikrotik_api_unrecognized_failure_is_collector_error():
     assert _mikrotik_api_error_category(RuntimeError("unexpected library issue")) == "collector_error"
+
+
+def test_mikrotik_api_closed_connection_is_connection_failure():
+    assert _mikrotik_api_error_category(RuntimeError("Connection unexpectedly closed.")) == "connection_failed"

@@ -6,6 +6,7 @@ including module-level monkeypatch points such as ``send_telegram_alert``.
 """
 
 from .engine_parts import impl as _impl
+from .notification_contracts import NotificationBatchWriter
 
 TELEGRAM_NOTIFICATION_DEDUPE_TTL = _impl.TELEGRAM_NOTIFICATION_DEDUPE_TTL
 TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE = _impl.TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE
@@ -19,10 +20,12 @@ def _sync_patchable_globals() -> None:
     _impl.send_telegram_alert = send_telegram_alert
 
 
-async def evaluate_alerts(db, *, commit: bool = True) -> list[dict]:
+async def evaluate_alerts(
+    db, *, commit: bool = True, notification_writer: NotificationBatchWriter | None = None
+) -> list[dict]:
     """Evaluate alert state while preserving historical monkeypatch behavior."""
     _sync_patchable_globals()
-    return await _impl.evaluate_alerts(db, commit=commit)
+    return await _impl.evaluate_alerts(db, commit=commit, notification_writer=notification_writer)
 
 
 async def _send_telegram_events(db, alert_repository, events: list[dict], *, commit: bool) -> None:

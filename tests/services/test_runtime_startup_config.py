@@ -1,5 +1,12 @@
 """Runtime startup configuration tests for scheduler and observability setup."""
 
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+import pytest
+
 from scripts.prepare_prometheus_multiproc_dir import main as prepare_prometheus_multiproc_dir
 
 
@@ -60,3 +67,28 @@ def test_prometheus_multiproc_prepare_preserves_files_unless_cleanup_enabled(mon
 
     assert not metric_file.exists()
     assert other_file.exists()
+
+
+@pytest.mark.parametrize(
+    ("env_file", "expected"),
+    [(None, "Default file"), ("", "Network Monitoring"), ("fixture.env", "Explicit file")],
+)
+def test_runtime_env_file_selection_is_explicit(tmp_path, env_file, expected):
+    (tmp_path / ".env").write_text("APP_NAME=Default file\n", encoding="utf-8")
+    (tmp_path / "fixture.env").write_text("APP_NAME=Explicit file\n", encoding="utf-8")
+    environment = dict(os.environ)
+    environment.pop("APP_NAME", None)
+    environment.pop("APP_ENV_FILE", None)
+    environment["APP_ENV"] = "development"
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
+    if env_file is not None:
+        environment["APP_ENV_FILE"] = env_file
+    result = subprocess.run(
+        [sys.executable, "-c", "from backend.app.core.config import settings; print(settings.app_name)"],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == expected

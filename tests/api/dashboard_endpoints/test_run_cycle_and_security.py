@@ -4,6 +4,7 @@ This module contains automated regression and validation scenarios.
 """
 
 from types import SimpleNamespace
+from backend.app.models.metric import Metric
 
 from .common import (
     _seed_devices_and_metrics,
@@ -186,6 +187,7 @@ def test_stale_active_telegram_event_is_dropped_after_resolve(monkeypatch):
     monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
 
     with client_context() as (_client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 device = (
@@ -257,7 +259,9 @@ def test_telegram_events_are_deduped_by_alert_state(monkeypatch):
     """Validate duplicate Telegram events are suppressed within one batch."""
     import backend.app.alerting.engine as engine_module
 
-    device = SimpleNamespace(id=1, name="Mikrotik Utama", ip_address="192.168.88.1", site="R. Server", device_type="internet_target")
+    device = SimpleNamespace(
+        id=1, name="Mikrotik Utama", ip_address="192.168.88.1", site="R. Server", device_type="internet_target"
+    )
     event = {
         "action": "resolved",
         "alert_id": 99,
@@ -284,6 +288,7 @@ def test_stale_summary_active_telegram_event_is_dropped_after_resolve(monkeypatc
     monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
 
     with client_context() as (_client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 device = (
@@ -342,6 +347,7 @@ def test_resolved_event_is_sent_when_sibling_alert_was_recently_notified(monkeyp
 
     try:
         with client_context() as (_client, session_factory):
+
             async def scenario():
                 async with session_factory() as db:
                     device = (
@@ -415,7 +421,9 @@ def test_pending_telegram_events_respect_summary_severity_mode():
     engine_module.settings.telegram_notification_cooldown_seconds = 0
     engine_module.settings.telegram_alert_grace_period_seconds = 0
     try:
-        device = SimpleNamespace(id=1, name="MyRepublic - ISP", ip_address="192.168.1.1", site="R. Server", device_type="internet_target")
+        device = SimpleNamespace(
+            id=1, name="MyRepublic - ISP", ip_address="192.168.1.1", site="R. Server", device_type="internet_target"
+        )
         alert = Alert(
             id=10,
             device_id=1,
@@ -452,7 +460,9 @@ def test_pending_telegram_events_require_realtime_alert_type_allowlist():
     engine_module.settings.telegram_realtime_alert_types = "device_down,internet_loss,high_packet_loss_critical"
     engine_module.settings.telegram_alert_grace_period_seconds = 0
     try:
-        device = SimpleNamespace(id=1, name="VoIP - 5", ip_address="192.168.88.102", site="Office 1", device_type="voip")
+        device = SimpleNamespace(
+            id=1, name="VoIP - 5", ip_address="192.168.88.102", site="Office 1", device_type="voip"
+        )
         latency_alert = Alert(
             id=12,
             device_id=1,
@@ -501,7 +511,9 @@ def test_pending_telegram_summary_allows_repeated_noisy_alerts():
     engine_module.settings.telegram_summary_repeat_min_count = 3
     engine_module.settings.telegram_alert_grace_period_seconds = 0
     try:
-        device = SimpleNamespace(id=1, name="MyRepublic - ISP", ip_address="192.168.1.1", site="R. Server", device_type="internet_target")
+        device = SimpleNamespace(
+            id=1, name="MyRepublic - ISP", ip_address="192.168.1.1", site="R. Server", device_type="internet_target"
+        )
         alert = Alert(
             id=14,
             device_id=1,
@@ -617,7 +629,9 @@ def test_pending_telegram_events_allow_device_down_but_filter_other_realtime_by_
     engine_module.settings.telegram_alert_grace_period_seconds = 0
     try:
         voip = SimpleNamespace(id=1, name="VoIP - 3", ip_address="192.168.88.183", site="Office 1", device_type="voip")
-        printer = SimpleNamespace(id=2, name="EPSON L3250 - 1", ip_address="192.168.88.38", site="Finance", device_type="printer")
+        printer = SimpleNamespace(
+            id=2, name="EPSON L3250 - 1", ip_address="192.168.88.38", site="Finance", device_type="printer"
+        )
         voip_down = Alert(
             id=15,
             device_id=1,
@@ -721,8 +735,12 @@ def test_non_priority_packet_loss_critical_uses_summary_not_realtime():
         engine_module.settings.telegram_alert_grace_period_seconds = previous_grace
 
 
-def test_device_down_flap_suppression_requires_duration_or_repeats():
+def test_device_down_flap_suppression_requires_duration_or_repeats(monkeypatch):
     import backend.app.alerting.engine as engine_module
+
+    # Exercise flap suppression on a realtime-eligible device; non-priority
+    # printer digests have their own delivery interval and separate coverage.
+    monkeypatch.setattr(engine_module.settings, "telegram_realtime_device_types", "printer")
 
     previous_realtime = engine_module.settings.telegram_realtime_severities
     previous_realtime_alert_types = engine_module.settings.telegram_realtime_alert_types
@@ -739,7 +757,9 @@ def test_device_down_flap_suppression_requires_duration_or_repeats():
     engine_module.settings.telegram_flap_repeat_window_seconds = 900
     engine_module.settings.telegram_flap_repeat_min_count = 3
     try:
-        printer = SimpleNamespace(id=2, name="EPSON L3250 - 1", ip_address="192.168.88.38", site="Finance", device_type="printer")
+        printer = SimpleNamespace(
+            id=2, name="EPSON L3250 - 1", ip_address="192.168.88.38", site="Finance", device_type="printer"
+        )
         printer_down = Alert(
             id=20,
             device_id=2,
@@ -765,6 +785,16 @@ def test_device_down_flap_suppression_requires_duration_or_repeats():
 
         assert suppressed == []
         assert [(event["message"], event["action"]) for event in repeated] == [
+            ("EPSON L3250 - 1 is unreachable", "active"),
+        ]
+        printer_down.created_at = utcnow() - timedelta(seconds=121)
+        sustained = engine_module._pending_active_telegram_events(
+            [printer_down],
+            device_by_id={2: printer},
+            device_type_by_id={2: "printer"},
+            recent_alert_counts={(2, "device_down"): 1},
+        )
+        assert [(event["message"], event["action"]) for event in sustained] == [
             ("EPSON L3250 - 1 is unreachable", "active"),
         ]
     finally:
@@ -894,7 +924,9 @@ def test_pending_telegram_events_skip_stale_metric_backed_alerts():
     engine_module.settings.scheduler_interval_device_seconds = 60
     engine_module.settings.scheduler_job_stale_factor = 3
     try:
-        device = SimpleNamespace(id=1, name="AP4", ip_address="192.168.88.52", site="R. Server", device_type="access_point")
+        device = SimpleNamespace(
+            id=1, name="AP4", ip_address="192.168.88.52", site="R. Server", device_type="access_point"
+        )
         alert = Alert(
             id=12,
             device_id=1,
@@ -904,7 +936,7 @@ def test_pending_telegram_events_skip_stale_metric_backed_alerts():
             status="active",
             created_at=utcnow() - timedelta(days=2),
         )
-        stale_metric = SimpleNamespace(checked_at=utcnow() - timedelta(hours=1))
+        stale_metric = Metric(checked_at=utcnow() - timedelta(hours=1))
 
         events = engine_module._pending_active_telegram_events(
             [alert],
@@ -935,7 +967,9 @@ def test_pending_telegram_events_respect_notification_cooldown():
     engine_module.settings.telegram_notification_cooldown_seconds = 900
     engine_module.settings.telegram_alert_grace_period_seconds = 0
     try:
-        device = SimpleNamespace(id=1, name="AP4", ip_address="192.168.88.52", site="R. Server", device_type="access_point")
+        device = SimpleNamespace(
+            id=1, name="AP4", ip_address="192.168.88.52", site="R. Server", device_type="access_point"
+        )
         alert = Alert(
             id=11,
             device_id=1,
@@ -979,6 +1013,7 @@ def test_alert_evaluation_scopes_active_incident_lookup(monkeypatch):
     monkeypatch.setattr(IncidentRepository, "list_active_incidents_by_device_ids", track_scoped_lookup)
 
     with client_context() as (_client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 device = (
@@ -1074,6 +1109,7 @@ def test_alert_evaluation_suppresses_alerts_during_maintenance_window():
     from backend.app.models.threshold import MaintenanceWindow
 
     with client_context() as (_client, session_factory):
+
         async def scenario():
             async with session_factory() as db:
                 devices = await DeviceRepository(db).upsert_devices(
@@ -1174,6 +1210,7 @@ def test_alert_evaluation_resolves_orphan_duplicate_incidents():
                 "incident_action": "resolved",
             }
         ]
+
 
 def test_run_cycle_creates_ping_latency_alert():
     with client_context() as (client, session_factory):
@@ -1539,6 +1576,7 @@ def test_run_cycle_creates_mikrotik_metric_alerts():
         assert incidents_response.status_code == 200
         assert len(incidents_response.json()) == 1
 
+
 def test_run_cycle_creates_internet_quality_alerts():
     with client_context() as (client, session_factory):
         internet_device_id = run(
@@ -1656,7 +1694,7 @@ def test_run_cycle_uses_switch_specific_quality_thresholds():
         original_server = run_cycle_module.run_server_checks
         original_mikrotik = run_cycle_module.run_mikrotik_checks
 
-        async def fake_device_checks(_db):
+        async def fake_device_checks(db, **_options: object) -> list[dict]:
             now = utcnow()
             return [
                 {
@@ -1746,7 +1784,7 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
         original_mikrotik = run_cycle_module.run_mikrotik_checks
         state = {"down": False}
 
-        async def fake_device_checks(_db):
+        async def fake_device_checks(db, **_options: object) -> list[dict]:
             now = utcnow()
             if state["down"]:
                 ping_metric = {
@@ -1857,7 +1895,7 @@ def test_run_cycle_creates_printer_alerts_and_incident():
         original_server = run_cycle_module.run_server_checks
         original_mikrotik = run_cycle_module.run_mikrotik_checks
 
-        async def fake_device_checks(_db):
+        async def fake_device_checks(db, **_options: object) -> list[dict]:
             now = utcnow()
             return [
                 {
@@ -1988,7 +2026,7 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
         original_mikrotik = run_cycle_module.run_mikrotik_checks
         state = {"down": False}
 
-        async def fake_device_checks(_db):
+        async def fake_device_checks(db, **_options: object) -> list[dict]:
             now = utcnow()
             return [
                 {
@@ -2060,4 +2098,3 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
         assert sent_messages == []
         assert resolved_response.status_code == 200
         assert resolved_response.json()["alerts_resolved"] == 0
-

@@ -52,6 +52,7 @@ def _route_template(request) -> str | None:
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """ASGI middleware that handles requestlogging concerns."""
+
     async def dispatch(self, request, call_next):
         """Return dispatch for the application."""
         request_id = str(uuid.uuid4())
@@ -100,6 +101,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """ASGI middleware that handles securityheaders concerns."""
+
     async def dispatch(self, request, call_next):
         """Return dispatch for the application."""
         response = await call_next(request)

@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import Select, case, desc, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from ..models.alert import Alert
 from ..models.device import Device
@@ -11,6 +12,7 @@ from ..models.device import Device
 
 class AlertRepository:
     """Database access object for Alert records."""
+
     def __init__(self, db: AsyncSession):
         """Initialize the object with its runtime dependencies."""
         self.db = db
@@ -51,25 +53,11 @@ class AlertRepository:
             .outerjoin(Device, Device.id == Alert.device_id)
             .where(Alert.status == "active")
         )
-        normalized_severity = str(severity or "").strip().lower()
-        if normalized_severity:
-            query = query.where(func.lower(Alert.severity) == normalized_severity)
-        normalized_site = str(site or "").strip().lower()
-        if normalized_site:
-            query = query.where(func.lower(Device.site) == normalized_site)
-        normalized_type = str(alert_type or "").strip().lower()
-        if normalized_type:
-            query = query.where(func.lower(Alert.alert_type) == normalized_type)
-        if device_id is not None:
-            query = query.where(Alert.device_id == device_id)
-        normalized_search = str(search or "").strip().lower()
-        if normalized_search:
-            query = query.where(
-                or_(
-                    func.lower(Alert.message).like(f"%{normalized_search}%"),
-                    func.lower(Device.name).like(f"%{normalized_search}%"),
-                )
+        query = query.where(
+            *self._active_filters(
+                severity=severity, site=site, alert_type=alert_type, device_id=device_id, search=search
             )
+        )
         if sort == "severity":
             severity_priority = case(
                 (func.lower(Alert.severity) == "critical", 0),
@@ -128,19 +116,59 @@ class AlertRepository:
         )
         if offset == 0 and len(rows) < limit:
             return rows, len(rows)
-        total = await self.count_active_alerts(severity=severity, site=site, alert_type=alert_type, device_id=device_id, search=search)
+        total = await self.count_active_alerts(
+            severity=severity, site=site, alert_type=alert_type, device_id=device_id, search=search
+        )
         return rows, total
 
-    async def summarize_active_alert_severity_counts(self) -> dict[str, int]:
-        """Query active alert severity counts from the database."""
-        rows = (
-            await self.db.execute(
-                select(Alert.severity, func.count())
-                .where(Alert.status == "active")
-                .group_by(Alert.severity)
+    @staticmethod
+    def _active_filters(
+        *,
+        severity: str | None = None,
+        site: str | None = None,
+        alert_type: str | None = None,
+        device_id: int | None = None,
+        search: str | None = None,
+    ) -> list[ColumnElement[bool]]:
+        """Use identical filter semantics for alert rows, counts, and summaries."""
+        clauses: list[ColumnElement[bool]] = [Alert.status == "active"]
+        for column, value in ((Alert.severity, severity), (Device.site, site), (Alert.alert_type, alert_type)):
+            normalized = str(value or "").strip().lower()
+            if normalized:
+                clauses.append(func.lower(column) == normalized)
+        if device_id is not None:
+            clauses.append(Alert.device_id == device_id)
+        normalized_search = str(search or "").strip().lower()
+        if normalized_search:
+            clauses.append(
+                or_(
+                    func.lower(Alert.message).like(f"%{normalized_search}%"),
+                    func.lower(Device.name).like(f"%{normalized_search}%"),
+                )
             )
-        ).all()
-        return {str(severity or "unknown"): int(total) for severity, total in rows}
+        return clauses
+
+    async def summarize_active_alert_severity_counts(
+        self,
+        *,
+        severity: str | None = None,
+        site: str | None = None,
+        alert_type: str | None = None,
+        device_id: int | None = None,
+        search: str | None = None,
+    ) -> dict[str, int]:
+        """Aggregate the complete filtered alert set in SQL, without loading messages."""
+        severity_label = func.lower(func.coalesce(Alert.severity, "unknown"))
+        query = select(severity_label, func.count()).select_from(Alert)
+        if str(site or "").strip() or str(search or "").strip():
+            query = query.outerjoin(Device, Device.id == Alert.device_id)
+        query = query.where(
+            *self._active_filters(
+                severity=severity, site=site, alert_type=alert_type, device_id=device_id, search=search
+            )
+        ).group_by(severity_label)
+        rows = (await self.db.execute(query)).all()
+        return {str(label): int(total) for label, total in rows}
 
     async def count_active_alerts(
         self,
@@ -151,30 +179,15 @@ class AlertRepository:
         device_id: int | None = None,
         search: str | None = None,
     ) -> int:
-        """Query active alerts from the database."""
-        query = select(func.count()).select_from(Alert).where(Alert.status == "active")
-        normalized_severity = str(severity or "").strip().lower()
-        if normalized_severity:
-            query = query.where(func.lower(Alert.severity) == normalized_severity)
-        normalized_site = str(site or "").strip().lower()
-        if normalized_site:
-            query = query.join(Device, Device.id == Alert.device_id, isouter=True).where(func.lower(Device.site) == normalized_site)
-        normalized_type = str(alert_type or "").strip().lower()
-        if normalized_type:
-            query = query.where(func.lower(Alert.alert_type) == normalized_type)
-        if device_id is not None:
-            query = query.where(Alert.device_id == device_id)
-        normalized_search = str(search or "").strip().lower()
-        needs_device_join = bool(normalized_search) and not normalized_site
-        if normalized_search:
-            if needs_device_join:
-                query = query.join(Device, Device.id == Alert.device_id, isouter=True)
-            query = query.where(
-                or_(
-                    func.lower(Alert.message).like(f"%{normalized_search}%"),
-                    func.lower(Device.name).like(f"%{normalized_search}%"),
-                )
+        """Count the same filtered set returned by the active alert list."""
+        query = select(func.count()).select_from(Alert)
+        if str(site or "").strip() or str(search or "").strip():
+            query = query.outerjoin(Device, Device.id == Alert.device_id)
+        query = query.where(
+            *self._active_filters(
+                severity=severity, site=site, alert_type=alert_type, device_id=device_id, search=search
             )
+        )
         return int(await self.db.scalar(query) or 0)
 
     async def create_alert(self, payload: dict, *, commit: bool = True) -> Alert:

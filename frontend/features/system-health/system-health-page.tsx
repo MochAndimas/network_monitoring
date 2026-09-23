@@ -56,11 +56,12 @@ export function SystemHealthPage() {
     <CapacityCards summary={summary} />
 
     <section>
-      <div className="section-header"><h2>Operational Alerts</h2><CsvExport filename="system-health-operational-alerts.csv" columns={["Job", "Severity", "Penyebab", "Detail", "Error terakhir"]} rows={summary.operational_alerts.map((item) => [value(item, "job_name"), value(item, "severity"), value(item, "reason"), value(item, "message"), value(item, "last_error")])} /></div>
+      <div className="section-header"><h2>Operational Alerts</h2><CsvExport filename="system-health-operational-alerts.csv" columns={["Job", "Agent / Site", "Severity", "Penyebab", "Detail", "Error terakhir"]} rows={summary.operational_alerts.map((item) => [value(item, "job_name"), schedulerOwner(item), value(item, "severity"), value(item, "reason"), value(item, "message"), value(item, "last_error")])} /></div>
       <DataTable
         emptyLabel="Tidak ada operational alert aktif."
         columns={[
           { key: "job", label: "Job", render: (item) => value(item, "job_name") },
+          { key: "owner", label: "Agent / Site", render: (item) => schedulerOwner(item) },
           { key: "severity", label: "Severity", render: (item) => <StatusBadge value={value(item, "severity")} /> },
           { key: "reason", label: "Penyebab", render: (item) => value(item, "reason") },
           { key: "message", label: "Detail", render: (item) => value(item, "message") },
@@ -71,10 +72,11 @@ export function SystemHealthPage() {
     </section>
 
     <section>
-      <div className="section-header"><h2>Scheduler Jobs</h2><CsvExport filename="system-health-scheduler-jobs.csv" columns={["Job", "Running", "Failure beruntun", "Mulai terakhir", "Sukses terakhir", "Gagal terakhir", "Durasi terakhir"]} rows={summary.scheduler_jobs.map((item) => [item.job_name, item.is_running ? "Ya" : "Tidak", item.consecutive_failures, formatWib(item.last_started_at), formatWib(item.last_succeeded_at), formatWib(item.last_failed_at), item.last_duration_ms])} /></div>
+      <div className="section-header"><h2>Scheduler Jobs</h2><CsvExport filename="system-health-scheduler-jobs.csv" columns={["Job", "Agent / Site", "Running", "Failure beruntun", "Mulai terakhir", "Sukses terakhir", "Gagal terakhir", "Durasi terakhir"]} rows={summary.scheduler_jobs.map((item) => [item.job_name, schedulerOwner(item), item.is_running ? "Ya" : "Tidak", item.consecutive_failures, formatWib(item.last_started_at), formatWib(item.last_succeeded_at), formatWib(item.last_failed_at), item.last_duration_ms])} /></div>
       <DataTable<SchedulerJob>
         columns={[
           { key: "name", label: "Job", render: (item) => item.job_name },
+          { key: "owner", label: "Agent / Site", render: (item) => schedulerOwner(item) },
           { key: "running", label: "Running", render: (item) => item.is_running ? "Ya" : "Tidak" },
           { key: "failures", label: "Failure beruntun", render: (item) => item.consecutive_failures },
           { key: "lastStarted", label: "Mulai terakhir", render: (item) => formatWib(item.last_started_at) },
@@ -87,10 +89,11 @@ export function SystemHealthPage() {
     </section>
 
     <section>
-      <div className="section-header"><h2>Scheduler Timing</h2><CsvExport filename="system-health-scheduler-timing.csv" columns={["Job", "Status", "Interval", "Umur heartbeat", "Schedule lag", "Batas stale", "Heartbeat terakhir", "Durasi terakhir"]} rows={summary.scheduler_health.map((item) => [value(item, "job_name"), value(item, "state"), value(item, "expected_interval_seconds"), value(item, "heartbeat_age_seconds"), value(item, "schedule_lag_seconds"), value(item, "stale_after_seconds"), formatWib(value(item, "last_heartbeat_at") === "-" ? null : value(item, "last_heartbeat_at")), value(item, "last_duration_ms")])} /></div>
+      <div className="section-header"><h2>Scheduler Timing</h2><CsvExport filename="system-health-scheduler-timing.csv" columns={["Job", "Agent / Site", "Status", "Interval", "Umur heartbeat", "Schedule lag", "Batas stale", "Heartbeat terakhir", "Durasi terakhir"]} rows={summary.scheduler_health.map((item) => [value(item, "job_name"), schedulerOwner(item), value(item, "state"), value(item, "expected_interval_seconds"), value(item, "heartbeat_age_seconds"), value(item, "schedule_lag_seconds"), value(item, "stale_after_seconds"), formatWib(value(item, "last_heartbeat_at") === "-" ? null : value(item, "last_heartbeat_at")), value(item, "last_duration_ms")])} /></div>
       <DataTable
         columns={[
           { key: "job", label: "Job", render: (item) => value(item, "job_name") },
+          { key: "owner", label: "Agent / Site", render: (item) => schedulerOwner(item) },
           { key: "state", label: "Status", render: (item) => <StatusBadge value={value(item, "state")} /> },
           { key: "interval", label: "Interval", render: (item) => `${number(item, "expected_interval_seconds")} dtk` },
           { key: "age", label: "Umur heartbeat", render: (item) => `${number(item, "heartbeat_age_seconds")} dtk` },
@@ -154,4 +157,10 @@ export function SystemHealthPage() {
       </section>
     </section>
   </main>;
+}
+
+
+function schedulerOwner(item: { agent_site?: unknown; agent_id?: unknown }): string {
+  if (typeof item.agent_site === "string" && item.agent_site) return item.agent_site;
+  return typeof item.agent_id === "string" && item.agent_id ? item.agent_id : "central";
 }

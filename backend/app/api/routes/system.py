@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.deps import require_ops_access
-from ...api.schemas import PerformanceBudgetResponse, RunCycleResult
+from ...api.schemas import PerformanceBudgetItem, PerformanceBudgetResponse, RunCycleResult
 from ...db.session import get_db
 from ...services.audit_service import record_admin_audit_log
-from ...services.pipeline_control import MONITORING_FULL_CYCLE_LOCK_SCOPES, monitoring_pipeline_multi_guard
+from ...services.pipeline_control import monitoring_full_cycle_lock_scopes, monitoring_pipeline_multi_guard
 from ...services.run_cycle_service import run_monitoring_cycle
 from ...services.performance_budget_service import list_performance_budgets
 
@@ -21,7 +21,7 @@ async def run_cycle(
     db: AsyncSession = Depends(get_db),
 ) -> RunCycleResult:
     """Handle the cycle endpoint."""
-    async with monitoring_pipeline_multi_guard(wait=False, scopes=MONITORING_FULL_CYCLE_LOCK_SCOPES) as acquired:
+    async with monitoring_pipeline_multi_guard(wait=False, scopes=monitoring_full_cycle_lock_scopes()) as acquired:
         if not acquired:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -46,4 +46,4 @@ async def run_cycle(
 @router.get("/performance-budgets", response_model=PerformanceBudgetResponse)
 async def get_performance_budgets() -> PerformanceBudgetResponse:
     """Return dashboard/API endpoint performance budgets."""
-    return PerformanceBudgetResponse(items=list_performance_budgets())
+    return PerformanceBudgetResponse(items=[PerformanceBudgetItem(**item) for item in list_performance_budgets()])

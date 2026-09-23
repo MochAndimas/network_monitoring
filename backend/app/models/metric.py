@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 class Metric(Base):
     """SQLAlchemy ORM model for Metric records."""
+
     __tablename__ = "metrics"
     __table_args__ = (
         Index("ix_metrics_history_lookup", "device_id", "metric_name", "checked_at"),

@@ -4,6 +4,7 @@ Revision ID: 20260409_0002
 Revises: 20260409_0001
 Create Date: 2026-04-09 12:45:00
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -22,11 +23,7 @@ def upgrade() -> None:
     Returns:
         None. The routine is executed for its side effects.
     """
-    op.execute(
-        sa.text(
-            "UPDATE metrics SET metric_name = 'ping' WHERE metric_name = 'reachability'"
-        )
-    )
+    op.execute(sa.text("UPDATE metrics SET metric_name = 'ping' WHERE metric_name = 'reachability'"))
 
 
 def downgrade() -> None:
@@ -35,8 +32,4 @@ def downgrade() -> None:
     Returns:
         None. The routine is executed for its side effects.
     """
-    op.execute(
-        sa.text(
-            "UPDATE metrics SET metric_name = 'reachability' WHERE metric_name = 'ping'"
-        )
-    )
+    op.execute(sa.text("UPDATE metrics SET metric_name = 'reachability' WHERE metric_name = 'ping'"))

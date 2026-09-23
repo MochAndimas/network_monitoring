@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 from sqlalchemy import text
+from sqlalchemy.pool import QueuePool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from ..core.config import settings
@@ -44,7 +45,9 @@ def _engine_options(database_url: str) -> dict[str, object]:
 
 _resolved_database_url = _async_database_url(settings.database.url)
 engine = create_async_engine(_resolved_database_url, **_engine_options(_resolved_database_url))
-SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, autoflush=False, autocommit=False, expire_on_commit=False)
+SessionLocal = async_sessionmaker(
+    bind=engine, class_=AsyncSession, autoflush=False, autocommit=False, expire_on_commit=False
+)
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
@@ -66,9 +69,8 @@ async def check_database_connection() -> bool:
 def database_pool_health() -> dict[str, int | None]:
     """Return safe SQLAlchemy pool counters for System Health."""
     pool = engine.pool
-    for attribute in ("size", "checkedout", "overflow"):
-        if not hasattr(pool, attribute):
-            return {"size": None, "checked_out": None, "overflow": None, "capacity": None}
+    if not isinstance(pool, QueuePool):
+        return {"size": None, "checked_out": None, "overflow": None, "capacity": None}
     size = int(pool.size())
     checked_out = int(pool.checkedout())
     # QueuePool reports a negative overflow while fewer than pool_size

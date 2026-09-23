@@ -4,6 +4,7 @@ Revision ID: 20260416_0006
 Revises: 20260413_0005
 Create Date: 2026-04-16 16:30:00
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -53,7 +54,9 @@ def upgrade() -> None:
     )
     op.create_index("ix_auth_sessions_id", "auth_sessions", ["id"], unique=False)
     op.create_index("ix_auth_sessions_user_id", "auth_sessions", ["user_id"], unique=False)
-    op.create_index("ix_auth_sessions_user_active", "auth_sessions", ["user_id", "expires_at", "revoked_at"], unique=False)
+    op.create_index(
+        "ix_auth_sessions_user_active", "auth_sessions", ["user_id", "expires_at", "revoked_at"], unique=False
+    )
 
 
 def downgrade() -> None:

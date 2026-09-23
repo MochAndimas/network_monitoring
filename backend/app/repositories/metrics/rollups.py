@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy import desc, distinct, func, select
 from sqlalchemy.sql import Select
+from sqlalchemy.sql.elements import ColumnElement
 
 from .base import MetricRepositoryBase
 from ...models.device import Device
@@ -35,28 +36,25 @@ class MetricRollupMixin(MetricRepositoryBase):
         rollup_to: date | None = None,
     ) -> Select[Any]:
         """Build the base query for daily metric rollup rows."""
-        query = (
-            select(
-                MetricDailyRollup.id,
-                MetricDailyRollup.device_id,
-                Device.name.label("device_name"),
-                Device.device_type.label("device_type"),
-                Device.site.label("site"),
-                MetricDailyRollup.rollup_date,
-                MetricDailyRollup.total_samples,
-                MetricDailyRollup.ping_samples,
-                MetricDailyRollup.down_count,
-                MetricDailyRollup.uptime_percentage,
-                MetricDailyRollup.average_ping_ms,
-                MetricDailyRollup.min_ping_ms,
-                MetricDailyRollup.max_ping_ms,
-                MetricDailyRollup.average_packet_loss_percent,
-                MetricDailyRollup.average_jitter_ms,
-                MetricDailyRollup.max_jitter_ms,
-                MetricDailyRollup.updated_at,
-            )
-            .outerjoin(Device, Device.id == MetricDailyRollup.device_id)
-        )
+        query = select(
+            MetricDailyRollup.id,
+            MetricDailyRollup.device_id,
+            Device.name.label("device_name"),
+            Device.device_type.label("device_type"),
+            Device.site.label("site"),
+            MetricDailyRollup.rollup_date,
+            MetricDailyRollup.total_samples,
+            MetricDailyRollup.ping_samples,
+            MetricDailyRollup.down_count,
+            MetricDailyRollup.uptime_percentage,
+            MetricDailyRollup.average_ping_ms,
+            MetricDailyRollup.min_ping_ms,
+            MetricDailyRollup.max_ping_ms,
+            MetricDailyRollup.average_packet_loss_percent,
+            MetricDailyRollup.average_jitter_ms,
+            MetricDailyRollup.max_jitter_ms,
+            MetricDailyRollup.updated_at,
+        ).outerjoin(Device, Device.id == MetricDailyRollup.device_id)
         if device_id is not None:
             query = query.where(MetricDailyRollup.device_id == device_id)
         if str(site or "").strip():
@@ -137,7 +135,11 @@ class MetricRollupMixin(MetricRepositoryBase):
         rollup_to: date | None = None,
     ) -> int:
         """Count daily summary rows for metric repository queries."""
-        query = select(func.count()).select_from(MetricDailyRollup).outerjoin(Device, Device.id == MetricDailyRollup.device_id)
+        query = (
+            select(func.count())
+            .select_from(MetricDailyRollup)
+            .outerjoin(Device, Device.id == MetricDailyRollup.device_id)
+        )
         if device_id is not None:
             query = query.where(MetricDailyRollup.device_id == device_id)
         if str(site or "").strip():
@@ -171,7 +173,9 @@ class MetricRollupMixin(MetricRepositoryBase):
         normalized_device_type = str(device_type or "").strip()
         if normalized_device_type:
             query = query.where(MetricSiteTypeDailySummary.device_type == normalized_device_type)
-        query = query.order_by(MetricSiteTypeDailySummary.summary_date.desc(), MetricSiteTypeDailySummary.site.asc()).limit(limit)
+        query = query.order_by(
+            MetricSiteTypeDailySummary.summary_date.desc(), MetricSiteTypeDailySummary.site.asc()
+        ).limit(limit)
         rows = list((await self.db.scalars(query)).all())
         return [
             {
@@ -203,29 +207,26 @@ class MetricRollupMixin(MetricRepositoryBase):
         offset: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
         """Return cold archive rows joined with device metadata."""
-        query = (
-            select(
-                MetricColdArchive.id,
-                MetricColdArchive.device_id,
-                Device.name.label("device_name"),
-                Device.device_type.label("device_type"),
-                Device.site.label("site"),
-                MetricColdArchive.archive_date,
-                MetricColdArchive.archive_month,
-                MetricColdArchive.metric_name,
-                MetricColdArchive.status,
-                MetricColdArchive.unit,
-                MetricColdArchive.sample_count,
-                MetricColdArchive.numeric_sample_count,
-                MetricColdArchive.min_numeric_value,
-                MetricColdArchive.max_numeric_value,
-                MetricColdArchive.avg_numeric_value,
-                MetricColdArchive.first_checked_at,
-                MetricColdArchive.last_checked_at,
-                MetricColdArchive.last_metric_value,
-            )
-            .outerjoin(Device, Device.id == MetricColdArchive.device_id)
-        )
+        query = select(
+            MetricColdArchive.id,
+            MetricColdArchive.device_id,
+            Device.name.label("device_name"),
+            Device.device_type.label("device_type"),
+            Device.site.label("site"),
+            MetricColdArchive.archive_date,
+            MetricColdArchive.archive_month,
+            MetricColdArchive.metric_name,
+            MetricColdArchive.status,
+            MetricColdArchive.unit,
+            MetricColdArchive.sample_count,
+            MetricColdArchive.numeric_sample_count,
+            MetricColdArchive.min_numeric_value,
+            MetricColdArchive.max_numeric_value,
+            MetricColdArchive.avg_numeric_value,
+            MetricColdArchive.first_checked_at,
+            MetricColdArchive.last_checked_at,
+            MetricColdArchive.last_metric_value,
+        ).outerjoin(Device, Device.id == MetricColdArchive.device_id)
         conditions = _cold_archive_conditions(
             archive_from=archive_from,
             archive_to=archive_to,
@@ -237,12 +238,18 @@ class MetricRollupMixin(MetricRepositoryBase):
             query = query.where(*conditions)
         rows = (
             await self.db.execute(
-                query.order_by(desc(MetricColdArchive.archive_date), Device.name.asc(), MetricColdArchive.metric_name.asc())
+                query.order_by(
+                    desc(MetricColdArchive.archive_date), Device.name.asc(), MetricColdArchive.metric_name.asc()
+                )
                 .offset(offset)
                 .limit(limit)
             )
         ).all()
-        total_query = select(func.count()).select_from(MetricColdArchive).outerjoin(Device, Device.id == MetricColdArchive.device_id)
+        total_query = (
+            select(func.count())
+            .select_from(MetricColdArchive)
+            .outerjoin(Device, Device.id == MetricColdArchive.device_id)
+        )
         if conditions:
             total_query = total_query.where(*conditions)
         total = int(await self.db.scalar(total_query) or 0)
@@ -296,9 +303,7 @@ class MetricRollupMixin(MetricRepositoryBase):
         ).all()
         existing = {
             (row.summary_date, row.site, row.device_type): row
-            for row in (
-                await self.db.scalars(select(MetricSiteTypeDailySummary))
-            ).all()
+            for row in (await self.db.scalars(select(MetricSiteTypeDailySummary))).all()
         }
         now_value = utcnow()
         for row in rows:
@@ -337,8 +342,8 @@ def _cold_archive_conditions(
     metric_name: str | None,
     site: str | None,
     device_type: str | None,
-):
-    conditions = []
+) -> list[ColumnElement[bool]]:
+    conditions: list[ColumnElement[bool]] = []
     if archive_from is not None:
         conditions.append(MetricColdArchive.archive_date >= archive_from)
     if archive_to is not None:

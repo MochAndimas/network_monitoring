@@ -4,6 +4,7 @@ Revision ID: 20260422_0015
 Revises: 20260422_0014
 Create Date: 2026-04-22 16:15:00
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -54,7 +55,9 @@ def upgrade() -> None:
     if "ix_latest_metrics_device_checked" not in latest_metric_indexes:
         op.create_index("ix_latest_metrics_device_checked", "latest_metrics", ["device_id", "checked_at"], unique=False)
     if "ix_latest_metrics_metric_checked" not in latest_metric_indexes:
-        op.create_index("ix_latest_metrics_metric_checked", "latest_metrics", ["metric_name", "checked_at"], unique=False)
+        op.create_index(
+            "ix_latest_metrics_metric_checked", "latest_metrics", ["metric_name", "checked_at"], unique=False
+        )
     if "ix_latest_metrics_status_checked" not in latest_metric_indexes:
         op.create_index("ix_latest_metrics_status_checked", "latest_metrics", ["status", "checked_at"], unique=False)
     if "ix_latest_metrics_metric_id" not in latest_metric_indexes:

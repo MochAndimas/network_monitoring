@@ -14,6 +14,7 @@ from ..repositories.metric_repository import MetricRepository
 
 logger = logging.getLogger("network_monitoring.service")
 
+
 async def persist_metrics(db: AsyncSession, metrics: list[dict], *, commit: bool = True) -> list:
     """Persist a batch of collected metric payloads."""
     persisted_metrics = await MetricRepository(db).create_metrics(metrics, commit=commit)

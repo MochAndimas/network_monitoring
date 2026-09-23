@@ -140,7 +140,8 @@ async def get_user_from_access_token(db: AsyncSession, token: str) -> Authentica
         payload = decode_access_token(token)
     except JWTValidationError:
         return await _get_user_from_legacy_token(db, token)
-    if payload.token_type != "access":
+    # Public JWT kind discriminator, not a credential.
+    if payload.token_type != "access":  # nosec B105
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
     session = await _get_active_session_by_jwt_id(db, payload.jwt_id)
@@ -168,7 +169,8 @@ async def get_user_from_token(db: AsyncSession, token: str) -> AuthenticatedActo
         payload = decode_access_token(token)
     except JWTValidationError:
         return await _get_user_from_legacy_token(db, token)
-    if payload.token_type == "refresh":
+    # Public JWT kind discriminator, not a credential.
+    if payload.token_type == "refresh":  # nosec B105
         return await get_user_from_refresh_token(db, token)
     return await get_user_from_access_token(db, token)
 
@@ -205,7 +207,9 @@ async def ensure_login_not_rate_limited(db: AsyncSession, *, username: str, clie
         )
     )
     if int(failed_attempts or 0) >= auth_settings.login_rate_limit_max_attempts:
-        await record_login_attempt(db, username=username, client_ip=client_ip, was_successful=False, was_rate_limited=True)
+        await record_login_attempt(
+            db, username=username, client_ip=client_ip, was_successful=False, was_rate_limited=True
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many login attempts. Please try again later.",
@@ -299,7 +303,8 @@ async def _authenticate_session_for_refresh(
         payload = decode_access_token(token)
     except JWTValidationError:
         return await _get_user_from_legacy_token(db, token), _legacy_payload()
-    if payload.token_type == "access":
+    # Public JWT kind discriminator, not a credential.
+    if payload.token_type == "access":  # nosec B105
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     return await _authenticate_refresh_token(db, token, commit=commit)
 
@@ -312,7 +317,8 @@ async def _authenticate_refresh_token(
 ) -> tuple[AuthenticatedActor, TokenPayload]:
     """Authenticate refresh token in the service layer."""
     payload = decode_access_token(token)
-    if payload.token_type != "refresh" or not payload.refresh_nonce:
+    # Public JWT kind discriminator, not a credential.
+    if payload.token_type != "refresh" or not payload.refresh_nonce:  # nosec B105
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
     session = await _get_active_session_by_jwt_id(db, payload.jwt_id)
@@ -347,7 +353,8 @@ async def _get_active_user_for_session(db: AsyncSession, session: AuthSession, *
 
 def _legacy_payload() -> TokenPayload:
     """Return legacy payload used by service-layer code."""
-    return TokenPayload(
+    # Public JWT kind discriminator, not a credential.
+    return TokenPayload(  # nosec B106
         token_type="refresh",
         subject=0,
         jwt_id="",
@@ -372,4 +379,3 @@ async def _get_user_from_legacy_token(db: AsyncSession, token: str) -> Authentic
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive")
 
     return AuthenticatedActor(kind="user", role=user.role, user=user, session=session)
-

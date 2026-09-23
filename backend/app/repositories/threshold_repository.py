@@ -11,6 +11,7 @@ from ..models.threshold import MaintenanceWindow, Threshold, ThresholdOverride
 
 class ThresholdRepository:
     """Database access object for Threshold records."""
+
     def __init__(self, db: AsyncSession):
         """Initialize the object with its runtime dependencies."""
         self.db = db
@@ -30,7 +31,9 @@ class ThresholdRepository:
         query: Select[tuple[Threshold]] = select(Threshold).where(Threshold.key == key)
         return (await self.db.scalars(query)).first()
 
-    async def upsert_threshold(self, key: str, value: float, description: str | None = None, *, commit: bool = True) -> Threshold:
+    async def upsert_threshold(
+        self, key: str, value: float, description: str | None = None, *, commit: bool = True
+    ) -> Threshold:
         """Persist threshold changes in the database."""
         threshold = await self.get_by_key(key)
         if threshold is None:

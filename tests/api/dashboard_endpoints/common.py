@@ -22,7 +22,13 @@ from backend.app.models.incident import Incident
 from backend.app.models.metric_daily_rollup import MetricDailyRollup
 from backend.app.models.user import AuthSession
 from backend.app.models.user import User
-from backend.app.core.security import AuthConfigurationError, create_access_token, decode_access_token, hash_password, validate_auth_configuration
+from backend.app.core.security import (
+    AuthConfigurationError,
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    validate_auth_configuration,
+)
 from backend.app.repositories.device_repository import DeviceRepository
 from backend.app.repositories.metric_repository import MetricRepository
 from backend.app.core.time import utcnow
@@ -50,7 +56,6 @@ def assert_legacy_deprecation_headers(response, *, legacy_endpoint: str) -> None
 
 
 @contextmanager
-
 def client_context():
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -131,6 +136,7 @@ def client_context():
         app.dependency_overrides.clear()
         run(drop_all(engine))
 
+
 async def _seed_devices_and_metrics(
     session_factory,
     devices_payload: list[dict],
@@ -139,10 +145,15 @@ async def _seed_devices_and_metrics(
     async with session_factory() as db:
         devices = await DeviceRepository(db).upsert_devices(devices_payload)
         if metrics_payload:
-            await MetricRepository(db).create_metrics(metrics_payload(devices) if callable(metrics_payload) else metrics_payload)
+            await MetricRepository(db).create_metrics(
+                metrics_payload(devices) if callable(metrics_payload) else metrics_payload
+            )
         return devices
 
-async def _create_user(session_factory, *, username: str, password: str, role: str = "viewer", full_name: str = "Test User"):
+
+async def _create_user(
+    session_factory, *, username: str, password: str, role: str = "viewer", full_name: str = "Test User"
+):
     async with session_factory() as db:
         user = User(
             username=username,
@@ -154,6 +165,15 @@ async def _create_user(session_factory, *, username: str, password: str, role: s
         db.add(user)
         await db.commit()
         return user
+
+
+def _admin_headers(client: TestClient, session_factory) -> dict[str, str]:
+    """Authenticate a real admin while keeping later requests cookie-independent."""
+    run(_create_user(session_factory, username="fixture-admin", password="StrongPass123!", role="admin"))
+    response = client.post("/auth/login", json={"username": "fixture-admin", "password": "StrongPass123!"})
+    assert response.status_code == 200
+    client.cookies.clear()
+    return {"authorization": f"Bearer {response.json()['access_token']}"}
 
 
 __all__ = [

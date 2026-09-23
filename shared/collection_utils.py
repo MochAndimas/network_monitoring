@@ -22,4 +22,3 @@ def chunked(items: Sequence[T], size: int) -> Iterator[Sequence[T]]:
     """
     for index in range(0, len(items), size):
         yield items[index : index + size]
-

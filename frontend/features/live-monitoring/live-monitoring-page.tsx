@@ -131,7 +131,7 @@ export function LiveMonitoringPage() {
   const metricOptions = isDeviceGroup ? groupMetricNames.data ?? [] : deviceId ? deviceMetrics.data ?? [] : data.metric_names;
   const groupSamples = groupHistory.flatMap((query) => query.data?.selected_device_trend.items ?? []);
   const anomalies = data.latest_snapshot.items.filter((item) => ["warning", "down", "error"].includes(String(item.status))).length;
-  const monitoredDevices = new Set(data.latest_snapshot.items.map((item) => item.device_name)).size;
+  const monitoredDevices = Object.values(data.latest_snapshot_status_summary).reduce((total, count) => total + count, 0);
   const snapshotColumns = [
     { key: "device", label: "Device", render: (item: MetricSample) => item.device_name },
     { key: "metric", label: "Metrik", render: (item: MetricSample) => item.metric_name },
@@ -169,7 +169,7 @@ export function LiveMonitoringPage() {
       <MetricCard label="Total data" value={data.history.meta.total.toLocaleString("id-ID")} />
       <MetricCard label="Device terpantau" value={monitoredDevices.toLocaleString("id-ID")} />
       <MetricCard label="Metrik aktif" value={data.metric_names.length.toLocaleString("id-ID")} />
-      <MetricCard label="Anomali aktif" value={anomalies.toLocaleString("id-ID")} />
+      <MetricCard label="Metrik bermasalah (halaman ini)" value={anomalies.toLocaleString("id-ID")} />
       <MetricCard label="Pengecekan terakhir" value={formatWib(data.latest_snapshot.items[0]?.checked_at)} />
     </MetricGrid>
 
@@ -182,7 +182,7 @@ export function LiveMonitoringPage() {
       <label>Window chart<select value={chartWindowHours} onChange={(event) => setChartWindowHours(Number(event.target.value))}><option value={1}>1 jam</option><option value={6}>6 jam</option><option value={12}>12 jam</option><option value={24}>24 jam</option></select></label>
     </div>
 
-    <LiveInsights samples={data.latest_snapshot.items} statusSummary={data.latest_snapshot_status_summary} />
+    <LiveInsights samples={data.latest_snapshot.items} statusSummary={data.latest_snapshot_status_summary} showActiveAlerts={deviceId === ""} />
 
     {selectedIsMikrotik ? <MikrotikDetail samples={data.selected_device_snapshot.items} /> : null}
     {selectedIsNas ? <NasDetail samples={data.selected_device_snapshot.items} /> : null}

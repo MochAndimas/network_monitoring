@@ -37,7 +37,9 @@ def highest_dynamic_metric(
     matches = [
         (metric_name, metric)
         for (current_device_id, metric_name), metric in latest_metrics.items()
-        if current_device_id == device_id and str(metric_name).startswith(prefix) and str(metric_name).endswith(suffixes)
+        if current_device_id == device_id
+        and str(metric_name).startswith(prefix)
+        and str(metric_name).endswith(suffixes)
     ]
     numeric_matches = [
         (metric_name, metric, value)

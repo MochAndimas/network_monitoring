@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class LoginRequest(BaseModel):
     """Pydantic schema for LoginRequest payloads."""
+
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=255)
     remember: bool = False
@@ -14,6 +15,7 @@ class LoginRequest(BaseModel):
 
 class UserSessionInfo(BaseModel):
     """Pydantic schema for UserSessionInfo payloads."""
+
     id: int
     username: str
     full_name: str
@@ -24,6 +26,7 @@ class UserSessionInfo(BaseModel):
 
 class LoginResponse(BaseModel):
     """Pydantic schema for LoginResponse payloads."""
+
     access_token: str
     token_type: str = "Bearer"
     user: UserSessionInfo
@@ -31,6 +34,7 @@ class LoginResponse(BaseModel):
 
 class CurrentUserResponse(BaseModel):
     """Pydantic schema for CurrentUserResponse payloads."""
+
     id: int
     username: str
     full_name: str
@@ -42,6 +46,7 @@ class CurrentUserResponse(BaseModel):
 
 class AuthSessionItem(BaseModel):
     """Pydantic schema for AuthSessionItem payloads."""
+
     session_id: int
     client_ip: str
     user_agent: str
@@ -53,12 +58,14 @@ class AuthSessionItem(BaseModel):
 
 class LogoutAllResponse(BaseModel):
     """Pydantic schema for LogoutAllResponse payloads."""
+
     success: bool = True
     revoked_sessions: int
 
 
 class AuthAdminSessionItem(BaseModel):
     """Pydantic schema for AuthAdminSessionItem payloads."""
+
     session_id: int
     user_id: int
     username: str
@@ -75,6 +82,7 @@ class AuthAdminSessionItem(BaseModel):
 
 class UserAdminItem(BaseModel):
     """Pydantic schema for UserAdminItem payloads."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -91,6 +99,7 @@ class UserAdminItem(BaseModel):
 
 class UserAdminCreateRequest(BaseModel):
     """Pydantic schema for UserAdminCreateRequest payloads."""
+
     username: str = Field(min_length=3, max_length=100)
     full_name: str = Field(min_length=1, max_length=150)
     password: str = Field(min_length=1, max_length=255)
@@ -99,6 +108,7 @@ class UserAdminCreateRequest(BaseModel):
 
 class UserAdminUpdateRequest(BaseModel):
     """Pydantic schema for UserAdminUpdateRequest payloads."""
+
     full_name: str | None = Field(default=None, min_length=1, max_length=150)
     role: str | None = Field(default=None, pattern="^(admin|viewer)$")
     is_active: bool | None = None
@@ -107,11 +117,13 @@ class UserAdminUpdateRequest(BaseModel):
 
 class UserPasswordResetRequest(BaseModel):
     """Pydantic schema for UserPasswordResetRequest payloads."""
+
     new_password: str = Field(min_length=1, max_length=255)
 
 
 class ChangePasswordRequest(BaseModel):
     """Pydantic schema for ChangePasswordRequest payloads."""
+
     current_password: str = Field(min_length=1, max_length=255)
     new_password: str = Field(min_length=1, max_length=255)
 
@@ -124,6 +136,7 @@ class UpdateMyAccountRequest(BaseModel):
 
 class AdminAuditLogItem(BaseModel):
     """Pydantic schema for AdminAuditLogItem payloads."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int

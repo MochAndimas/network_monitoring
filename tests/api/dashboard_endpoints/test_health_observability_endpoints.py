@@ -4,8 +4,8 @@ This module contains automated regression and validation scenarios.
 """
 
 from .common import (
+    _admin_headers,
     Alert,
-    API_HEADERS,
     client_context,
     DeviceRepository,
     MetricRepository,
@@ -14,10 +14,12 @@ from .common import (
     utcnow,
 )
 
+
 def test_health_endpoint_and_request_id_header():
     import backend.app.api.routes.health as health_module
 
     original_check = health_module.check_database_connection
+
     async def fake_check_database_connection():
         return True
 
@@ -41,6 +43,7 @@ def test_health_endpoint_and_request_id_header():
         assert "X-Request-ID" in response.headers
     finally:
         health_module.check_database_connection = original_check
+
 
 def test_health_ready_stays_up_when_scheduler_is_degraded():
     import backend.app.api.routes.health as health_module
@@ -81,6 +84,7 @@ def test_health_ready_stays_up_when_scheduler_is_degraded():
         health_module.check_database_connection = original_check
         health_module.list_scheduler_job_statuses = original_list_statuses
 
+
 def test_observability_metrics_use_route_templates_for_http_paths():
     import backend.app.services.observability_service as observability_module
 
@@ -115,6 +119,7 @@ def test_observability_metrics_use_route_templates_for_http_paths():
         observability_module._http_request_duration_ms.update(original_request_duration)
         observability_module._http_request_errors.clear()
         observability_module._http_request_errors.update(original_request_errors)
+
 
 def test_observability_metrics_include_history_payload_counters():
     import backend.app.services.observability_service as observability_module
@@ -161,14 +166,12 @@ def test_observability_metrics_include_history_payload_counters():
             in metrics
         )
         assert (
-            'network_monitoring_api_payload_total_rows_sum'
-            '{endpoint="/metrics/history/live",scope="global",section="latest_snapshot"} 99'
-            in metrics
+            "network_monitoring_api_payload_total_rows_sum"
+            '{endpoint="/metrics/history/live",scope="global",section="latest_snapshot"} 99' in metrics
         )
         assert (
-            'network_monitoring_api_payload_sampled_total'
-            '{endpoint="/metrics/history/live",scope="global",section="latest_snapshot"} 1'
-            in metrics
+            "network_monitoring_api_payload_sampled_total"
+            '{endpoint="/metrics/history/live",scope="global",section="latest_snapshot"} 1' in metrics
         )
     finally:
         observability_module._api_payload_request_count.clear()
@@ -180,10 +183,13 @@ def test_observability_metrics_include_history_payload_counters():
         observability_module._api_payload_sampled.clear()
         observability_module._api_payload_sampled.update(original_payload_sampled)
 
+
 def test_observability_summary_endpoint():
     import backend.app.api.routes.observability as observability_module
+    from backend.app.models.notification_outbox import NotificationOutbox
 
     original_check = observability_module.check_database_connection
+
     async def fake_check_database_connection():
         return True
 
@@ -191,8 +197,20 @@ def test_observability_summary_endpoint():
 
     try:
         with client_context() as (client, session_factory):
+            admin_headers = _admin_headers(client, session_factory)
+
             async def scenario():
                 async with session_factory() as db:
+                    db.add(
+                        NotificationOutbox(
+                            idempotency_key="observability-fixture",
+                            stream_key="fixture",
+                            channel="telegram",
+                            status="dead",
+                            message="private-outbox-message",
+                            destination="private-outbox-destination",
+                        )
+                    )
                     devices = await DeviceRepository(db).upsert_devices(
                         [
                             {"name": "Google DNS", "ip_address": "8.8.8.8", "device_type": "internet_target"},
@@ -224,8 +242,8 @@ def test_observability_summary_endpoint():
 
             run(scenario())
 
-            response = client.get("/observability/summary", headers=API_HEADERS)
-            metrics_response = client.get("/observability/metrics", headers=API_HEADERS)
+            response = client.get("/observability/summary", headers=admin_headers)
+            metrics_response = client.get("/observability/metrics", headers=admin_headers)
 
         assert response.status_code == 200
         payload = response.json()
@@ -240,10 +258,16 @@ def test_observability_summary_endpoint():
         assert "login_failures_window" in payload["auth"]
         assert "scheduler_jobs" in payload
         assert "operational_alerts" in payload
+        assert payload["notification_outbox"]["dead"] == 1
+        assert payload["notification_outbox"]["pending"] == 0
+        assert "private-outbox" not in response.text
         assert metrics_response.status_code == 200
         assert "network_monitoring_database_up 1" in metrics_response.text
         assert "network_monitoring_observability_multiprocess_enabled" in metrics_response.text
         assert "network_monitoring_observability_process_info" in metrics_response.text
+        assert (
+            'network_monitoring_notification_outbox_jobs{channel="telegram",status="dead"} 1' in metrics_response.text
+        )
+        assert "private-outbox" not in metrics_response.text
     finally:
         observability_module.check_database_connection = original_check
-

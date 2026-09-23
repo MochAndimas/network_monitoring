@@ -10,6 +10,7 @@ from ...core.constants import DEVICE_TYPE_CHOICES
 
 class DashboardSummary(BaseModel):
     """Pydantic schema for DashboardSummary payloads."""
+
     internet_status: str
     mikrotik_status: str
     server_status: str
@@ -18,6 +19,7 @@ class DashboardSummary(BaseModel):
 
 class DeviceListItem(BaseModel):
     """Pydantic schema for DeviceListItem payloads."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -34,6 +36,7 @@ class DeviceListItem(BaseModel):
 
 class PageMeta(BaseModel):
     """Pydantic schema for PageMeta payloads."""
+
     total: int
     limit: int
     offset: int
@@ -41,6 +44,7 @@ class PageMeta(BaseModel):
 
 class CursorPageMeta(BaseModel):
     """Pydantic schema for cursor-capable page metadata."""
+
     total: int | None
     limit: int
     offset: int
@@ -50,12 +54,14 @@ class CursorPageMeta(BaseModel):
 
 class DeviceListPage(BaseModel):
     """Pydantic schema for DeviceListPage payloads."""
+
     items: list["DeviceListItem"]
     meta: CursorPageMeta
 
 
 class DeviceCreate(BaseModel):
     """Pydantic schema for DeviceCreate payloads."""
+
     name: str = Field(min_length=1, max_length=150)
     ip_address: str = Field(min_length=1, max_length=50)
     device_type: str = Field(min_length=1, max_length=50)
@@ -91,6 +97,7 @@ class DeviceCreate(BaseModel):
 
 class DeviceUpdate(BaseModel):
     """Pydantic schema for DeviceUpdate payloads."""
+
     name: str | None = Field(default=None, min_length=1, max_length=150)
     ip_address: str | None = Field(default=None, min_length=1, max_length=50)
     device_type: str | None = Field(default=None, min_length=1, max_length=50)
@@ -132,6 +139,7 @@ class DeviceUpdate(BaseModel):
 
 class MetricHistoryItem(BaseModel):
     """Pydantic schema for MetricHistoryItem payloads."""
+
     id: int
     device_id: int
     device_name: str
@@ -145,18 +153,21 @@ class MetricHistoryItem(BaseModel):
 
 class MetricHistoryPage(BaseModel):
     """Pydantic schema for MetricHistoryPage payloads."""
+
     items: list["MetricHistoryItem"]
     meta: CursorPageMeta
 
 
 class MetricHistoryCursorPage(BaseModel):
     """Pydantic schema for cursor-capable MetricHistoryItem pages."""
+
     items: list["MetricHistoryItem"]
     meta: CursorPageMeta
 
 
 class MetricPayloadMeta(BaseModel):
     """Pydantic schema for sampled metric payload metadata."""
+
     total: int
     limit: int
     offset: int
@@ -165,12 +176,14 @@ class MetricPayloadMeta(BaseModel):
 
 class MetricHistorySection(BaseModel):
     """Pydantic schema for a metric history section inside composite payloads."""
+
     items: list["MetricHistoryItem"]
     meta: MetricPayloadMeta
 
 
 class DeviceMonitoringContext(BaseModel):
     """Safe device-specific monitoring context for operational UIs."""
+
     state: str
     reason: str
     capabilities: list[str]
@@ -179,6 +192,7 @@ class DeviceMonitoringContext(BaseModel):
 
 class MetricHistoryContextPayload(BaseModel):
     """Pydantic schema for composite metric history dashboard payloads."""
+
     metric_names: list[str]
     history: MetricHistorySection
     selected_device_history: MetricHistorySection
@@ -192,6 +206,7 @@ class MetricHistoryContextPayload(BaseModel):
 
 class MetricDailySummaryItem(BaseModel):
     """Pydantic schema for MetricDailySummaryItem payloads."""
+
     id: int
     device_id: int
     device_name: str
@@ -213,6 +228,7 @@ class MetricDailySummaryItem(BaseModel):
 
 class MetricDailySummaryPage(BaseModel):
     """Pydantic schema for MetricDailySummaryPage payloads."""
+
     items: list["MetricDailySummaryItem"]
     meta: PageMeta
 
@@ -273,6 +289,7 @@ class MetricLongTermExplorerPayload(BaseModel):
 
 class MetricFreshnessItem(BaseModel):
     """Pydantic schema for collector/site freshness summary rows."""
+
     collector: str
     site: str
     total_devices: int
@@ -287,6 +304,7 @@ class MetricFreshnessItem(BaseModel):
 
 class MetricFreshnessSummary(BaseModel):
     """Pydantic schema for metric freshness summary payloads."""
+
     generated_at: datetime
     stale_after_minutes: int
     active_only: bool
@@ -295,6 +313,7 @@ class MetricFreshnessSummary(BaseModel):
 
 class AlertItem(BaseModel):
     """Pydantic schema for AlertItem payloads."""
+
     id: int
     device_id: int | None = None
     device_name: str | None = None
@@ -309,13 +328,16 @@ class AlertItem(BaseModel):
 
 
 class AlertPage(BaseModel):
-    """Pydantic schema for AlertPage payloads."""
+    """Active alert page with severity counts for the complete filtered set."""
+
     items: list["AlertItem"]
     meta: PageMeta
+    severity_counts: dict[str, int]
 
 
 class IncidentItem(BaseModel):
     """Pydantic schema for IncidentItem payloads."""
+
     id: int
     device_id: int | None = None
     device_name: str | None = None
@@ -338,6 +360,7 @@ class IncidentItem(BaseModel):
 
 class IncidentPage(BaseModel):
     """Pydantic schema for IncidentPage payloads."""
+
     items: list["IncidentItem"]
     meta: PageMeta
 
@@ -384,6 +407,7 @@ class IncidentEscalationResponse(BaseModel):
 
 class RunCycleResult(BaseModel):
     """Pydantic schema for RunCycleResult payloads."""
+
     metrics_collected: int
     alerts_created: int
     alerts_resolved: int
@@ -408,6 +432,7 @@ class PerformanceBudgetResponse(BaseModel):
 
 class ThresholdItem(BaseModel):
     """Pydantic schema for ThresholdItem payloads."""
+
     id: int
     key: str
     value: float
@@ -416,6 +441,7 @@ class ThresholdItem(BaseModel):
 
 class ThresholdUpdate(BaseModel):
     """Pydantic schema for ThresholdUpdate payloads."""
+
     value: float
 
 
@@ -474,12 +500,14 @@ class MaintenanceWindowCreate(BaseModel):
 
 class DeviceTypeOption(BaseModel):
     """Pydantic schema for DeviceTypeOption payloads."""
+
     value: str
     label: str
 
 
 class DeviceOption(BaseModel):
     """Pydantic schema for DeviceOption payloads."""
+
     id: int
     name: str
     ip_address: str
@@ -491,6 +519,7 @@ class DeviceOption(BaseModel):
 
 class AuthObservabilitySummary(BaseModel):
     """Pydantic schema for AuthObservabilitySummary payloads."""
+
     active_sessions: int
     login_failures_window: int
     login_rate_limited_window: int

@@ -24,6 +24,14 @@ async def get_active_alerts(
     return [AlertItem(**row) for row in await AlertRepository(db).list_active_alert_rows(limit=limit, offset=offset)]
 
 
+@router.get("/active/summary", response_model=dict[str, int])
+async def get_active_alert_summary(
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, int]:
+    """Return global active alert counts by severity, independent of pagination."""
+    return await AlertRepository(db).summarize_active_alert_severity_counts()
+
+
 @router.get("/active/paged", response_model=AlertPage)
 async def get_active_alerts_paged(
     limit: int = Query(default=100, ge=1, le=500),
@@ -37,7 +45,8 @@ async def get_active_alerts_paged(
     db: AsyncSession = Depends(get_db),
 ) -> AlertPage:
     """Return get active alerts paged used by alerting workflows."""
-    rows, total = await AlertRepository(db).list_active_alert_rows_paged(
+    repository = AlertRepository(db)
+    rows = await repository.list_active_alert_rows(
         limit=limit,
         offset=offset,
         severity=severity,
@@ -47,6 +56,10 @@ async def get_active_alerts_paged(
         search=search,
         sort=sort,
     )
+    severity_counts = await repository.summarize_active_alert_severity_counts(
+        severity=severity, site=site, alert_type=alert_type, device_id=device_id, search=search
+    )
+    total = sum(severity_counts.values())
     scope_parts = ["active"]
     if str(severity or "").strip():
         scope_parts.append("severity")
@@ -68,4 +81,8 @@ async def get_active_alerts_paged(
         total_rows=total,
         sampled=total > len(rows),
     )
-    return AlertPage(items=[AlertItem(**row) for row in rows], meta=PageMeta(total=total, limit=limit, offset=offset))
+    return AlertPage(
+        items=[AlertItem(**row) for row in rows],
+        meta=PageMeta(total=total, limit=limit, offset=offset),
+        severity_counts=severity_counts,
+    )

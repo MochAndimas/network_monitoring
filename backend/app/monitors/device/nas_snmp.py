@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from dataclasses import dataclass
 from typing import cast
@@ -97,7 +98,11 @@ async def collect_nas_snmp_metrics(device_id: int, ip_address: str) -> list[dict
     community = nas_snmp_community_for_ip(ip_address)
     checked_at = utcnow()
     if not community:
-        return [_metric_payload(device_id, NasMetric("nas_snmp_collection_status", "configuration_missing", "warning"), checked_at)]
+        return [
+            _metric_payload(
+                device_id, NasMetric("nas_snmp_collection_status", "configuration_missing", "warning"), checked_at
+            )
+        ]
     scalar_oids = {
         "nas_uptime_ticks": SYS_UPTIME_OID,
         "nas_system_status_code": SYNO_SYSTEM_STATUS_OID,
@@ -155,7 +160,9 @@ async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str
     uptime_result = results["nas_uptime_ticks"]
     return NasSnmpFetchResult(
         values={key: result.value for key, result in results.items()},
-        collection_status="ok" if _safe_int(uptime_result.value) is not None else normalize_collection_status(uptime_result.error_category, fallback="invalid_response"),
+        collection_status="ok"
+        if _safe_int(uptime_result.value) is not None
+        else normalize_collection_status(uptime_result.error_category, fallback="invalid_response"),
     )
 
 
@@ -184,7 +191,7 @@ async def _snmp_get_value(ip_address: str, community: str, oid: str) -> NasSnmpR
         try:
             engine.transport_dispatcher.close_dispatcher()
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Transport cleanup failed")
 
 
 def _snmp_error_category(error_message: str) -> str:
@@ -198,7 +205,9 @@ async def _snmp_walk_table(ip_address: str, community: str, base_oid: str) -> di
     base_tuple = _oid_tuple(base_oid)
     current_oid = base_oid
     try:
-        transport = await UdpTransportTarget.create((ip_address, 161), timeout=SNMP_TIMEOUT_SECONDS, retries=SNMP_RETRIES)
+        transport = await UdpTransportTarget.create(
+            (ip_address, 161), timeout=SNMP_TIMEOUT_SECONDS, retries=SNMP_RETRIES
+        )
         while True:
             error_indication, error_status, _, var_binds = await next_cmd(
                 engine,
@@ -224,7 +233,7 @@ async def _snmp_walk_table(ip_address: str, community: str, base_oid: str) -> di
         try:
             engine.transport_dispatcher.close_dispatcher()
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Transport cleanup failed")
     return rows
 
 
@@ -236,22 +245,14 @@ def _build_uptime_metric(raw_values: dict[str, object | None]) -> NasMetric:
 
 
 def _build_cpu_metric(processor_loads: dict[int, dict[int, str]]) -> NasMetric:
-    values: list[float] = [
-        value
-        for row in processor_loads.values()
-        if (value := _safe_float(row.get(2))) is not None
-    ]
+    values: list[float] = [value for row in processor_loads.values() if (value := _safe_float(row.get(2))) is not None]
     if not values:
         return NasMetric("cpu_percent", "unavailable", "warning", "%")
     return NasMetric("cpu_percent", f"{sum(values) / len(values):.2f}", "ok", "%")
 
 
 def _build_memory_metric(memory_values: dict[int, dict[int, str]]) -> NasMetric:
-    values = {
-        column: _safe_float(raw_value)
-        for row in memory_values.values()
-        for column, raw_value in row.items()
-    }
+    values = {column: _safe_float(raw_value) for row in memory_values.values() for column, raw_value in row.items()}
     total_real = values.get(5)
     free_real = values.get(6) or 0.0
     buffered = values.get(14) or 0.0

@@ -12,7 +12,7 @@ def format_device_label(device: dict) -> str:
     Returns:
         Human-readable label used in dashboards and selector controls.
     """
-    return f'{device["name"]} ({device["device_type"]})'
+    return f"{device['name']} ({device['device_type']})"
 
 
 def is_mikrotik_device(device_type: str | None, device_name: str | None) -> bool:
@@ -31,4 +31,3 @@ def is_mikrotik_device(device_type: str | None, device_name: str | None) -> bool
     normalized_type = str(device_type or "").lower()
     normalized_name = str(device_name or "").lower()
     return normalized_type == "mikrotik" or "mikrotik" in normalized_name
-

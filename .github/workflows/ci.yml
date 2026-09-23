@@ -15,10 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       APP_ENV: development
+      DATABASE_URL: sqlite+aiosqlite:///./ci_tests.db
       INTERNAL_API_KEY: ci-internal-key
       AUTH_PASSWORD_SECRET: ci-password-secret
       AUTH_JWT_SECRET: ci-jwt-secret
-      CORS_ORIGINS: http://localhost:8501,http://127.0.0.1:8501
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       TRUSTED_HOSTS: localhost,127.0.0.1
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +28,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements/dev.txt
+          cache-dependency-path: |
+            requirements/backend.txt
+            requirements/dev.txt
+            requirements/security.txt
 
       - name: Install dev dependencies
         run: |
@@ -37,24 +41,126 @@ jobs:
       - name: Pre-commit hygiene hooks
         run: pre-commit run --all-files --show-diff-on-failure
 
+      - name: Check installed dependencies
+        run: make dependency-check
+
+      - name: Check Python formatting
+        run: make format-check
+
       - name: Lint
-        run: ruff check backend dashboard scripts tests
+        run: make lint
 
       - name: Lint (quality-gate staged rules)
-        run: ruff check --select B,I,UP,SIM backend/app/services/auth backend/app/repositories/alert_repository.py backend/app/repositories/incident_repository.py
+        run: make lint-staged
 
       - name: Type Check (mypy staged scope)
         run: mypy --config-file mypy.ini
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Type Check (pyright staged scope)
         run: pyright
 
       - name: Unit and API tests
-        run: pytest -q
+        run: make test
+
+  frontend-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint frontend
+        run: pnpm lint
+      - name: Typecheck frontend
+        run: pnpm typecheck
+      - name: Test frontend
+        run: pnpm test
+      - name: Build frontend with explicit API URL
+        run: pnpm build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.example.test
+      - name: Audit frontend dependencies
+        run: pnpm audit --prod
+
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ENV_FILE: ""
+      APP_ENV: development
+      DATABASE_URL: sqlite+aiosqlite:///./ci_e2e.db
+      DATABASE_AUTO_CREATE_TABLES: "true"
+      INTERNAL_API_KEY: ci-internal-key
+      AUTH_PASSWORD_SECRET: ci-password-secret
+      AUTH_JWT_SECRET: ci-jwt-secret
+      CORS_ORIGINS: http://127.0.0.1:3000
+      TRUSTED_HOSTS: localhost,127.0.0.1
+      BOOTSTRAP_ADMIN_USERNAME: ci-admin
+      BOOTSTRAP_ADMIN_PASSWORD: ci-admin-fixture-password
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+      E2E_BASE_URL: http://127.0.0.1:3000
+      E2E_USERNAME: ci-admin
+      E2E_PASSWORD: ci-admin-fixture-password
+      E2E_ALLOW_MUTATIONS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install fixture and browser dependencies
+        run: |
+          python -m pip install -r requirements/backend.txt
+          cd frontend
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+          pnpm build
+      - name: Start isolated fixture services
+        run: |
+          python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 > backend-e2e.log 2>&1 &
+          (cd frontend && pnpm start --hostname 127.0.0.1) > frontend-e2e.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/health/ready >/dev/null && curl -fsS http://127.0.0.1:3000/login >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat backend-e2e.log frontend-e2e.log
+          exit 1
+      - name: Run functional E2E suite
+        working-directory: frontend
+        run: pnpm test:e2e --grep-invert "desktop visual regression"
+      - name: Upload E2E diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-e2e-diagnostics
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+            backend-e2e.log
+            frontend-e2e.log
 
   migration-smoke:
     runs-on: ubuntu-latest
@@ -118,9 +224,12 @@ jobs:
       INTERNAL_API_KEY: ci-internal-key
       AUTH_PASSWORD_SECRET: ci-password-secret
       AUTH_JWT_SECRET: ci-jwt-secret
-      CORS_ORIGINS: http://localhost:8501,http://127.0.0.1:8501
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       TRUSTED_HOSTS: localhost,127.0.0.1
       LOG_LEVEL: INFO
+      DATABASE_AUTO_CREATE_TABLES: "true"
+      BOOTSTRAP_ADMIN_USERNAME: ci-admin
+      BOOTSTRAP_ADMIN_PASSWORD: ci-admin-fixture-password
     steps:
       - uses: actions/checkout@v4
 
@@ -128,7 +237,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements/dev.txt
+          cache-dependency-path: |
+            requirements/backend.txt
+            requirements/dev.txt
+            requirements/security.txt
 
       - name: Install dev dependencies
         run: |
@@ -152,12 +264,23 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p .ci_artifacts
-          python scripts/benchmark_endpoints.py \
-            --base-url http://127.0.0.1:8000 \
-            --api-key ci-internal-key \
-            --profile ci \
-            --runs 3 \
-            --output-json .ci_artifacts/benchmark.json
+          python - <<'PY'
+          import os
+          import subprocess
+          import sys
+          import httpx
+
+          response = httpx.post("http://127.0.0.1:8000/auth/login", json={
+              "username": os.environ["BOOTSTRAP_ADMIN_USERNAME"],
+              "password": os.environ["BOOTSTRAP_ADMIN_PASSWORD"],
+          })
+          response.raise_for_status()
+          subprocess.run([
+              sys.executable, "scripts/benchmark_endpoints.py",
+              "--base-url", "http://127.0.0.1:8000", "--profile", "ci", "--runs", "3",
+              "--output-json", ".ci_artifacts/benchmark.json",
+          ], env={**os.environ, "BENCHMARK_BEARER_TOKEN": response.json()["access_token"]}, check=True)
+          PY
 
       - name: Concurrency smoke test
         id: concurrency_gate
@@ -256,8 +379,8 @@ jobs:
       - name: Build backend image
         run: docker build -f Dockerfile.backend -t network-monitoring-backend-ci .
 
-      - name: Build dashboard image
-        run: docker build -f Dockerfile.dashboard -t network-monitoring-dashboard-ci .
+      - name: Build frontend image
+        run: docker build --build-arg NEXT_PUBLIC_API_URL=https://api.example.test -f frontend/Dockerfile -t network-monitoring-frontend-ci frontend
 
   security-audit:
     runs-on: ubuntu-latest
@@ -268,33 +391,30 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements/backend.txt
+          cache-dependency-path: |
+            requirements/backend.txt
+            requirements/security.txt
 
       - name: Install audit tooling
         run: |
           python -m pip install --upgrade pip
-          pip install pip-audit bandit semgrep
+          pip install -r requirements/security.txt
+
+      - name: Verify audit tooling startup
+        run: |
+          python -m pip check
+          semgrep --version
 
       - name: Audit backend dependencies
-        run: pip-audit -r requirements/backend.txt
-
-      - name: Audit dashboard dependencies
-        run: pip-audit -r requirements/dashboard.txt
+        run: make security-dependencies
 
       - name: Bandit SAST (backend, scripts)
-        run: |
-          bandit -q -r backend scripts -x tests,venv
+        if: ${{ !cancelled() }}
+        run: make security-bandit
 
       - name: Semgrep SAST (staged security rules)
-        run: |
-          semgrep scan \
-            --config p/security-audit \
-            --config p/python \
-            --error \
-            --metrics=off \
-            --exclude venv \
-            --exclude tests \
-            backend scripts dashboard
+        if: ${{ !cancelled() }}
+        run: make security-semgrep
 
   secret-scan:
     runs-on: ubuntu-latest

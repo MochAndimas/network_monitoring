@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 import pytest
+
+# Test configuration must not depend on an operator's local .env file.
+# Explicit process environment (including CI's MySQL fixture URL) still applies.
+os.environ["APP_ENV_FILE"] = ""
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("AUTH_PASSWORD_SECRET", "test-password-secret")
+os.environ.setdefault("AUTH_JWT_SECRET", "test-jwt-secret")
 
 INTEGRATION_TEST_FILES = {
     Path("tests/services/test_auth_service.py"),

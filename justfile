@@ -1,4 +1,6 @@
-set dotenv-load := true
+# Application commands load their own configuration; quality gates must not
+# inject an operator's .env (especially DATABASE_URL) into the test process.
+set dotenv-load := false
 
 default:
   @just --list
@@ -14,10 +16,19 @@ precommit-run:
   pre-commit run --all-files
 
 lint:
-  ruff check backend dashboard scripts tests
+  make lint
+
+lint-staged:
+  make lint-staged
 
 format:
-  ruff format backend dashboard scripts tests
+  ruff format backend shared scripts tests
+
+format-check:
+  make format-check
+
+dependency-check:
+  make dependency-check
 
 typecheck:
   mypy --config-file mypy.ini
@@ -45,10 +56,14 @@ migration-check:
   test "$(alembic heads | grep -c '(head)' || true)" -eq 1
   alembic check
 
+frontend-check:
+  make frontend-check
+
+backend-check:
+  make backend-check
+
 ci:
-  just lint
-  just typecheck
-  just test
+  make ci
 
 backend:
   uvicorn backend.app.main:app --reload
@@ -63,6 +78,13 @@ docker-logs:
   docker compose logs --tail=100 backend scheduler frontend
 
 security:
-  pip-audit -r requirements/backend.txt
-  bandit -q -r backend scripts -x tests,venv
-  semgrep scan --config p/security-audit --config p/python --error --metrics=off --exclude venv --exclude tests backend scripts dashboard
+  make security
+
+security-dependencies:
+  make security-dependencies
+
+security-bandit:
+  make security-bandit
+
+security-semgrep:
+  make security-semgrep

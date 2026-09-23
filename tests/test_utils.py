@@ -9,14 +9,16 @@ import asyncio
 import sys
 from collections.abc import Iterable
 
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from backend.app.db.base import Base
 
 
 def run(coro):
     if sys.platform.startswith("win"):
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        policy_factory = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+        if policy_factory is not None:
+            asyncio.set_event_loop_policy(policy_factory())
     return asyncio.run(coro)
 
 
@@ -31,7 +33,7 @@ async def drop_all(engine: AsyncEngine) -> None:
     await engine.dispose()
 
 
-async def empty_checks(_db):
+async def empty_checks(db: AsyncSession, **_options: object) -> list[dict]:
     return []
 
 
@@ -42,4 +44,3 @@ def make_fake_safe_ping(samples: Iterable[float | None]):
         return next(sample_iter)
 
     return _fake_safe_ping
-
