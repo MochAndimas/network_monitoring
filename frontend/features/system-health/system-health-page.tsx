@@ -53,6 +53,10 @@ export function SystemHealthPage() {
       <MetricCard label="Lag terbesar" value={`${maxLagSeconds.toLocaleString("id-ID", { maximumFractionDigits: 0 })} dtk`} />
     </MetricGrid>
 
+    {summary.telegram_configured && summary.notification_workers_alive === 0 ? (
+      <p className="form-error" role="alert">Worker Telegram tidak aktif. Notifikasi yang masuk antrean belum dapat dikirim.</p>
+    ) : null}
+
     <CapacityCards summary={summary} />
 
     <section>

@@ -1,6 +1,8 @@
 "use client";
 
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { GroupMonitoringSummary } from "./group-monitoring-summary";
+import { useGroupMonitoring } from "./use-group-monitoring";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CsvExport } from "@/components/ui/csv-export";
@@ -65,18 +67,18 @@ export function LiveMonitoringPage() {
   const [rangeTo, setRangeTo] = useState(() => params.get("to") ?? wibDateInput());
   const [chartWindowHours, setChartWindowHours] = useState(() => initialChartWindow(params.get("window")));
   const [snapshotOffset, setSnapshotOffset] = useState(() => initialOffset(params.get("snapshot_offset")));
+  const [groupOffset, setGroupOffset] = useState(() => initialOffset(params.get("group_offset")));
   const [historyCursor, setHistoryCursor] = useState<string | undefined>();
   const [historyCursorTrail, setHistoryCursorTrail] = useState<Array<string | undefined>>([]);
-  useUrlQuerySync({ device: deviceId, metric, status, mode: monitoringMode === "range" ? monitoringMode : undefined, from: monitoringMode === "range" ? rangeFrom : undefined, to: monitoringMode === "range" ? rangeTo : undefined, window: chartWindowHours === 6 ? undefined : chartWindowHours, snapshot_offset: snapshotOffset });
-  const devices = useQuery({ queryKey: ["devices", "options"], queryFn: () => apiFetch<DeviceOption[]>("/devices/options?active_only=true") });
+  useUrlQuerySync({ device: deviceId, metric, status, mode: monitoringMode === "range" ? monitoringMode : undefined, from: monitoringMode === "range" ? rangeFrom : undefined, to: monitoringMode === "range" ? rangeTo : undefined, window: chartWindowHours === 6 ? undefined : chartWindowHours, snapshot_offset: snapshotOffset, group_offset: groupOffset });
+  const devices = useQuery({ queryKey: ["devices", "options"], queryFn: ({ signal }) => apiFetch<DeviceOption[]>("/devices/options?active_only=true", { signal }) });
   const isVoipGroup = deviceId === "__voip__";
   const isRuijieGroup = deviceId === "__ruijie__";
   // Group values are client-side options, not API device identifiers.
   const isDeviceGroup = isVoipGroup || isRuijieGroup;
   const apiDeviceId = isDeviceGroup ? undefined : deviceId || undefined;
-  const voipDevices = devices.data?.filter((device) => device.device_type === "voip") ?? [];
+  const voipDevices = devices.data?.filter((device) => device.device_type.toLowerCase() === "voip") ?? [];
   const ruijieDevices = devices.data?.filter((device) => device.device_type.toLowerCase() === "ruijie" || device.name.toLowerCase().includes("ruijie")) ?? [];
-  const groupedDevices = isVoipGroup ? voipDevices : ruijieDevices;
   const groupLabel = isVoipGroup ? "VoIP" : "Ruijie";
   const groupKey = isVoipGroup ? "voip" : "ruijie";
   const selectableDevices = devices.data?.filter((device) => device.device_type !== "voip" && !ruijieDevices.some((ruijie) => ruijie.id === device.id)) ?? [];
@@ -89,22 +91,17 @@ export function LiveMonitoringPage() {
   const historyEndpoint = isRangeMode ? "/metrics/history/context" : "/metrics/history/live";
   const historyRange = isRangeMode ? { checked_from: wibRangeBoundary(rangeFrom), checked_to: wibRangeBoundary(rangeTo, true) } : {};
   const refreshInterval = isRangeMode ? false : 15_000;
-  const groupMetricNames = useQuery({ queryKey: ["metrics", "names", groupKey], queryFn: () => apiFetch<string[]>(withQuery("/metrics/names", { device_id: groupedDevices[0]?.id })), enabled: isDeviceGroup && groupedDevices.length > 0 });
   const deviceMetrics = useQuery({
     queryKey: ["metrics", "names", deviceId],
-    queryFn: () => apiFetch<string[]>(withQuery("/metrics/names", { device_id: deviceId })),
+    queryFn: ({ signal }) => apiFetch<string[]>(withQuery("/metrics/names", { device_id: deviceId }), { signal }),
     enabled: Boolean(deviceId) && !isDeviceGroup
   });
-  const selectedTrendMetrics = isDeviceGroup ? (metric ? [metric] : groupMetricNames.data ?? []) : trendMetricNames(selectedIsMikrotik ? "mikrotik" : selectedDevice?.device_type, deviceMetrics.data ?? [], metric);
-  const groupHistory = useQueries({ queries: groupedDevices.map((device) => ({
-    queryKey: ["live-monitoring", monitoringMode, rangeFrom, rangeTo, groupKey, device.id, metric, status, selectedTrendMetrics],
-    queryFn: () => apiFetch<LiveMonitoringContext>(withQuery(historyEndpoint, { device_id: device.id, metric_name: metric || undefined, status: status || undefined, include_selected_device_trend: true, trend_metric_names: selectedTrendMetrics, trend_limit: 500, limit: 500, ...historyRange })),
-    enabled: isDeviceGroup && selectedTrendMetrics.length > 0 && hasValidRange,
-    refetchInterval: refreshInterval
-  })) });
-  const monitoring = useQuery({
+  const selectedTrendMetrics = isDeviceGroup ? [] : trendMetricNames(selectedIsMikrotik ? "mikrotik" : selectedDevice?.device_type, deviceMetrics.data ?? [], metric);
+  const groupMonitoring = useGroupMonitoring({ group: groupKey, mode: monitoringMode, metric, status,
+    from: rangeFrom, to: rangeTo, deviceOffset: groupOffset, snapshotOffset }, isDeviceGroup && hasValidRange);
+  const individualMonitoring = useQuery({
     queryKey: ["live-monitoring", monitoringMode, rangeFrom, rangeTo, deviceId, metric, status, chartWindowHours, selectedTrendMetrics, snapshotOffset],
-    queryFn: () => apiFetch<LiveMonitoringContext>(withQuery(historyEndpoint, {
+    queryFn: ({ signal }) => apiFetch<LiveMonitoringContext>(withQuery(historyEndpoint, {
       device_id: apiDeviceId,
       metric_name: metric || undefined,
       status: status || undefined,
@@ -116,27 +113,28 @@ export function LiveMonitoringPage() {
       trend_metric_names: selectedTrendMetrics,
       trend_limit: 500,
       ...historyRange
-    })),
-    enabled: hasValidRange,
+    }), { signal }),
+    enabled: !isDeviceGroup && hasValidRange,
     refetchInterval: refreshInterval
   });
+  const monitoring = isDeviceGroup ? groupMonitoring : individualMonitoring;
   const pagedHistoryRange = isRangeMode ? { checked_from: wibRangeBoundary(rangeFrom), checked_to: wibRangeBoundary(rangeTo, true) } : liveRange();
-  const historyPage = useQuery({ queryKey: ["live-history-page", apiDeviceId, metric, status, monitoringMode, rangeFrom, rangeTo, historyCursor], queryFn: () => apiFetch<{ items: MetricSample[]; meta: { total: number | null; limit: number; next_cursor: string | null; has_more: boolean } }>(withQuery("/metrics/history/paged", { device_id: apiDeviceId, metric_name: metric || undefined, status: status || undefined, limit: 10, cursor: historyCursor, ...pagedHistoryRange })), enabled: !isDeviceGroup && hasValidRange });
+  const historyPage = useQuery({ queryKey: ["live-history-page", apiDeviceId, metric, status, monitoringMode, rangeFrom, rangeTo, historyCursor], queryFn: ({ signal }) => apiFetch<{ items: MetricSample[]; meta: { total: number | null; limit: number; next_cursor: string | null; has_more: boolean } }>(withQuery("/metrics/history/paged", { device_id: apiDeviceId, metric_name: metric || undefined, status: status || undefined, limit: 10, cursor: historyCursor, ...pagedHistoryRange }), { signal }), enabled: !isDeviceGroup && hasValidRange });
 
   if (!hasValidRange) return <ErrorState message="Tanggal mulai harus diisi dan tidak boleh melewati tanggal akhir." onRetry={() => undefined} />;
-  if (monitoring.isPending || devices.isPending || (deviceMetrics.isPending && Boolean(deviceId) && !isDeviceGroup) || (isDeviceGroup && groupMetricNames.isPending)) return <LoadingState />;
-  if (monitoring.isError || historyPage.isError || devices.isError || deviceMetrics.isError || groupMetricNames.isError || groupHistory.some((query) => query.isError)) return <ErrorState message="Live monitoring tidak dapat dimuat." onRetry={() => { void monitoring.refetch(); void historyPage.refetch(); void devices.refetch(); void deviceMetrics.refetch(); void groupMetricNames.refetch(); groupHistory.forEach((query) => void query.refetch()); }} />;
+  if (monitoring.isPending || devices.isPending || (deviceMetrics.isPending && Boolean(deviceId) && !isDeviceGroup)) return <LoadingState />;
+  if (monitoring.isError || (!isDeviceGroup && historyPage.isError) || devices.isError || (!isDeviceGroup && deviceMetrics.isError)) return <ErrorState message="Live monitoring tidak dapat dimuat." onRetry={() => { void monitoring.refetch(); void devices.refetch(); if (!isDeviceGroup) { void historyPage.refetch(); void deviceMetrics.refetch(); } }} />;
 
   const data = monitoring.data;
-  const metricOptions = isDeviceGroup ? groupMetricNames.data ?? [] : deviceId ? deviceMetrics.data ?? [] : data.metric_names;
-  const groupSamples = groupHistory.flatMap((query) => query.data?.selected_device_trend.items ?? []);
+  const metricOptions = isDeviceGroup ? data.metric_names : deviceId ? deviceMetrics.data ?? [] : data.metric_names;
+  const groupSamples = data.selected_device_trend.items;
   const anomalies = data.latest_snapshot.items.filter((item) => ["warning", "down", "error"].includes(String(item.status))).length;
   const monitoredDevices = Object.values(data.latest_snapshot_status_summary).reduce((total, count) => total + count, 0);
   const snapshotColumns = [
     { key: "device", label: "Device", render: (item: MetricSample) => item.device_name },
     { key: "metric", label: "Metrik", render: (item: MetricSample) => item.metric_name },
     { key: "value", label: "Nilai terakhir", render: displayValue },
-    { key: "uptime", label: "Uptime", render: (item: MetricSample) => data.snapshot_uptime_map[item.device_name] ?? "-" },
+    { key: "uptime", label: "Uptime", render: (item: MetricSample) => data.snapshot_uptime_map[`${item.device_id}:${item.metric_name}`] ?? data.snapshot_uptime_map[item.device_name] ?? "-" },
     { key: "status", label: "Status", render: (item: MetricSample) => <StatusBadge value={item.status} /> },
     { key: "time", label: "Dicek (WIB)", render: (item: MetricSample) => formatWib(item.checked_at) }
   ];
@@ -149,7 +147,7 @@ export function LiveMonitoringPage() {
     { key: "status", label: "Status", render: (item: MetricSample) => <StatusBadge value={item.status} /> }
   ];
 
-  function resetSnapshot() { setSnapshotOffset(0); setHistoryCursor(undefined); setHistoryCursorTrail([]); }
+  function resetSnapshot() { setGroupOffset(0); setSnapshotOffset(0); setHistoryCursor(undefined); setHistoryCursorTrail([]); }
   function nextHistoryPage() {
     const nextCursor = historyPage.data?.meta.next_cursor;
     if (!nextCursor) return;
@@ -166,7 +164,7 @@ export function LiveMonitoringPage() {
   return <main className="app-page live-monitoring-page">
     <PageHeader className="live-monitoring-header" title="Live Monitoring" description={isRangeMode ? `Riwayat metric untuk rentang ${rangeFrom} s.d. ${rangeTo}.` : "Snapshot 24 jam terakhir, riwayat metric, dan trend perangkat secara real-time."} />
     <MetricGrid columns={5}>
-      <MetricCard label="Total data" value={data.history.meta.total.toLocaleString("id-ID")} />
+      <MetricCard label={isDeviceGroup ? "Data riwayat ditampilkan" : "Total data"} value={data.history.meta.total.toLocaleString("id-ID")} />
       <MetricCard label="Device terpantau" value={monitoredDevices.toLocaleString("id-ID")} />
       <MetricCard label="Metrik aktif" value={data.metric_names.length.toLocaleString("id-ID")} />
       <MetricCard label="Metrik bermasalah (halaman ini)" value={anomalies.toLocaleString("id-ID")} />
@@ -187,10 +185,12 @@ export function LiveMonitoringPage() {
     {selectedIsMikrotik ? <MikrotikDetail samples={data.selected_device_snapshot.items} /> : null}
     {selectedIsNas ? <NasDetail samples={data.selected_device_snapshot.items} /> : null}
     {selectedIsPrinter ? <PrinterDetail samples={data.selected_device_snapshot.items} /> : null}
+    {data.group ? <GroupMonitoringSummary group={data.group} label={groupLabel} onPageChange={(offset) => { setGroupOffset(offset); setSnapshotOffset(0); }} /> : null}
+
     {isDeviceGroup ? <DeviceGroupDetail samples={groupSamples} selectedMetric={metric} windowHours={chartWindowHours} label={groupLabel} /> : <LiveTrends deviceName={selectedDevice?.name} selectedMetric={metric} samples={data.selected_device_trend.items} windowHours={chartWindowHours} />}
 
     <section className="live-monitoring-data-section">
-      <div className="section-header"><h2>Snapshot Terbaru</h2><CsvExport filename="live-snapshot.csv" columns={["Device", "Metrik", "Nilai", "Uptime", "Status", "Dicek WIB"]} rows={data.latest_snapshot.items.map((item) => [item.device_name, item.metric_name, displayValue(item), data.snapshot_uptime_map[item.device_name], item.status, formatWib(item.checked_at)])} /></div>
+      <div className="section-header"><h2>Snapshot Terbaru</h2><CsvExport filename="live-snapshot.csv" columns={["Device", "Metrik", "Nilai", "Uptime", "Status", "Dicek WIB"]} rows={data.latest_snapshot.items.map((item) => [item.device_name, item.metric_name, displayValue(item), data.snapshot_uptime_map[`${item.device_id}:${item.metric_name}`] ?? data.snapshot_uptime_map[item.device_name], item.status, formatWib(item.checked_at)])} /></div>
       <DataTable columns={snapshotColumns} rows={data.latest_snapshot.items} />
       <Pagination offset={snapshotOffset} limit={SNAPSHOT_LIMIT} total={data.latest_snapshot.meta.total} onChange={setSnapshotOffset} />
     </section>

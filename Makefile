@@ -52,7 +52,7 @@ migration-check:
 	alembic check
 
 frontend-check:
-	cd frontend && pnpm lint && pnpm typecheck && pnpm test && pnpm build
+	cd frontend && pnpm format:features:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 
 backend-check: dependency-check lint lint-staged format-check typecheck test
 

@@ -31,6 +31,11 @@ include/
 lib/
 !frontend/lib/
 !frontend/lib/**
-scripts/
+scripts/*
+!scripts/benchmark_notification_outbox.py
+!scripts/benchmark_rolling_alert_history.py
+!scripts/benchmark_metric_group.py
 share/
 pyvenv.cfg
+
+!scripts/benchmark_retention.py

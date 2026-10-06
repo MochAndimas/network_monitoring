@@ -46,7 +46,7 @@ async def get_device_status_summary(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
     """Return get device status summary used by device inventory and status."""
-    return await DeviceRepository(db).summarize_device_status_counts(active_only=active_only)
+    return await DeviceRepository(db).summarize_inventory_counts(active_only=active_only)
 
 
 @router.get("/options", response_model=list[DeviceOption])

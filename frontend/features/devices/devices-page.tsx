@@ -1,10 +1,5 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { apiFetch, ApiError, withQuery } from "@/lib/api/client";
-import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { formatWib } from "@/lib/formatters";
 import { PageHeader } from "@/components/ui/page-header";
 import { MetaStrip } from "@/components/ui/meta-strip";
@@ -19,56 +14,352 @@ import { PermissionGate } from "@/components/ui/permission-gate";
 import { ErrorState, LoadingState } from "@/components/ui/page-state";
 import { DeviceForm } from "./device-form";
 import { DeviceImport } from "./device-import";
-import type { Device, DeviceDraft, DevicePage, DeviceTypeOption } from "./types";
+import type { Device } from "./types";
 
-const LIMIT = 10;
-const invalidateDevices = (client: ReturnType<typeof useQueryClient>) => client.invalidateQueries({ queryKey: ["devices"] });
-
-function initialOffset(value: string | null) {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
-}
-
+import { useDeviceFilters } from "./use-device-filters";
+import {
+  DEVICE_PAGE_LIMIT as LIMIT,
+  useDeviceManagement,
+} from "./use-device-management";
 export function DevicesPage() {
-  const queryClient = useQueryClient(); const router = useRouter(); const pathname = usePathname(); const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"inventory" | "manage">(() => searchParams.get("tab") === "manage" ? "manage" : "inventory");
-  const [search, setSearch] = useState(() => searchParams.get("q") ?? ""); const [type, setType] = useState(() => searchParams.get("type") ?? ""); const [status, setStatus] = useState(() => searchParams.get("status") ?? ""); const [activeOnly, setActiveOnly] = useState(() => searchParams.get("active") === "true"); const [offset, setOffset] = useState(() => initialOffset(searchParams.get("offset")));
-  const [editing, setEditing] = useState<Device | null | "new">(null); const [deleting, setDeleting] = useState<Device | null>(null); const [mutationError, setMutationError] = useState<string>();
-  const debouncedSearch = useDebouncedValue(search);
-  const devices = useQuery({ queryKey: ["devices", { search: debouncedSearch, type, status, activeOnly, offset }], queryFn: () => apiFetch<DevicePage>(withQuery("/devices/paged", { search: debouncedSearch, device_type: type, latest_status: status, active_only: activeOnly, limit: LIMIT, offset })) });
-  const types = useQuery({ queryKey: ["device-types"], queryFn: () => apiFetch<DeviceTypeOption[]>("/devices/meta/types"), staleTime: Infinity });
-  const summary = useQuery({ queryKey: ["device-summary"], queryFn: () => apiFetch<Record<string, number>>("/devices/status-summary") });
-  const allDevices = useQuery({ queryKey: ["devices", "import-options"], queryFn: () => apiFetch<DevicePage>(withQuery("/devices/paged", { limit: 500, offset: 0 })) });
-  const save = useMutation({ mutationFn: ({ device, draft }: { device: Device | null | "new"; draft: DeviceDraft }) => apiFetch<Device>(device && device !== "new" ? `/devices/${device.id}` : "/devices", { method: device && device !== "new" ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) }), onSuccess: async () => { await invalidateDevices(queryClient); setEditing(null); }, onError: (error) => setMutationError(error instanceof ApiError ? error.message : "Gagal menyimpan device.") });
-  const remove = useMutation({ mutationFn: (device: Device) => apiFetch<void>(`/devices/${device.id}`, { method: "DELETE" }), onSuccess: async () => { await invalidateDevices(queryClient); setDeleting(null); }, onError: (error) => setMutationError(error instanceof ApiError ? error.message : "Gagal menghapus device.") });
-  const resetPage = () => setOffset(0);
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (tab !== "inventory") params.set("tab", tab);
-    if (search) params.set("q", search);
-    if (type) params.set("type", type);
-    if (status) params.set("status", status);
-    if (activeOnly) params.set("active", "true");
-    if (offset) params.set("offset", String(offset));
-    const next = params.toString();
-    if (next !== searchParams.toString()) router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
-  }, [activeOnly, offset, pathname, router, search, searchParams, status, tab, type]);
-  if (devices.isPending || types.isPending) return <LoadingState />; if (devices.isError) return <ErrorState message="Inventaris device tidak dapat dimuat." onRetry={() => void devices.refetch()} />;
-  const rows = devices.data.items; const counts = summary.data ?? {}; const deviceTypes = types.data ?? [];
-  const saveDevice = async (draft: DeviceDraft) => { setMutationError(undefined); await save.mutateAsync({ device: editing, draft }); };
-  return <main className="app-page devices-page"><PageHeader className="devices-header" title="Devices" description="Inventory perangkat, status terkini, dan konfigurasi monitoring dalam satu workspace." />
-    <MetaStrip items={[{ label: "Total hasil", value: devices.data.meta.total ?? "—" }, { label: "Mode pembaruan", value: "Manual" }, { label: "Terakhir dimuat", value: formatWib(new Date().toISOString()) }]} />
-    <div className="devices-workspace-bar">
-      <div className="devices-tabs" role="tablist" aria-label="Mode halaman devices"><button className={tab === "inventory" ? "tab-active" : ""} onClick={() => setTab("inventory")} role="tab" aria-selected={tab === "inventory"}>Inventory</button><PermissionGate><button className={tab === "manage" ? "tab-active" : ""} onClick={() => setTab("manage")} role="tab" aria-selected={tab === "manage"}>Kelola device</button></PermissionGate></div>
-      <p>{tab === "manage" ? "Perubahan inventory diterapkan langsung ke monitoring." : "Status diambil dari pemeriksaan terakhir setiap device."}</p>
-    </div>
-    <MetricGrid>{[["Total inventory", counts.total ?? devices.data.meta.total ?? 0], ["Aktif dipantau", counts.active ?? 0], ["Butuh perhatian", (counts.down ?? 0) + (counts.warning ?? 0)], ["Tidak aktif", Math.max(0, (counts.total ?? devices.data.meta.total ?? 0) - (counts.active ?? 0))]].map(([label, value]) => <MetricCard key={String(label)} label={String(label)} value={String(value)} />)}</MetricGrid>
-    <section className="devices-filter-panel" aria-label="Filter inventory"><div className="devices-filter-heading"><span>Temukan device</span><small>Filter akan diterapkan ke tabel di bawah.</small></div><div className="filter-panel"><label>Cari<input value={search} placeholder="Nama, IP, site, atau lokasi" onChange={(event) => { setSearch(event.target.value); resetPage(); }} /></label><label>Tipe<select value={type} onChange={(event) => { setType(event.target.value); resetPage(); }}><option value="">Semua tipe</option>{deviceTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><label>Status<select value={status} onChange={(event) => { setStatus(event.target.value); resetPage(); }}><option value="">Semua status</option>{["up", "warning", "down", "error", "unknown"].map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label className="checkbox">Hanya aktif<input type="checkbox" checked={activeOnly} onChange={(event) => { setActiveOnly(event.target.checked); resetPage(); }} /></label></div></section>
-    <div className="devices-table-header"><div><p className="section-caption">{tab === "manage" ? "Configuration workspace" : "Device directory"}</p><h2>{tab === "manage" ? "Kelola Device" : "Inventory Device"}</h2><span>{(devices.data.meta.total ?? 0).toLocaleString("id-ID")} device sesuai filter</span></div><div className="inline-actions"><CsvExport filename="devices.csv" columns={["Nama", "IP", "Tipe", "Site", "Lokasi", "Status", "Freshness", "Aktif"]} rows={rows.map((item) => [item.name, item.ip_address, item.device_type, item.site, item.location, item.latest_status, item.latest_checked_at, item.is_active ? "Ya" : "Tidak"])} />{tab === "manage" ? <button onClick={() => { setMutationError(undefined); setEditing("new"); }}>Tambah device</button> : null}</div></div>
-    <DataTable columns={[{ key: "name", label: "Nama", render: (item) => item.name }, { key: "ip", label: "IP", render: (item) => item.ip_address }, { key: "type", label: "Tipe", render: (item) => item.device_type }, { key: "site", label: "Site", render: (item) => item.site ?? "-" }, { key: "location", label: "Lokasi", render: (item) => item.location ?? "-" }, { key: "status", label: "Status terakhir", render: (item) => <StatusBadge value={item.latest_status} /> }, { key: "fresh", label: "Freshness", render: (item) => <FreshnessLabel checkedAt={item.latest_checked_at} /> }, { key: "active", label: "Aktif", render: (item) => item.is_active ? "Ya" : "Tidak" }, ...(tab === "manage" ? [{ key: "actions", label: "Aksi", render: (item: Device) => <div className="inline-actions"><button className="button-secondary" onClick={() => { setMutationError(undefined); setEditing(item); }}>Edit</button><button className="button-danger" onClick={() => { setMutationError(undefined); setDeleting(item); }}>Hapus</button></div> }] : [])]} rows={rows} pageSize={null} />
-    <Pagination offset={offset} limit={LIMIT} total={devices.data.meta.total} onChange={setOffset} />
-    {tab === "manage" ? <PermissionGate><DeviceImport types={deviceTypes} existingIps={new Set(allDevices.data?.items.map((item) => item.ip_address) ?? [])} onComplete={async () => { await invalidateDevices(queryClient); }} /></PermissionGate> : null}
-    {editing ? <div className="dialog-backdrop"><section className="dialog" role="dialog" aria-modal="true"><h2>{editing === "new" ? "Tambah Device" : `Edit ${editing.name}`}</h2><DeviceForm device={editing === "new" ? undefined : editing} types={deviceTypes} pending={save.isPending} error={mutationError} onSubmit={saveDevice} onCancel={() => setEditing(null)} /></section></div> : null}
-    {deleting ? <ConfirmDialog title="Hapus device" confirmLabel="Hapus device" pending={remove.isPending} onClose={() => setDeleting(null)} onConfirm={() => void remove.mutateAsync(deleting)}><p>Hapus <strong>{deleting.name}</strong>? Tindakan ini tidak dapat dibatalkan.</p>{mutationError ? <p className="form-error">{mutationError}</p> : null}</ConfirmDialog> : null}
-  </main>;
+  const filters = useDeviceFilters();
+  const {
+    tab,
+    setTab,
+    search,
+    setSearch,
+    type,
+    setType,
+    status,
+    setStatus,
+    activeOnly,
+    setActiveOnly,
+    offset,
+    setOffset,
+    resetPage,
+  } = filters;
+  const {
+    devices,
+    types,
+    summary,
+    allDevices,
+    save,
+    remove,
+    editing,
+    setEditing,
+    deleting,
+    setDeleting,
+    mutationError,
+    setMutationError,
+    saveDevice,
+    refreshDevices,
+  } = useDeviceManagement(filters);
+  if (devices.isPending || types.isPending) return <LoadingState />;
+  if (devices.isError)
+    return (
+      <ErrorState
+        message="Inventaris device tidak dapat dimuat."
+        onRetry={() => void devices.refetch()}
+      />
+    );
+  const rows = devices.data.items;
+  const counts = summary.data ?? {};
+  const deviceTypes = types.data ?? [];
+  return (
+    <main className="app-page devices-page">
+      <PageHeader
+        className="devices-header"
+        title="Devices"
+        description="Inventory perangkat, status terkini, dan konfigurasi monitoring dalam satu workspace."
+      />
+      <MetaStrip
+        items={[
+          { label: "Total hasil", value: devices.data.meta.total ?? "—" },
+          { label: "Mode pembaruan", value: "Manual" },
+          {
+            label: "Terakhir dimuat",
+            value: formatWib(new Date().toISOString()),
+          },
+        ]}
+      />
+      <div className="devices-workspace-bar">
+        <div
+          className="devices-tabs"
+          role="tablist"
+          aria-label="Mode halaman devices"
+        >
+          <button
+            className={tab === "inventory" ? "tab-active" : ""}
+            onClick={() => setTab("inventory")}
+            role="tab"
+            aria-selected={tab === "inventory"}
+          >
+            Inventory
+          </button>
+          <PermissionGate>
+            <button
+              className={tab === "manage" ? "tab-active" : ""}
+              onClick={() => setTab("manage")}
+              role="tab"
+              aria-selected={tab === "manage"}
+            >
+              Kelola device
+            </button>
+          </PermissionGate>
+        </div>
+        <p>
+          {tab === "manage"
+            ? "Perubahan inventory diterapkan langsung ke monitoring."
+            : "Status diambil dari pemeriksaan terakhir setiap device."}
+        </p>
+      </div>
+      <MetricGrid>
+        {[
+          ["Total inventory", counts.total ?? devices.data.meta.total ?? 0],
+          ["Aktif dipantau", counts.active ?? 0],
+          ["Butuh perhatian", (counts.down ?? 0) + (counts.warning ?? 0)],
+          [
+            "Tidak aktif",
+            Math.max(
+              0,
+              (counts.total ?? devices.data.meta.total ?? 0) -
+                (counts.active ?? 0),
+            ),
+          ],
+        ].map(([label, value]) => (
+          <MetricCard
+            key={String(label)}
+            label={String(label)}
+            value={String(value)}
+          />
+        ))}
+      </MetricGrid>
+      <section className="devices-filter-panel" aria-label="Filter inventory">
+        <div className="devices-filter-heading">
+          <span>Temukan device</span>
+          <small>Filter akan diterapkan ke tabel di bawah.</small>
+        </div>
+        <div className="filter-panel">
+          <label>
+            Cari
+            <input
+              value={search}
+              placeholder="Nama, IP, site, atau lokasi"
+              onChange={(event) => {
+                setSearch(event.target.value);
+                resetPage();
+              }}
+            />
+          </label>
+          <label>
+            Tipe
+            <select
+              value={type}
+              onChange={(event) => {
+                setType(event.target.value);
+                resetPage();
+              }}
+            >
+              <option value="">Semua tipe</option>
+              {deviceTypes.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Status
+            <select
+              value={status}
+              onChange={(event) => {
+                setStatus(event.target.value);
+                resetPage();
+              }}
+            >
+              <option value="">Semua status</option>
+              {["up", "warning", "down", "error", "unknown"].map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="checkbox">
+            Hanya aktif
+            <input
+              type="checkbox"
+              checked={activeOnly}
+              onChange={(event) => {
+                setActiveOnly(event.target.checked);
+                resetPage();
+              }}
+            />
+          </label>
+        </div>
+      </section>
+      <div className="devices-table-header">
+        <div>
+          <p className="section-caption">
+            {tab === "manage" ? "Configuration workspace" : "Device directory"}
+          </p>
+          <h2>{tab === "manage" ? "Kelola Device" : "Inventory Device"}</h2>
+          <span>
+            {(devices.data.meta.total ?? 0).toLocaleString("id-ID")} device
+            sesuai filter
+          </span>
+        </div>
+        <div className="inline-actions">
+          <CsvExport
+            filename="devices.csv"
+            columns={[
+              "Nama",
+              "IP",
+              "Tipe",
+              "Site",
+              "Lokasi",
+              "Status",
+              "Freshness",
+              "Aktif",
+            ]}
+            rows={rows.map((item) => [
+              item.name,
+              item.ip_address,
+              item.device_type,
+              item.site,
+              item.location,
+              item.latest_status,
+              item.latest_checked_at,
+              item.is_active ? "Ya" : "Tidak",
+            ])}
+          />
+          {tab === "manage" ? (
+            <button
+              onClick={() => {
+                setMutationError(undefined);
+                setEditing("new");
+              }}
+            >
+              Tambah device
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <DataTable
+        columns={[
+          { key: "name", label: "Nama", render: (item) => item.name },
+          { key: "ip", label: "IP", render: (item) => item.ip_address },
+          { key: "type", label: "Tipe", render: (item) => item.device_type },
+          { key: "site", label: "Site", render: (item) => item.site ?? "-" },
+          {
+            key: "location",
+            label: "Lokasi",
+            render: (item) => item.location ?? "-",
+          },
+          {
+            key: "status",
+            label: "Status terakhir",
+            render: (item) => <StatusBadge value={item.latest_status} />,
+          },
+          {
+            key: "fresh",
+            label: "Freshness",
+            render: (item) => (
+              <FreshnessLabel checkedAt={item.latest_checked_at} />
+            ),
+          },
+          {
+            key: "active",
+            label: "Aktif",
+            render: (item) => (item.is_active ? "Ya" : "Tidak"),
+          },
+          ...(tab === "manage"
+            ? [
+                {
+                  key: "actions",
+                  label: "Aksi",
+                  render: (item: Device) => (
+                    <div className="inline-actions">
+                      <button
+                        className="button-secondary"
+                        onClick={() => {
+                          setMutationError(undefined);
+                          setEditing(item);
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="button-danger"
+                        onClick={() => {
+                          setMutationError(undefined);
+                          setDeleting(item);
+                        }}
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  ),
+                },
+              ]
+            : []),
+        ]}
+        rows={rows}
+        pageSize={null}
+      />
+      <Pagination
+        offset={offset}
+        limit={LIMIT}
+        total={devices.data.meta.total}
+        onChange={setOffset}
+      />
+      {tab === "manage" ? (
+        <PermissionGate>
+          <DeviceImport
+            types={deviceTypes}
+            existingIps={
+              new Set(
+                allDevices.data?.items.map((item) => item.ip_address) ?? [],
+              )
+            }
+            onComplete={async () => {
+              await refreshDevices();
+            }}
+          />
+        </PermissionGate>
+      ) : null}
+      {editing ? (
+        <div className="dialog-backdrop">
+          <section className="dialog" role="dialog" aria-modal="true">
+            <h2>
+              {editing === "new" ? "Tambah Device" : `Edit ${editing.name}`}
+            </h2>
+            <DeviceForm
+              device={editing === "new" ? undefined : editing}
+              types={deviceTypes}
+              pending={save.isPending}
+              error={mutationError}
+              onSubmit={saveDevice}
+              onCancel={() => setEditing(null)}
+            />
+          </section>
+        </div>
+      ) : null}
+      {deleting ? (
+        <ConfirmDialog
+          title="Hapus device"
+          confirmLabel="Hapus device"
+          pending={remove.isPending}
+          onClose={() => setDeleting(null)}
+          onConfirm={() => void remove.mutateAsync(deleting)}
+        >
+          <p>
+            Hapus <strong>{deleting.name}</strong>? Tindakan ini tidak dapat
+            dibatalkan.
+          </p>
+          {mutationError ? <p className="form-error">{mutationError}</p> : null}
+        </ConfirmDialog>
+      ) : null}
+    </main>
+  );
 }

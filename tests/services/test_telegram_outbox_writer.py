@@ -105,27 +105,29 @@ def test_changed_route_cannot_bypass_pending_active(outbox_sessions):
         async with outbox_sessions.begin() as db:
             batch = await events(db)
             await TelegramOutboxWriter("123")(db, batch)
-        with pytest.raises(ValueError, match="different routing"):
-            async with outbox_sessions.begin() as db:
-                for item in batch:
-                    item["action"] = "resolved"
-                await TelegramOutboxWriter("456")(db, batch)
+        async with outbox_sessions.begin() as db:
+            for item in batch:
+                item["action"] = "resolved"
+                item["device"].site = "new site"
+            await TelegramOutboxWriter("456")(db, batch)
         async with outbox_sessions() as db:
-            assert await db.scalar(select(func.count()).select_from(NotificationOutbox)) == 1
+            jobs = list((await db.scalars(select(NotificationOutbox).order_by(NotificationOutbox.id))).all())
+            assert len(jobs) == 2
+            assert jobs[1].destination == jobs[0].destination == "123"
+            assert jobs[1].stream_key == jobs[0].stream_key
 
     run(scenario())
 
 
-def test_oversized_message_rolls_back_domain_and_queue(outbox_sessions):
+def test_oversized_message_persists_one_atomic_event(outbox_sessions):
     async def scenario():
-        with pytest.raises(ValueError, match="message limit"):
-            async with outbox_sessions.begin() as db:
-                batch = await events(db)
-                batch[0]["message"] = "x" * 4097
-                await TelegramOutboxWriter("123")(db, batch)
+        async with outbox_sessions.begin() as db:
+            batch = await events(db)
+            batch[0]["message"] = "x" * 4097
+            await TelegramOutboxWriter("123")(db, batch)
         async with outbox_sessions() as db:
-            for model in (Alert, NotificationOutbox):
-                assert await db.scalar(select(func.count()).select_from(model)) == 0
+            assert await db.scalar(select(func.count()).select_from(Alert)) == 2
+            assert await db.scalar(select(func.count()).select_from(NotificationOutbox)) == 2
 
     run(scenario())
 
@@ -213,5 +215,54 @@ def test_reminder_requires_unchanged_delivery_generation(outbox_sessions, change
             await TelegramOutboxWriter("123")(db, batch)
             await TelegramOutboxWriter("123")(db, batch)
             assert await db.scalar(select(func.count()).select_from(NotificationOutbox)) == (0 if changed else 1)
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("delivered", [False, True])
+def test_replacement_resolution_keeps_original_destination(outbox_sessions, monkeypatch, delivered):
+    from backend.app.core.config import settings
+    from backend.app.services.operational_alert_service import evaluate_operational_alerts
+    from backend.app.alerting.engine_parts import impl
+
+    monkeypatch.setattr(settings, "telegram_chat_id", "456")
+    monkeypatch.setattr(impl, "_expected_alert_map", AsyncMock(return_value={}))
+
+    async def scenario():
+        async with outbox_sessions.begin() as db:
+            batch = (await events(db))[:1]
+            await TelegramOutboxWriter("123")(db, batch)
+            original_id = batch[0]["alert_id"]
+            if delivered:
+                # An old queued ACTIVE can have been acknowledged only recently.
+                job = await db.scalar(select(NotificationOutbox))
+                job.created_at = utcnow() - timedelta(hours=2)
+        if delivered:
+            assert (
+                await deliver_alert_notification(
+                    outbox_sessions, AsyncMock(), routed_sender=AsyncMock(return_value=True)
+                )
+                == "sent"
+            )
+        async with outbox_sessions.begin() as db:
+            original = await db.get(Alert, original_id)
+            original.status, original.resolved_at = "resolved", utcnow()
+            replacement = Alert(
+                device_id=original.device_id,
+                alert_type=original.alert_type,
+                severity=original.severity,
+                message="replacement",
+                status="active",
+                created_at=utcnow(),
+            )
+            db.add(replacement)
+        async with outbox_sessions.begin() as db:
+            await evaluate_operational_alerts(db, commit=False)
+        async with outbox_sessions() as db:
+            jobs = list((await db.scalars(select(NotificationOutbox).order_by(NotificationOutbox.id))).all())
+            assert len(jobs) == 2
+            assert jobs[0].destination == jobs[1].destination == "123"
+            assert jobs[0].stream_key == jobs[1].stream_key
+            assert "RESOLVED" in jobs[1].message
 
     run(scenario())

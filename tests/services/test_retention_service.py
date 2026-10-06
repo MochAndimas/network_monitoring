@@ -121,7 +121,10 @@ def test_cleanup_rolls_up_yesterday_without_deleting_recent_raw_metrics(monkeypa
         assert len(rollups) == 1
         assert rollups[0].rollup_date == yesterday.date()
         assert len(remaining_metrics) == 2
-        assert [(marker.bucket_kind, marker.bucket_date) for marker in markers] == [("rollup", yesterday.date())]
+        assert {(marker.bucket_kind, marker.bucket_date) for marker in markers} == {
+            ("rollup", yesterday.date()),
+            ("summary", yesterday.date()),
+        }
     finally:
         run(drop_all(engine))
 

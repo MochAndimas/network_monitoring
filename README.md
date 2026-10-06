@@ -78,6 +78,11 @@ Untuk validasi checkout bersih, gunakan clone/worktree dari commit yang memuat s
 
 Progres perbaikan arsitektur dan quality gate dicatat dalam `IMPROVEMENTS.me`.
 
+Rolling alert mempertahankan jendela 5 sampel terbaru (DNS/HTTP dan uptime printer: 2),
+dengan query indeks terbatas per pasangan perangkat/metrik dan batch maksimal 64 pasangan.
+Kontrak data jarang/stale serta cara mengulang benchmark MySQL tercatat dalam
+[validasi IMP-006](docs/validation/imp006-completion.md).
+
 Secret-scan riwayat dapat dijalankan dengan `gitleaks git --redact --log-opts=--all .` dari repository dengan seluruh riwayat tersedia. `.gitleaksignore` hanya mengecualikan empat fingerprint contoh development pada README di satu commit historis (lihat tahap 1D4). Tidak ada pengecualian menyeluruh untuk README, API key, atau commit tersebut. Temuan baru tetap harus ditriase; jangan memasukkan kredensial nyata ke contoh dokumentasi. Scan Git tidak mencakup perubahan yang belum di-commit dan tidak menggantikan verifikasi CI remote.
 
 Frontend mendeklarasikan `plotly.js` secara langsung karena wrapper `react-plotly.js` memuat `plotly.js/dist/plotly`. Versinya dipin agar implementasi grafik tidak bergantung pada resolusi peer otomatis. Bundle `plotly.js-dist-min` yang tidak diimpor sudah dihapus. Override PostCSS di `frontend/pnpm-workspace.yaml` dibatasi pada Next 15 untuk menutup advisory versi 8.4.31; hapus ketika upstream memakai versi patched, setelah lint/typecheck/test/build dan tampilan grafik/CSS diverifikasi. Jalankan `pnpm audit --prod` dari direktori frontend setelah perubahan dependency.
@@ -120,26 +125,61 @@ E2E memakai Playwright dan hanya boleh dijalankan pada environment fixture denga
 - Batasi `CORS_ORIGINS` ke origin dashboard yang digunakan.
 - Jalankan mutation E2E hanya pada fixture terisolasi.
 
-## Fondasi outbox notifikasi
+## Outbox notifikasi
 
-Untuk proses worker khusus, `run_notification_process(worker)` menyediakan stop event yang dipicu SIGTERM/SIGINT. Callback `worker(stop)` dapat membungkus `run_alert_notification_worker`; pemanggil tetap memiliki `asyncio.run()`, konfigurasi transport/session, dan disposal engine dalam `finally`. Adapter harus dijalankan pada main thread proses khusus, bukan di dalam server API yang sudah memiliki signal handler. Handler sebelumnya dipulihkan saat selesai, gagal, atau dibatalkan. Signal berulang tidak memperpanjang grace deadline. SIGKILL tidak dapat menjalankan cleanup; pemulihan tetap bergantung pada lease. Adapter ini belum menjadi CLI atau service Compose yang aktif.
+Scheduler dan siklus manual menyimpan notifikasi bersama transaksi alert. Pengiriman
+Telegram dijalankan oleh service `notification-worker`, di luar transaksi domain.
+Worker mendukung heartbeat persisten, retry/lease, multipart dengan cursor, graceful
+shutdown, redrive job dead, dan retention terbatas. RESOLVED mengikuti tujuan ACTIVE
+sebelumnya. Duplikasi tetap mungkin bila provider menerima pesan sebelum cursor
+tersimpan (at-least-once).
 
-`GET /observability/summary` (admin) memuat `notification_outbox`: jumlah job Telegram pending/processing/dead, pending yang sudah jatuh tempo, lease processing yang kedaluwarsa, dan umur job tertua per status sejak dibuat. Nilai kosong adalah nol; umur negatif akibat selisih jam dibatasi nol. Pending jatuh tempo masih dapat tertahan oleh job sebelumnya dalam stream, sehingga bukan jumlah job yang pasti dapat diklaim. Antrean kosong tidak membuktikan worker aktif.
+Aktivasi: migrasikan sampai `20260923_0030`, lalu jalankan `docker compose up -d --build`
+dengan token/chat ID numerik yang benar. Worker ikut startup biasa dan dapat langsung
+mengirim pekerjaan yang masih antre ke Telegram. Untuk development/test tanpa pengiriman,
+gunakan environment terpisah dengan token/chat ID kosong dan database fixture. [Panduan deployment, pemulihan, dan benchmark](docs/ops/notification-worker.md)
+menjelaskan prosedur lengkap.
 
-`GET /observability/metrics` mengekspor gauge `network_monitoring_notification_outbox_jobs`, `network_monitoring_notification_outbox_oldest_age_seconds`, `network_monitoring_notification_outbox_due_pending`, dan `network_monitoring_notification_outbox_expired_leases`. Label tetap hanya channel Telegram dan status yang relevan; pesan, tujuan, stream, dan ID job tidak diekspos. Nilai berasal dari snapshot database bersama: jangan menjumlahkan hasil scrape beberapa replika API untuk menghitung backlog; agregasikan dengan `max` per label antrean bila perlu. Setiap request observability menambah satu query agregat atas job belum selesai, tanpa membaca payload atau mengunci row. Biaya query tetap mengikuti ukuran backlog; benchmark MySQL dan retention masih diperlukan.
+`GET /observability/summary` memuat `notification_outbox` dan `notification_workers_alive`.
+Metrics Prometheus menyediakan gauge backlog, umur job, due/expired lease, serta worker
+hidup. Snapshot berasal dari database bersama; gunakan `max` lintas replica API.
 
-Service `run_alert_notification_worker` menyediakan polling dengan concurrency terbatas, error backoff, dan graceful shutdown melalui `asyncio.Event` yang diinjeksi pemanggil. `NotificationWorkerPolicy` mengatur concurrency (default 2), polling (1 detik), backoff (5 detik), dan grace shutdown (25 detik). Pemanggil memiliki database engine, transport, dan signal handler; runner belum didaftarkan pada proses operasional. Report hasil hanya menghitung satu run, bukan metrik backlog. Cancellation membiarkan lease dipulihkan pada delivery berikutnya; pesan dapat terkirim ulang jika provider sudah menerima sebelum acknowledgement tersimpan.
+API engine dengan writer eksplisit tetap tersedia untuk test/integrasi. Seluruh
+pemanggil operasional memakai `evaluate_operational_alerts`; jangan memakai jalur
+kompatibilitas engine tanpa writer untuk proses operasional baru.
 
-Migration `20260908_0026` menyediakan antrean persisten untuk tahap integrasi notifikasi berikutnya. Repository enqueue mengikuti transaksi pemanggil; service `deliver_one` melakukan pengiriman di luar session database, dengan lease, retry, dan acknowledgement bertoken.
+## Live Monitoring grup
 
-Migration `20260908_0027` menambahkan referensi alert/action untuk setiap job. `enqueue_alert_notification` menyimpan referensi dalam transaksi pemanggil tanpa menandai alert terkirim. `deliver_alert_notification` mengikat acknowledgement outbox, timestamp Telegram alert, dan timeline incident dalam satu transaksi setelah sender berhasil. Kegagalan pembaruan domain membatalkan seluruh acknowledgement; lease kemudian dapat dipulihkan. Referensi historis tetap disimpan ketika retention menghapus alert, tanpa membuat ulang alert tersebut.
+VoIP/Ruijie memakai `GET /metrics/history/group` dengan satu request per refresh,
+pagination perangkat, sampling yang dinyatakan di respons, freshness dan tautan detail.
+Default satu halaman 20 perangkat; trend maksimal 2.000 item dan JSON maksimal 1 MiB.
+Rentang history maksimum 31 hari. [Kontrak dan validasi IMP-007](docs/validation/imp007-completion.md)
+menjelaskan filter, batas data serta benchmark empat dashboard.
 
-Fondasi ini belum terhubung ke engine alert atau scheduler produksi. Detail batas tahap 3B dan checklist aktivasi tahap 3C berada di `IMPROVEMENTS.me`. Pengiriman eksternal bersifat at-least-once: crash setelah provider menerima pesan sebelum acknowledgement dapat menyebabkan duplikasi. Job dead menahan stream hingga rekonsiliasi eksplisit.
+## Retention bertahap
 
-Kebijakan pemilihan event Telegram berada di `backend/app/alerting/engine_parts/notification_policy.py`; grouping dan rendering pesan berada di `notification_formatting.py` pada direktori yang sama. Engine mempertahankan orchestration database dan transport. Pengujian kebijakan dapat memasukkan `policy` dan `current_time` secara eksplisit agar batas waktu dapat diuji tanpa mengubah konfigurasi global.
+Cleanup scheduler commit per batch dan dapat dilanjutkan setelah kegagalan.
+Raw hanya dihapus sesudah checkpoint rollup/archive aman, dengan referensi latest
+snapshot tetap dilindungi. `RETENTION_SOURCE_BATCH_SIZE`, `RETENTION_DELETE_BATCH_SIZE`
+dan `RETENTION_MAX_BATCHES_PER_PHASE` mengatur budget pekerjaan.
+[Panduan retention](docs/ops/retention.md) menjelaskan kontrak append-only, retry,
+summary, batas pengukuran dan pemulihan checkpoint.
 
-`evaluate_alerts(..., notification_writer=...)` menyediakan jalur enqueue transaksional untuk integrasi outbox. Writer harus memakai session yang diberikan tanpa commit atau network I/O. Dengan `commit=True`, engine commit setelah enqueue sukses; dengan `commit=False`, transaksi pemanggil menentukan commit/rollback. Writer produksi belum terpasang: routing, idempotency, grouping, dan serialisasi producer harus dituntaskan sebelum aktivasi. Tanpa writer, perilaku pengiriman lama tetap berlaku.
+## Batas modul dan pengujian
 
-Adapter `TelegramOutboxWriter("<numeric-chat-id>")` memerlukan migration `0029`, menyimpan tujuan dan message, dan mengunci stream sampai transaksi selesai. Job dengan destination harus dikirim melalui `routed_sender(destination, message)`; tidak ada fallback diam-diam ke chat konfigurasi terbaru. Adapter masih opt-in. Grup besar dipecah menjadi job dengan batas 4096 unit UTF-16 dan 250 referensi; satu event yang sendirian terlalu besar serta konflik routing pending masih ditolak. Setiap potongan mempunyai acknowledgement sendiri. Migration `0029` belum diterapkan ke database Compose lokal pada tahap implementasi ini.
+Evaluasi alert operasional memakai `evaluate_operational_alerts` dengan writer outbox.
+`engine_parts/impl.py` mengorkestrasi input, lifecycle, policy dan delivery; perubahan
+rule berada pada evaluator, query pada `evaluation_inputs`/`notification_queries`,
+dan transisi alert/incident pada `lifecycle`. Gunakan `AlertEvaluationDependencies`
+untuk clock, policy dan repository per evaluasi saat menguji kontrak.
 
-Pada jalur outbox, evaluator/writer dan acknowledgement memakai urutan lock alert sebelum job. Validasi lease dilakukan setelah lock diperoleh. Reminder membawa asumsi generasi delivery dari selection; adapter melewatinya jika timestamp delivery berubah, sehingga cooldown dapat dihitung ulang pada evaluasi berikutnya.
+Metric reads dipisah menjadi `metric_history_service`, `metric_snapshot_service` dan
+`metric_summary_service`; `metrics_read_service` menjaga import publik yang sudah ada.
+Collector dapat menerima runner/session factory dan notifier transport/config eksplisit.
+`MetricWritePayload` mendokumentasikan kontrak append-only collector ke repository.
+
+Devices/Accounts memisahkan query/mutation, state filter, form dan rendering.
+Jalankan `pnpm --dir frontend format:features` setelah mengedit feature tersebut;
+`make frontend-check` dan CI memeriksa formatting, lint, tipe, tes dan production build.
+[Bukti penyelesaian IMP-010](docs/validation/imp010-completion.md) mencatat cakupan
+regresi, keputusan kompatibilitas dan batas verifikasi.

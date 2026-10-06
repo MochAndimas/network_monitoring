@@ -909,9 +909,21 @@ def test_mysql_evaluator_and_delivery_ack_share_domain_first_lock_order(monkeypa
             async def enqueue_while_ack_waits(db, events):
                 nonlocal task
                 assert events and events[0]["action"] == "resolved"
+                from backend.app.services.notification_runtime import run_notification_runtime
+                from backend.app.services.notification_worker import NotificationWorkerPolicy
+
+                stop = asyncio.Event()
+
+                async def sender(destination, message):
+                    stop.set()
+                    return True
+
                 task = asyncio.create_task(
-                    delivery.deliver_alert_notification(
-                        SessionLocal, AsyncMock(), routed_sender=AsyncMock(return_value=True)
+                    run_notification_runtime(
+                        SessionLocal,
+                        sender,
+                        stop,
+                        worker_policy=NotificationWorkerPolicy(concurrency=1),
                     )
                 )
                 await asyncio.wait_for(waiting.wait(), timeout=5)
@@ -923,7 +935,7 @@ def test_mysql_evaluator_and_delivery_ack_share_domain_first_lock_order(monkeypa
             async with SessionLocal.begin() as db:
                 await evaluate_alerts(db, commit=False, notification_writer=enqueue_while_ack_waits)
             assert task is not None
-            assert await asyncio.wait_for(task, timeout=5) == "sent"
+            assert (await asyncio.wait_for(task, timeout=5)).sent == 1
             assert (
                 await delivery.deliver_alert_notification(
                     SessionLocal, AsyncMock(), routed_sender=AsyncMock(return_value=True)
@@ -961,3 +973,283 @@ def test_mysql_evaluator_and_delivery_ack_share_domain_first_lock_order(monkeypa
         run(scenario())
     finally:
         run(engine.dispose())
+
+
+def test_mysql_bounded_alert_history_matches_original_ranking():
+    """Limit each index seek before batching; retain sparse/tied sample semantics."""
+    from backend.app.repositories.metric_repository import MetricRepository
+    from scripts.benchmark_rolling_alert_history import RankingBaseline
+
+    _require_mysql()
+    run(engine.dispose())
+
+    async def scenario():
+        suffix = uuid.uuid4().hex
+        async with SessionLocal() as db:
+            devices = [
+                Device(
+                    name=f"History fixture {suffix} {i}",
+                    ip_address=f"history-{suffix}-{i}",
+                    device_type="switch",
+                    site="integration",
+                )
+                for i in range(2)
+            ]
+            db.add_all(devices)
+            await db.flush()
+            device_ids = [device.id for device in devices]
+            pairs = [(device.id, f"interface:history{port}:tx_mbps") for device in devices for port in range(35)]
+            current_time = utcnow()
+            db.add_all(
+                [
+                    Metric(
+                        device_id=device_id,
+                        metric_name=name,
+                        metric_value=str(i),
+                        status="up",
+                        checked_at=current_time - timedelta(days=i // 2),
+                    )
+                    for device_id, name in pairs
+                    for i in range(9)
+                ]
+            )
+            await db.commit()
+            try:
+                original = await RankingBaseline(db).list_recent_metrics_by_pairs(pairs=pairs, per_pair_limit=5)
+                bounded = await MetricRepository(db).list_recent_metrics_by_pairs(pairs=pairs + pairs, per_pair_limit=5)
+
+                def ids(history):
+                    return {
+                        (device_id, name): [row.id for row in rows]
+                        for device_id, by_name in history.items()
+                        for name, rows in by_name.items()
+                    }
+
+                assert ids(bounded) == ids(original)
+                assert len(ids(bounded)) == len(pairs)
+                assert all(len(rows) == 5 for by_name in bounded.values() for rows in by_name.values())
+            finally:
+                await db.execute(delete(Metric).where(Metric.device_id.in_(device_ids)))
+                await db.execute(delete(Device).where(Device.id.in_(device_ids)))
+                await db.commit()
+
+    try:
+        run(scenario())
+    finally:
+        run(engine.dispose())
+
+
+def test_mysql_group_history_preserves_tied_sample_order_and_scope():
+    from backend.app.repositories.metric_repository import MetricRepository
+    from backend.app.services.metric_group_service import get_metric_group
+
+    _require_mysql()
+    run(engine.dispose())
+
+    async def scenario():
+        suffix = uuid.uuid4().hex
+        async with SessionLocal() as db:
+            devices = [
+                Device(
+                    name=f"Ruijie history {suffix} {i}",
+                    ip_address=f"group-{suffix}-{i}",
+                    device_type="switch",
+                    site=suffix,
+                )
+                for i in range(2)
+            ]
+            db.add_all(devices)
+            await db.flush()
+            ids = [device.id for device in devices]
+            # Match the production DATETIME(0) precision: rounding a fractional
+            # second upward must not move the fixture beyond checked_to.
+            timestamp = utcnow().replace(microsecond=0)
+            await MetricRepository(db).create_metrics(
+                [
+                    dict(
+                        device_id=device.id,
+                        metric_name="ping",
+                        metric_value=str(i),
+                        status="up",
+                        checked_at=timestamp - timedelta(seconds=i // 2),
+                    )
+                    for device in devices
+                    for i in range(9)
+                ]
+            )
+            try:
+                result = await get_metric_group(
+                    db,
+                    group="ruijie",
+                    mode="range",
+                    site=suffix,
+                    device_limit=1,
+                    metric_name="ping",
+                    samples_per_series=3,
+                    checked_from=timestamp - timedelta(days=1),
+                    checked_to=timestamp,
+                )
+                assert result.group.total_devices == 2
+                assert result.group.has_more_devices
+                assert result.group.devices[0].freshness == "fresh"
+                assert {item.device_id for item in result.selected_device_trend.items} == {ids[0]}
+                # Two newest rows have equal timestamps; higher ID wins.
+                assert [item.metric_value for item in result.selected_device_trend.items] == ["1", "0", "3"]
+                assert result.group.trend_sampled
+            finally:
+                await db.execute(delete(LatestMetric).where(LatestMetric.device_id.in_(ids)))
+                await db.execute(delete(Metric).where(Metric.device_id.in_(ids)))
+                await db.execute(delete(Device).where(Device.id.in_(ids)))
+                await db.commit()
+
+    try:
+        run(scenario())
+    finally:
+        run(engine.dispose())
+
+
+def test_mysql_retention_batch_budget_resumes_without_losing_archive(monkeypatch):
+    _require_mysql()
+    monkeypatch.setattr(settings, "retention_source_batch_size", 2)
+    monkeypatch.setattr(settings, "retention_delete_batch_size", 2)
+    monkeypatch.setattr(settings, "retention_max_batches_per_phase", 1)
+    run(engine.dispose())
+
+    async def scenario():
+        from backend.app.repositories.metric_repository import MetricRepository
+
+        suffix = uuid.uuid4().hex
+        try:
+            async with SessionLocal() as db:
+                device = Device(
+                    name=f"MySQL Retention Device {suffix}",
+                    ip_address=f"retention-{suffix}",
+                    device_type="voip",
+                    site="integration",
+                    description="mysql retention integration test",
+                )
+                db.add(device)
+                await db.commit()
+                device_id = device.id
+                timestamp = utcnow() - timedelta(days=10)
+                await MetricRepository(db).create_metrics(
+                    [
+                        dict(
+                            device_id=device_id,
+                            metric_name="ping",
+                            metric_value=str(i),
+                            status="up",
+                            unit="ms",
+                            checked_at=timestamp + timedelta(seconds=i),
+                        )
+                        for i in range(7)
+                    ]
+                )
+                first = await cleanup_monitoring_data(db)
+                assert first["deleted_metrics"] == 2
+                for _ in range(5):
+                    await cleanup_monitoring_data(db)
+                rollup = await db.scalar(select(MetricDailyRollup).where(MetricDailyRollup.device_id == device_id))
+                archive = await db.scalar(select(MetricColdArchive).where(MetricColdArchive.device_id == device_id))
+                assert rollup is not None and archive is not None
+                assert rollup.total_samples == archive.sample_count == 7
+                assert archive.avg_numeric_value == 3
+                remaining = (await db.scalars(select(Metric).where(Metric.device_id == device_id))).all()
+                assert len(remaining) == 1
+                assert remaining[0].id == await db.scalar(
+                    select(LatestMetric.metric_id).where(LatestMetric.device_id == device_id)
+                )
+        finally:
+            await _delete_mysql_retention_fixture(suffix)
+            await engine.dispose()
+
+    run(scenario())
+
+
+def test_mysql_retention_waits_for_writer_and_sees_lower_id_commit():
+    _require_mysql()
+    run(engine.dispose())
+
+    async def scenario():
+        import asyncio
+        from backend.app.repositories.metric_repository import MetricRepository
+        from backend.app.services.retention_service import rollup_completed_raw_metrics
+
+        suffix = uuid.uuid4().hex
+        ready, release = asyncio.Event(), asyncio.Event()
+        timestamp = utcnow() - timedelta(days=10)
+        task = None
+        cleanup_task = None
+        try:
+            async with SessionLocal() as db:
+                devices = [
+                    Device(
+                        name=f"MySQL Retention Device {suffix}",
+                        ip_address=f"retention-{suffix}-{i}",
+                        device_type="voip",
+                        site="integration",
+                        description="mysql retention integration test",
+                    )
+                    for i in range(2)
+                ]
+                db.add_all(devices)
+                await db.commit()
+                first_id, second_id = [device.id for device in devices]
+                await MetricRepository(db).create_metrics(
+                    [dict(device_id=first_id, metric_name="ping", metric_value="1", status="up", checked_at=timestamp)]
+                )
+
+            async def held_writer():
+                async with SessionLocal.begin() as db:
+                    await MetricRepository(db).create_metrics(
+                        [
+                            dict(
+                                device_id=first_id,
+                                metric_name="ping",
+                                metric_value="2",
+                                status="up",
+                                checked_at=timestamp,
+                            )
+                        ],
+                        commit=False,
+                    )
+                    ready.set()
+                    await release.wait()
+
+            async def retention():
+                async with SessionLocal() as db:
+                    await rollup_completed_raw_metrics(db)
+
+            task = asyncio.create_task(held_writer())
+            await asyncio.wait_for(ready.wait(), 5)
+            # A different device may commit a higher global ID while the first writer holds its device lock.
+            async with SessionLocal() as db:
+                await MetricRepository(db).create_metrics(
+                    [dict(device_id=second_id, metric_name="ping", metric_value="3", status="up", checked_at=timestamp)]
+                )
+            cleanup_task = asyncio.create_task(retention())
+            await asyncio.sleep(0.05)
+            assert not cleanup_task.done()
+            release.set()
+            await asyncio.wait_for(asyncio.gather(task, cleanup_task), 10)
+            async with SessionLocal() as db:
+                rollup = await db.scalar(select(MetricDailyRollup).where(MetricDailyRollup.device_id == first_id))
+                assert rollup is not None
+                assert rollup.total_samples == 2
+                assert rollup.average_ping_ms == 1.5
+                marker = await db.scalar(
+                    select(RetentionBucketProgress).where(
+                        RetentionBucketProgress.device_id == first_id, RetentionBucketProgress.bucket_kind == "rollup"
+                    )
+                )
+                assert marker is not None
+                assert marker.source_metric_count == 2
+        finally:
+            release.set()
+            pending = [item for item in (task, cleanup_task) if item is not None]
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            await _delete_mysql_retention_fixture(suffix)
+            await engine.dispose()
+
+    run(scenario())

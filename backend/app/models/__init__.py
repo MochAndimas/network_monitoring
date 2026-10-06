@@ -6,6 +6,7 @@ from .device import Device
 from .incident import Incident, IncidentTimelineEvent
 from .latest_metric import LatestMetric
 from .metric import Metric
+from .notification_worker import NotificationWorker
 from .notification_outbox import NotificationOutbox
 from .notification_outbox_alert import NotificationOutboxAlert
 from .notification_outbox_stream import NotificationOutboxStream
@@ -19,6 +20,7 @@ from .threshold import MaintenanceWindow, Threshold, ThresholdOverride
 from .user import AuthLoginAttempt, AuthSession, User
 
 __all__ = [
+    "NotificationWorker",
     "NotificationOutboxStream",
     "Alert",
     "AdminAuditLog",

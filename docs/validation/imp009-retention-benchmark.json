@@ -1,0 +1,132 @@
+{
+  "mysql_version": "8.4.11",
+  "devices": 100,
+  "raw_metric_rows": 100000,
+  "source_batch_size": 250,
+  "delete_batch_size": 500,
+  "max_batches_per_phase": 50,
+  "runs": [
+    {
+      "run": 1,
+      "duration_ms": 5572.19,
+      "rolled_up_days": 13,
+      "archived_metric_groups": 13,
+      "deleted_metrics": 12488,
+      "deleted_collector_runs": 0,
+      "deleted_alerts": 0,
+      "deleted_incidents": 0,
+      "compacted_latest_metrics": 0,
+      "refreshed_site_type_summaries": 1
+    },
+    {
+      "run": 2,
+      "duration_ms": 6109.1,
+      "rolled_up_days": 13,
+      "archived_metric_groups": 13,
+      "deleted_metrics": 12487,
+      "deleted_collector_runs": 0,
+      "deleted_alerts": 0,
+      "deleted_incidents": 0,
+      "compacted_latest_metrics": 0,
+      "refreshed_site_type_summaries": 1
+    },
+    {
+      "run": 3,
+      "duration_ms": 6675.12,
+      "rolled_up_days": 13,
+      "archived_metric_groups": 13,
+      "deleted_metrics": 12488,
+      "deleted_collector_runs": 0,
+      "deleted_alerts": 0,
+      "deleted_incidents": 0,
+      "compacted_latest_metrics": 0,
+      "refreshed_site_type_summaries": 1
+    },
+    {
+      "run": 4,
+      "duration_ms": 5942.84,
+      "rolled_up_days": 13,
+      "archived_metric_groups": 13,
+      "deleted_metrics": 12487,
+      "deleted_collector_runs": 0,
+      "deleted_alerts": 0,
+      "deleted_incidents": 0,
+      "compacted_latest_metrics": 0,
+      "refreshed_site_type_summaries": 1
+    },
+    {
+      "run": 5,
+      "duration_ms": 5883.83,
+      "rolled_up_days": 13,
+      "archived_metric_groups": 13,
+      "deleted_metrics": 12488,
+      "deleted_collector_runs": 0,
+      "deleted_alerts": 0,
+      "deleted_incidents": 0,
+      "compacted_latest_metrics": 0,
+      "refreshed_site_type_summaries": 1
+    },
+    {
+      "run": 6,
+      "duration_ms": 5583.95,
+      "rolled_up_days": 13,
+      "archived_metric_groups": 13,
+      "deleted_metrics": 12487,
+      "deleted_collector_runs": 0,
+      "deleted_alerts": 0,
+      "deleted_incidents": 0,
+      "compacted_latest_metrics": 0,
+      "refreshed_site_type_summaries": 1
+    },
+    {
+      "run": 7,
+      "duration_ms": 5766.86,
+      "rolled_up_days": 13,
+      "archived_metric_groups": 13,
+      "deleted_metrics": 12488,
+      "deleted_collector_runs": 0,
+      "deleted_alerts": 0,
+      "deleted_incidents": 0,
+      "compacted_latest_metrics": 0,
+      "refreshed_site_type_summaries": 1
+    },
+    {
+      "run": 8,
+      "duration_ms": 6139.18,
+      "rolled_up_days": 13,
+      "archived_metric_groups": 13,
+      "deleted_metrics": 12487,
+      "deleted_collector_runs": 0,
+      "deleted_alerts": 0,
+      "deleted_incidents": 0,
+      "compacted_latest_metrics": 0,
+      "refreshed_site_type_summaries": 1
+    },
+    {
+      "run": 9,
+      "duration_ms": 33.01,
+      "rolled_up_days": 0,
+      "archived_metric_groups": 0,
+      "deleted_metrics": 0,
+      "deleted_collector_runs": 0,
+      "deleted_alerts": 0,
+      "deleted_incidents": 0,
+      "compacted_latest_metrics": 0,
+      "refreshed_site_type_summaries": 1
+    }
+  ],
+  "sql_statements": 7527,
+  "transactions": 1083,
+  "transaction_median_ms": 37.51,
+  "transaction_p95_ms": 73.13,
+  "transaction_max_ms": 295.61,
+  "observed_max_source_ids": 250,
+  "observed_max_delete_ids": 500,
+  "remaining_latest_metrics": 100,
+  "archived_samples": 100000,
+  "rolled_up_samples": 100000,
+  "acceptance": {
+    "passed": true,
+    "max_transaction_ms": 2000
+  }
+}

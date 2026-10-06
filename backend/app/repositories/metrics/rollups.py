@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Any
 
-from sqlalchemy import desc, distinct, func, select
+from sqlalchemy import desc, distinct, func, select, true, tuple_
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -277,7 +277,9 @@ class MetricRollupMixin(MetricRepositoryBase):
             for row in rows
         ], total
 
-    async def refresh_site_type_daily_summaries(self, *, commit: bool = True) -> int:
+    async def refresh_site_type_daily_summaries(
+        self, *, commit: bool = True, summary_dates: list[date] | None = None, limit: int | None = None, offset: int = 0
+    ) -> int:
         """Rebuild materialized daily summaries from metric daily rollups."""
         site_expr = func.coalesce(func.nullif(Device.site, ""), "Unassigned")
         device_type_expr = func.coalesce(func.nullif(Device.device_type, ""), "unknown")
@@ -298,12 +300,27 @@ class MetricRollupMixin(MetricRepositoryBase):
                     func.max(MetricDailyRollup.max_jitter_ms).label("max_jitter_ms"),
                 )
                 .outerjoin(Device, Device.id == MetricDailyRollup.device_id)
+                .where(MetricDailyRollup.rollup_date.in_(summary_dates) if summary_dates is not None else true())
                 .group_by(MetricDailyRollup.rollup_date, site_expr, device_type_expr)
+                .order_by(MetricDailyRollup.rollup_date, site_expr, device_type_expr)
+                .offset(offset)
+                .limit(limit)
             )
         ).all()
+        keys = [(row.summary_date, row.site, row.device_type) for row in rows]
         existing = {
             (row.summary_date, row.site, row.device_type): row
-            for row in (await self.db.scalars(select(MetricSiteTypeDailySummary))).all()
+            for row in (
+                await self.db.scalars(
+                    select(MetricSiteTypeDailySummary).where(
+                        tuple_(
+                            MetricSiteTypeDailySummary.summary_date,
+                            MetricSiteTypeDailySummary.site,
+                            MetricSiteTypeDailySummary.device_type,
+                        ).in_(keys)
+                    )
+                )
+            ).all()
         }
         now_value = utcnow()
         for row in rows:

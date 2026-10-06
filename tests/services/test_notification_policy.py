@@ -106,3 +106,56 @@ def test_enqueue_without_ack_does_not_qualify_for_resolved_notification():
     assert not _should_send_telegram_resolved_alert(alert, NOW, "switch")
     alert.telegram_notified_at = NOW - timedelta(seconds=1)
     assert _should_send_telegram_resolved_alert(alert, NOW, "switch")
+
+
+@pytest.mark.parametrize(
+    "case,eligible",
+    [
+        ("grace", False),
+        ("flap", False),
+        ("replacement_cooldown", False),
+        ("active", True),
+        ("reminder_early", False),
+        ("reminder", True),
+        ("summary_early", False),
+        ("summary", True),
+    ],
+)
+def test_policy_selection_persists_and_acks_through_outbox(outbox_sessions, case, eligible):
+    from unittest.mock import AsyncMock
+    from sqlalchemy import select, func
+    from backend.app.models.device import Device
+    from backend.app.models.notification_outbox import NotificationOutbox
+    from backend.app.services.telegram_outbox_writer import TelegramOutboxWriter
+    from backend.app.services.alert_notification_outbox_service import deliver_alert_notification
+    from tests.test_utils import run
+
+    async def scenario():
+        age = {"grace": 59, "flap": 119, "summary_early": 899, "summary": 900}.get(case, 4000)
+        notified = (
+            NOW - timedelta(seconds=3599 if case == "reminder_early" else 3600) if case.startswith("reminder") else None
+        )
+        async with outbox_sessions.begin() as db:
+            db.add(Device(id=1, name="Fixture", ip_address="10.176.0.1", site="Fixture", device_type="switch"))
+            await db.flush()
+            alert = active_alert(age=age, notified_at=notified)
+            db.add(alert)
+            await db.flush()
+            selected = select_events(
+                alert,
+                device_type="printer" if case.startswith("summary") else "switch",
+                recently_notified_keys={(1, "device_down")} if case == "replacement_cooldown" else set(),
+            )
+            await TelegramOutboxWriter("123")(db, selected)
+            assert alert.telegram_notified_at == notified
+        async with outbox_sessions() as db:
+            assert await db.scalar(select(func.count()).select_from(NotificationOutbox)) == int(eligible)
+        sender = AsyncMock(return_value=True)
+        outcome = await deliver_alert_notification(outbox_sessions, AsyncMock(), routed_sender=sender)
+        assert outcome == ("sent" if eligible else "idle")
+        async with outbox_sessions() as db:
+            stored = await db.get(Alert, 1)
+            assert stored is not None
+            assert (stored.telegram_notified_at != notified) == eligible
+
+    run(scenario())

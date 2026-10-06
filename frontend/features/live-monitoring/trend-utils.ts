@@ -32,12 +32,12 @@ export function numericSamplesByMetric(samples: readonly MetricSample[], windowH
     groups.set(sample.metric_name, [...(groups.get(sample.metric_name) ?? []), sample]);
   });
   return [...groups.entries()]
-    .map(([metricName, values]) => [metricName, values.sort((left, right) => left.checked_at.localeCompare(right.checked_at))] as const)
+    .map(([metricName, values]) => [metricName, values.sort((left, right) => left.checked_at.localeCompare(right.checked_at) || (left.id ?? 0) - (right.id ?? 0))] as const)
     .sort(([left], [right]) => left.localeCompare(right));
 }
 
 export function metricSummary(samples: readonly MetricSample[]) {
-  const ordered = [...samples].sort((left, right) => left.checked_at.localeCompare(right.checked_at));
+  const ordered = [...samples].sort((left, right) => left.checked_at.localeCompare(right.checked_at) || (left.id ?? 0) - (right.id ?? 0));
   const values = ordered.map((sample) => sample.metric_value_numeric).filter((value): value is number => value !== null);
   const latest = ordered.at(-1);
   const previous = values.at(-2);

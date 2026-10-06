@@ -15,6 +15,8 @@ export type SchedulerJob = {
 
 export type SystemHealthSummary = {
   database: string;
+  telegram_configured?: boolean;
+  notification_workers_alive?: number;
   devices_total: number;
   metrics_latest_snapshot: number;
   alerts_active: number;

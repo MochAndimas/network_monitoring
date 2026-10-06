@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import logging
 from time import perf_counter
+from collections.abc import Callable, Sequence, Mapping
+from typing import Any
+from shared.metric_contracts import MetricWritePayload
+from ..models.metric import Metric
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,9 +19,15 @@ from ..repositories.metric_repository import MetricRepository
 logger = logging.getLogger("network_monitoring.service")
 
 
-async def persist_metrics(db: AsyncSession, metrics: list[dict], *, commit: bool = True) -> list:
+async def persist_metrics(
+    db: AsyncSession,
+    metrics: Sequence[MetricWritePayload | Mapping[str, Any]],
+    *,
+    commit: bool = True,
+    repository_factory: Callable[[AsyncSession], MetricRepository] = MetricRepository,
+) -> list[Metric]:
     """Persist a batch of collected metric payloads."""
-    persisted_metrics = await MetricRepository(db).create_metrics(metrics, commit=commit)
+    persisted_metrics = await repository_factory(db).create_metrics(metrics, commit=commit)
     if persisted_metrics:
         from .dashboard_overview_service import invalidate_dashboard_overview_cache
 

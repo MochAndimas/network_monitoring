@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .settings_groups import (
@@ -121,6 +121,9 @@ class Settings(BaseSettings):
     raw_metric_retention_days: int = 7
     retention_rollup_batch_size: int = 500
     retention_archive_batch_size: int = 500
+    retention_source_batch_size: int = Field(default=1000, ge=1, le=10000)
+    retention_delete_batch_size: int = Field(default=1000, ge=1, le=10000)
+    retention_max_batches_per_phase: int = Field(default=100, ge=1, le=1000)
     alert_retention_days: int = 180
     incident_retention_days: int = 180
     scheduler_cleanup_interval_hours: int = 24
@@ -393,6 +396,9 @@ class Settings(BaseSettings):
             raw_metric_days=self.raw_metric_retention_days,
             rollup_batch_size=self.retention_rollup_batch_size,
             archive_batch_size=self.retention_archive_batch_size,
+            source_batch_size=self.retention_source_batch_size,
+            delete_batch_size=self.retention_delete_batch_size,
+            max_batches_per_phase=self.retention_max_batches_per_phase,
             alert_days=self.alert_retention_days,
             incident_days=self.incident_retention_days,
         )

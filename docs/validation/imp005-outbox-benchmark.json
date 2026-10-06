@@ -1,0 +1,166 @@
+{
+  "workload": {
+    "jobs": 10000,
+    "streams": 100,
+    "sent": 7000,
+    "dead": 20,
+    "pending": 2980,
+    "parallel_scrapes": 20
+  },
+  "adapter": {
+    "events": 1000,
+    "sites": 100,
+    "jobs": 100,
+    "elapsed_ms": 1351.6
+  },
+  "scrape_serial": {
+    "median_ms": 14.02,
+    "p95_ms": 16.27,
+    "max_ms": 17.31
+  },
+  "scrape_parallel_with_worker": {
+    "median_ms": 160.51,
+    "p95_ms": 188.97,
+    "max_ms": 192.25
+  },
+  "delivery": {
+    "report": {
+      "sent": 20,
+      "retries": 0,
+      "dead": 0,
+      "lease_lost": 0,
+      "errors": 0,
+      "idle_polls": 0,
+      "cancelled_lanes": 0
+    },
+    "elapsed_ms": 1066.09
+  },
+  "plans": [
+    {
+      "query_block": {
+        "select_id": 1,
+        "cost_info": {
+          "query_cost": "3014387.71"
+        },
+        "ordering_operation": {
+          "using_filesort": true,
+          "nested_loop": [
+            {
+              "table": {
+                "table_name": "notification_outbox",
+                "access_type": "range",
+                "possible_keys": [
+                  "ix_notification_outbox_due"
+                ],
+                "key": "ix_notification_outbox_due",
+                "used_key_parts": [
+                  "channel",
+                  "status",
+                  "available_at"
+                ],
+                "key_length": "212",
+                "rows_examined_per_scan": 2981,
+                "rows_produced_per_join": 2981,
+                "filtered": "100.00",
+                "index_condition": "((`imp005_outbox_fixture`.`notification_outbox`.`channel` = 'telegram') and (((`imp005_outbox_fixture`.`notification_outbox`.`status` = 'pending') and (`imp005_outbox_fixture`.`notification_outbox`.`available_at` <= TIMESTAMP'2026-09-23 15:24:38.055576')) or (`imp005_outbox_fixture`.`notification_outbox`.`status` = 'processing')))",
+                "cost_info": {
+                  "read_cost": "1043.86",
+                  "eval_cost": "298.10",
+                  "prefix_cost": "1341.96",
+                  "data_read_per_join": "6M"
+                },
+                "used_columns": [
+                  "id",
+                  "stream_key",
+                  "channel",
+                  "status",
+                  "available_at",
+                  "lease_until"
+                ],
+                "attached_condition": "(((`imp005_outbox_fixture`.`notification_outbox`.`status` = 'pending') and (`imp005_outbox_fixture`.`notification_outbox`.`available_at` <= TIMESTAMP'2026-09-23 15:24:38.055576')) or ((`imp005_outbox_fixture`.`notification_outbox`.`status` = 'processing') and (`imp005_outbox_fixture`.`notification_outbox`.`lease_until` <= TIMESTAMP'2026-09-23 15:24:38.055576')))"
+              }
+            },
+            {
+              "table": {
+                "table_name": "notification_outbox_1",
+                "access_type": "ref",
+                "possible_keys": [
+                  "ix_notification_outbox_stream"
+                ],
+                "key": "ix_notification_outbox_stream",
+                "used_key_parts": [
+                  "channel",
+                  "stream_key"
+                ],
+                "key_length": "636",
+                "ref": [
+                  "const",
+                  "imp005_outbox_fixture.notification_outbox.stream_key"
+                ],
+                "rows_examined_per_scan": 10100,
+                "rows_produced_per_join": 2981,
+                "filtered": "100.00",
+                "not_exists": true,
+                "cost_info": {
+                  "read_cost": "2235.75",
+                  "eval_cost": "298.10",
+                  "prefix_cost": "3014387.71",
+                  "data_read_per_join": "6M"
+                },
+                "used_columns": [
+                  "id",
+                  "stream_key",
+                  "channel",
+                  "status"
+                ],
+                "attached_condition": "(<if>(is_not_null_compl(notification_outbox_1), ((`imp005_outbox_fixture`.`notification_outbox_1`.`id` < `imp005_outbox_fixture`.`notification_outbox`.`id`) and (`imp005_outbox_fixture`.`notification_outbox_1`.`status` <> 'sent')), true) and <if>(is_not_null_compl(notification_outbox_1), <if>(found_match(notification_outbox_1), false, true), true))"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "query_block": {
+        "select_id": 1,
+        "cost_info": {
+          "query_cost": "505.75"
+        },
+        "grouping_operation": {
+          "using_filesort": false,
+          "table": {
+            "table_name": "notification_outbox",
+            "access_type": "range",
+            "possible_keys": [
+              "ix_notification_outbox_due",
+              "ix_notification_outbox_lease",
+              "ix_notification_outbox_stream"
+            ],
+            "key": "ix_notification_outbox_due",
+            "used_key_parts": [
+              "channel",
+              "status"
+            ],
+            "key_length": "204",
+            "rows_examined_per_scan": 3001,
+            "rows_produced_per_join": 1515,
+            "filtered": "100.00",
+            "index_condition": "((`imp005_outbox_fixture`.`notification_outbox`.`channel` = 'telegram') and (`imp005_outbox_fixture`.`notification_outbox`.`status` in ('pending','processing','dead')))",
+            "cost_info": {
+              "read_cost": "0.75",
+              "eval_cost": "151.50",
+              "prefix_cost": "505.75",
+              "data_read_per_join": "3M"
+            },
+            "used_columns": [
+              "id",
+              "channel",
+              "status",
+              "created_at"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

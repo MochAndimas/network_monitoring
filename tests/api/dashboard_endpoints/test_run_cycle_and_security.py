@@ -1755,7 +1755,6 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
 
     import backend.app.alerting.engine as engine_module
 
-    engine_module._recent_telegram_notification_keys.clear()
     monkeypatch.setattr(engine_module.settings, "telegram_alert_grace_period_seconds", 0)
     monkeypatch.setattr(engine_module.settings, "telegram_flap_suppression_seconds", 0)
     monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
@@ -1843,7 +1842,6 @@ def test_run_cycle_keeps_voip_quality_alerts_but_only_telegrams_unreachable(monk
             run_cycle_module.run_device_checks = original_device
             run_cycle_module.run_server_checks = original_server
             run_cycle_module.run_mikrotik_checks = original_mikrotik
-            engine_module._recent_telegram_notification_keys.clear()
 
         assert quality_response.status_code == 200
         assert quality_response.json()["alerts_created"] == 3
@@ -1997,7 +1995,6 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
 
     import backend.app.alerting.engine as engine_module
 
-    engine_module._recent_telegram_notification_keys.clear()
     monkeypatch.setattr(engine_module.settings, "telegram_alert_grace_period_seconds", 0)
     monkeypatch.setattr(engine_module.settings, "telegram_flap_suppression_seconds", 0)
     monkeypatch.setattr("backend.app.alerting.engine.send_telegram_alert", fake_send_telegram_alert)
@@ -2074,7 +2071,6 @@ def test_run_cycle_keeps_printer_quality_alerts_but_filters_telegram(monkeypatch
             run_cycle_module.run_device_checks = original_device
             run_cycle_module.run_server_checks = original_server
             run_cycle_module.run_mikrotik_checks = original_mikrotik
-            engine_module._recent_telegram_notification_keys.clear()
 
         assert quality_response.status_code == 200
         assert quality_response.json()["alerts_created"] == 3

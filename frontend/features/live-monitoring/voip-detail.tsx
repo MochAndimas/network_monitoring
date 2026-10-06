@@ -14,7 +14,7 @@ export function DeviceGroupDetail({ samples, selectedMetric, windowHours, label 
     <p>Setiap warna pada grafik mewakili satu device {label}; kartu memakai agregasi nilai terbaru antar-device.</p>
     {groups.length ? groups.map(([metricName, values]) => {
       const byDevice = new Map<string, MetricSample[]>();
-      values.forEach((sample) => byDevice.set(sample.device_name, [...(byDevice.get(sample.device_name) ?? []), sample]));
+      values.forEach((sample) => byDevice.set(String(sample.device_id ?? sample.device_name), [...(byDevice.get(String(sample.device_id ?? sample.device_name)) ?? []), sample]));
       const latest = [...byDevice.values()].map((deviceSamples) => deviceSamples.at(-1)).filter((sample): sample is MetricSample => Boolean(sample));
       const current = latest.map((sample) => sample.metric_value_numeric).filter((value): value is number => value !== null);
       const unit = latest[0]?.unit;
@@ -26,7 +26,7 @@ export function DeviceGroupDetail({ samples, selectedMetric, windowHours, label 
           <MetricCard label="Maksimum" value={format(Math.max(...current), unit)} />
           <MetricCard label="Device dengan data" value={latest.length.toLocaleString("id-ID")} />
         </MetricGrid>
-        <PlotlyChart ariaLabel={`Tren ${metricLabel(metricName)} untuk semua ${label}`} data={[...byDevice.entries()].map(([device, deviceSamples]) => ({ type: "scatter" as const, mode: "lines+markers" as const, name: device, x: deviceSamples.map((sample) => sample.checked_at), y: deviceSamples.map((sample) => sample.metric_value_numeric), hovertemplate: "%{x}<br>%{y}<extra>" + device + "</extra>" }))} layout={{ xaxis: { title: { text: "Waktu Check (WIB)" } }, yaxis: { title: { text: `${metricLabel(metricName)}${unit ? ` (${unit})` : ""}` } }, showlegend: true }} />
+        <PlotlyChart ariaLabel={`Tren ${metricLabel(metricName)} untuk semua ${label}`} data={[...byDevice.entries()].map(([device, deviceSamples]) => ({ type: "scatter" as const, mode: "lines+markers" as const, name: deviceSamples[0]?.device_name ?? device, x: deviceSamples.map((sample) => sample.checked_at), y: deviceSamples.map((sample) => sample.metric_value_numeric), hovertemplate: "%{x}<br>%{y}<extra>" + (deviceSamples[0]?.device_name ?? device) + "</extra>" }))} layout={{ xaxis: { title: { text: "Waktu Check (WIB)" } }, yaxis: { title: { text: `${metricLabel(metricName)}${unit ? ` (${unit})` : ""}` } }, showlegend: true }} />
       </section>;
     }) : <p>Belum ada data {label} numerik untuk filter ini.</p>}
   </section>;

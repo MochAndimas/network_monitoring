@@ -1,4 +1,4 @@
-"""Bound Telegram message groups without splitting one domain event's ack."""
+"""Pack events into jobs; oversized events retain one atomic domain acknowledgement."""
 
 from dataclasses import dataclass
 from typing import cast
@@ -29,12 +29,10 @@ def event_references(event: dict) -> tuple[AlertNotificationReference, ...]:
 def split_telegram_events(
     events: list[dict], *, max_message_units: int = 4096, max_references: int = 250
 ) -> list[TelegramMessageBatch]:
-    """Greedily pack a homogeneous, ordered group into independently acked jobs.
+    """Pack normal events; the delivery cursor handles oversized atomic events.
 
-    Each event remains atomic: splitting one event over multiple jobs would let
-    the first delivery incorrectly acknowledge the entire domain event. Reject
-    an oversized individual event until multipart acknowledgement is available.
-    The caller supplies deterministic order and a single site/action/severity.
+    Message/reference limits bound normal batches, not individual domain events.
+    One oversized event stays in one job so no partial send acknowledges it.
     """
     if not 0 < max_message_units <= 4096 or not 0 < max_references <= 250:
         raise ValueError("Invalid Telegram batching limits")
@@ -58,10 +56,6 @@ def split_telegram_events(
             candidate = [event]
             candidate_refs = event_refs
             rendered = _build_telegram_message(candidate)
-            if len(candidate_refs) > max_references:
-                raise ValueError("Individual Telegram event exceeds reference limit")
-            if len(rendered.encode("utf-16-le")) // 2 > max_message_units:
-                raise ValueError("Individual Telegram event exceeds message limit")
         current, refs, message = candidate, candidate_refs, rendered
     if current:
         batches.append(TelegramMessageBatch(message, tuple(sorted(refs))))

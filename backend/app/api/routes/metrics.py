@@ -1,6 +1,7 @@
 """FastAPI routes for metrics endpoints."""
 
 from datetime import date, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,8 @@ from ...api.schemas import (
 from ...api.lifecycle import apply_legacy_deprecation_headers
 from ...db.session import get_db
 from ...services import metrics_read_service
+from ...services.metric_group_service import get_metric_group
+from ...api.schemas.metric_group import MetricGroupPayload
 
 router = APIRouter()
 
@@ -256,4 +259,42 @@ async def get_metric_freshness_summary(
         db,
         stale_after_minutes=stale_after_minutes,
         active_only=active_only,
+    )
+
+
+@router.get("/history/group", response_model=MetricGroupPayload)
+async def get_metrics_history_group(
+    group: Literal["voip", "ruijie"] = Query(...),
+    mode: Literal["live", "range"] = Query(default="live"),
+    site: str | None = Query(default=None, max_length=100),
+    device_type: str | None = Query(default=None, max_length=50),
+    device_id: int | None = Query(default=None, ge=1),
+    metric_name: str | None = Query(default=None, max_length=100),
+    status: str | None = Query(default=None, max_length=30),
+    checked_from: datetime | None = Query(default=None),
+    checked_to: datetime | None = Query(default=None),
+    device_limit: int = Query(default=20, ge=1, le=50),
+    device_offset: int = Query(default=0, ge=0),
+    samples_per_series: int = Query(default=50, ge=1, le=200),
+    snapshot_limit: int = Query(default=10, ge=1, le=100),
+    snapshot_offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> MetricGroupPayload:
+    """Read one bounded page of active VoIP/Ruijie devices and their metrics."""
+    return await get_metric_group(
+        db,
+        group=group,
+        mode=mode,
+        site=site,
+        device_type=device_type,
+        device_id=device_id,
+        metric_name=metric_name,
+        status=status,
+        checked_from=checked_from,
+        checked_to=checked_to,
+        device_limit=device_limit,
+        device_offset=device_offset,
+        samples_per_series=samples_per_series,
+        snapshot_limit=snapshot_limit,
+        snapshot_offset=snapshot_offset,
     )

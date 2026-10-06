@@ -5,7 +5,7 @@ from time import perf_counter
 
 from ..core.config import settings
 from ..db.session import SessionLocal
-from ..alerting.engine import evaluate_alerts
+from ..services.operational_alert_service import evaluate_operational_alerts as evaluate_alerts
 from ..monitors.device.service import run_device_checks
 from ..monitors.internet.service import run_internet_checks
 from ..monitors.mikrotik.service import run_mikrotik_checks
@@ -195,9 +195,8 @@ async def _run_cleanup_job_inner(db) -> None:
         if not acquired:
             logger.info("Skipping retention cleanup because another cleanup run is active")
             return
-        await cleanup_monitoring_data(db, commit=False)
-        await cleanup_auth_data(db, commit=False)
-        await db.commit()
+        await cleanup_monitoring_data(db)
+        await cleanup_auth_data(db)
 
 
 async def _run_scheduler_job(job_name: str, operation) -> None:

@@ -7,8 +7,9 @@ from collections.abc import Awaitable, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..alerting.engine import evaluate_alerts
+from ..services.operational_alert_service import evaluate_operational_alerts as evaluate_alerts
 from ..db.session import SessionLocal
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from ..monitors.device.service import run_device_checks
 from ..monitors.internet.service import run_internet_checks
 from ..monitors.mikrotik.service import run_mikrotik_checks
@@ -23,10 +24,19 @@ logger = logging.getLogger("network_monitoring.run_cycle")
 MonitorRunner = Callable[[AsyncSession], Awaitable[list[dict]]]
 
 
-async def run_monitoring_cycle(db: AsyncSession) -> dict:
+async def run_monitoring_cycle(
+    db: AsyncSession,
+    *,
+    runners: tuple[MonitorRunner, ...] | None = None,
+    collector_sessions: async_sessionmaker[AsyncSession] | None = None,
+) -> dict:
     """Run collectors, persist metrics, and evaluate alerts in one transaction."""
     started_at = perf_counter()
-    runner_results = await collect_monitoring_metrics_by_runner()
+    runner_results = (
+        await collect_monitoring_metrics_by_runner()
+        if runners is None and collector_sessions is None
+        else await collect_monitoring_metrics_by_runner(runners=runners, collector_sessions=collector_sessions)
+    )
 
     async with db.begin():
         metrics_collected = 0
@@ -62,15 +72,26 @@ async def collect_monitoring_metrics() -> list[dict]:
     return [metric for metrics in runner_results for metric in metrics]
 
 
-async def collect_monitoring_metrics_by_runner() -> list[list[dict]]:
+async def collect_monitoring_metrics_by_runner(
+    *,
+    runners: tuple[MonitorRunner, ...] | None = None,
+    collector_sessions: async_sessionmaker[AsyncSession] | None = None,
+) -> list[list[dict]]:
     """Collect metrics grouped by monitor runner to avoid large flatten buffers."""
-    return await asyncio.gather(*[_collect_runner_metrics(runner) for runner in _monitor_runners()])
+    return await asyncio.gather(
+        *[
+            _collect_runner_metrics(runner, session_factory=collector_sessions)
+            for runner in (_monitor_runners() if runners is None else runners)
+        ]
+    )
 
 
-async def _collect_runner_metrics(runner: MonitorRunner) -> list[dict]:
+async def _collect_runner_metrics(
+    runner: MonitorRunner, *, session_factory: async_sessionmaker[AsyncSession] | None = None
+) -> list[dict]:
     """Run one monitor collector with its own database session."""
     started_at = perf_counter()
-    async with SessionLocal() as db:
+    async with (session_factory or SessionLocal)() as db:
         metrics = await runner(db)
     logger.info(
         "monitor_runner_completed runner=%s duration_ms=%.2f metrics=%s",

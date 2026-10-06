@@ -7,6 +7,10 @@ dan project ini mengikuti [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Kolom tabel Auth Observability/Runtime dapat menyusut pada layar kecil agar System Health tidak melebar di luar viewport.
+- Badge inventory “Aktif dipantau” dan “Tidak aktif” menggunakan total dan jumlah perangkat aktif dari API, termasuk perangkat tanpa metrik; kontrak status-only dashboard tetap dipertahankan.
+
 ### Added
 - Menambahkan runbook operasional untuk backup/restore DB, DR drill, incident response SOP, dan SLO alerting actionability di `docs/ops/runbook.md`.
 - Menambahkan DX tooling standar:

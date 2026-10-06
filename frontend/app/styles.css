@@ -121,3 +121,5 @@
 .devices-page .pagination { padding: 0; }
 .devices-page > .device-import { margin-top: .15rem; }
 @media (max-width: 760px) { .devices-page { gap: 1rem; padding-top: 1rem; } .devices-workspace-bar, .devices-table-header { align-items: flex-start; flex-direction: column; } .devices-workspace-bar > p { text-align: left; } .devices-page .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .devices-filter-heading { align-items: flex-start; flex-direction: column; gap: .25rem; } .devices-page .filter-panel label, .devices-page .filter-panel label:not(:first-child) { width: 100%; min-width: 0; } }
+
+.two-column > * { min-width: 0; }

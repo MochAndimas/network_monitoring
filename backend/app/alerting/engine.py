@@ -2,11 +2,12 @@
 
 The implementation is split under ``backend.app.alerting.engine_parts``.
 This module keeps the historical import path stable for scheduler jobs and tests,
-including module-level monkeypatch points such as ``send_telegram_alert``.
+including the historical sender override, passed per call without changing globals.
 """
 
 from .engine_parts import impl as _impl
 from .notification_contracts import NotificationBatchWriter
+from .engine_parts.dependencies import AlertEvaluationDependencies
 
 TELEGRAM_NOTIFICATION_DEDUPE_TTL = _impl.TELEGRAM_NOTIFICATION_DEDUPE_TTL
 TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE = _impl.TELEGRAM_SUPPRESSED_ALERT_TYPES_BY_DEVICE_TYPE
@@ -15,23 +16,26 @@ settings = _impl.settings
 send_telegram_alert = _impl.send_telegram_alert
 
 
-def _sync_patchable_globals() -> None:
-    """Forward facade-level monkeypatches into the implementation module."""
-    _impl.send_telegram_alert = send_telegram_alert
-
-
 async def evaluate_alerts(
-    db, *, commit: bool = True, notification_writer: NotificationBatchWriter | None = None
+    db,
+    *,
+    commit: bool = True,
+    notification_writer: NotificationBatchWriter | None = None,
+    dependencies: AlertEvaluationDependencies | None = None,
 ) -> list[dict]:
     """Evaluate alert state while preserving historical monkeypatch behavior."""
-    _sync_patchable_globals()
-    return await _impl.evaluate_alerts(db, commit=commit, notification_writer=notification_writer)
+    return await _impl.evaluate_alerts(
+        db,
+        commit=commit,
+        notification_writer=notification_writer,
+        dependencies=dependencies,
+        legacy_sender=send_telegram_alert,
+    )
 
 
 async def _send_telegram_events(db, alert_repository, events: list[dict], *, commit: bool) -> None:
     """Send Telegram events while preserving historical monkeypatch behavior."""
-    _sync_patchable_globals()
-    await _impl._send_telegram_events(db, alert_repository, events, commit=commit)
+    await _impl._send_telegram_events(db, alert_repository, events, commit=commit, sender=send_telegram_alert)
 
 
 _alert_reached_telegram_grace_period = _impl._alert_reached_telegram_grace_period

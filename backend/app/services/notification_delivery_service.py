@@ -1,7 +1,6 @@
 """Deliver a single committed outbox job outside every database transaction.
 
-This infrastructure is not registered with the scheduler until alert policies
-and delivery acknowledgements have been integrated.
+Transport progress and final domain acknowledgement use short transactions.
 """
 
 import asyncio
@@ -12,6 +11,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.time import utcnow
+from .telegram_message_parts import telegram_message_parts
 from ..repositories.notification_outbox_repository import ClaimedNotification, NotificationOutboxRepository
 
 NotificationSender = Callable[[str], Awaitable[bool]]
@@ -59,17 +59,29 @@ async def deliver_one(
         )
     if claim is None:
         return "idle"
-    try:
-        if claim.destination is not None:
-            if routed_sender is None:
-                raise RuntimeError("A routed job requires a destination-aware sender")
-            delivery = routed_sender(claim.destination, claim.message)
-        else:
-            delivery = sender(claim.message)
-        delivered = await asyncio.wait_for(delivery, timeout=policy.send_timeout_seconds)
-    except Exception:
-        # Exception bodies can contain provider credentials. Persist only a category.
-        delivered = False
+    delivered = True
+    parts = telegram_message_parts(claim.message)
+    for index in range(claim.next_part, len(parts)):
+        try:
+            if claim.destination is not None:
+                if routed_sender is None:
+                    raise RuntimeError("A routed job requires a destination-aware sender")
+                delivery = routed_sender(claim.destination, parts[index])
+            else:
+                delivery = sender(parts[index])
+            delivered = await asyncio.wait_for(delivery, timeout=policy.send_timeout_seconds)
+        except Exception:
+            # Never persist or log provider exception bodies (they may contain tokens).
+            delivered = False
+        if not delivered:
+            break
+        async with sessions.begin() as db:
+            repository = NotificationOutboxRepository(db)
+            await repository.lock_for_acknowledgement(claim)
+            if not await repository.advance_part(
+                claim, next_part=index + 1, now=clock(), lease_seconds=policy.lease_seconds
+            ):
+                return "lease_lost"
     # Cancellation intentionally leaves the lease recoverable after its deadline.
     async with sessions.begin() as db:
         if delivered and before_acknowledge is not None:

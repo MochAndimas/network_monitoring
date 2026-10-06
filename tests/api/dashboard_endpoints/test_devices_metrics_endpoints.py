@@ -59,7 +59,27 @@ def test_devices_endpoint_returns_latest_status():
         assert len(payload) == 2
         assert {item["latest_status"] for item in payload} == {"up", "down"}
         assert status_summary_response.status_code == 200
-        assert status_summary_response.json() == {"down": 1, "up": 1}
+        assert status_summary_response.json() == {"down": 1, "up": 1, "total": 2, "active": 2}
+
+
+def test_inventory_summary_counts_active_devices_without_metrics():
+    with client_context() as (client, session_factory):
+        run(
+            _seed_devices_and_metrics(
+                session_factory,
+                [
+                    {"name": "Enabled", "ip_address": "192.168.1.10", "device_type": "switch", "is_active": True},
+                    {"name": "Disabled", "ip_address": "192.168.1.11", "device_type": "switch", "is_active": False},
+                ],
+                lambda devices: [],
+            )
+        )
+        response = client.get("/devices/status-summary", headers=API_HEADERS)
+        assert response.status_code == 200
+        assert response.json() == {"unknown": 2, "total": 2, "active": 1}
+        response = client.get("/devices/status-summary?active_only=true", headers=API_HEADERS)
+        assert response.status_code == 200
+        assert response.json() == {"unknown": 1, "total": 1, "active": 1}
 
 
 def test_create_update_and_delete_device_endpoint():

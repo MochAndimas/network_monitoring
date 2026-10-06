@@ -119,6 +119,9 @@ class RetentionSettings:
     raw_metric_days: int
     rollup_batch_size: int
     archive_batch_size: int
+    source_batch_size: int
+    delete_batch_size: int
+    max_batches_per_phase: int
     alert_days: int
     incident_days: int
 

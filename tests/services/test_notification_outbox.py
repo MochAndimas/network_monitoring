@@ -222,12 +222,12 @@ def test_crash_after_send_before_ack_can_duplicate_delivery(outbox_sessions, mon
         now = utcnow()
         async with outbox_sessions.begin() as db:
             await Repo(db).enqueue(draft(), now=now)
-        original_ack = Repo.acknowledge
+        original_ack = Repo.advance_part
         sender = AsyncMock(return_value=True)
-        monkeypatch.setattr(Repo, "acknowledge", AsyncMock(side_effect=RuntimeError("ack unavailable")))
+        monkeypatch.setattr(Repo, "advance_part", AsyncMock(side_effect=RuntimeError("ack unavailable")))
         with pytest.raises(RuntimeError, match="ack unavailable"):
             await deliver_one(outbox_sessions, sender, clock=lambda: now)
-        monkeypatch.setattr(Repo, "acknowledge", original_ack)
+        monkeypatch.setattr(Repo, "advance_part", original_ack)
         assert await deliver_one(outbox_sessions, sender, clock=lambda: now + timedelta(seconds=61)) == "sent"
         assert sender.await_count == 2  # at-least-once, not exactly-once external delivery
 

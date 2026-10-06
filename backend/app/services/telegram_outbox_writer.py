@@ -1,7 +1,6 @@
 """Persist grouped Telegram events with stable identities and explicit routing.
 
-This adapter is opt-in until worker lifecycle and cross-alert/site correlation
-are validated. It performs no network I/O and never commits its caller's session.
+The adapter performs no network I/O and never commits its caller's session.
 """
 
 from dataclasses import dataclass
@@ -9,7 +8,7 @@ import hashlib
 import json
 import re
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..alerting.engine_parts.notification_formatting import (
@@ -25,6 +24,7 @@ from .alert_notification_outbox_service import (
     lock_alert_notification_state,
 )
 
+from .notification_routing import previous_active_route
 from .telegram_notification_batches import event_references, split_telegram_events
 
 _ACTION_RANK = {"active": 0, "active_reminder": 1, "summary_active": 2, "created": 2, "resolved": 3}
@@ -59,34 +59,29 @@ class TelegramOutboxWriter:
             db, {ref.alert_id for event in events for ref in event_references(event)}
         )
         groups = _group_telegram_events(_filter_recent_telegram_events(events))
-        streams = {key: "telegram:v1:" + _hash([self.destination, key[0]]) for key in groups}
+        routed_groups: dict[tuple[tuple[str, str, str], str, str], list[dict]] = {}
+        for key, group in groups.items():
+            for event in group:
+                destination = self.destination
+                stream = "telegram:v1:" + _hash([destination, key[0]])
+                if key[1] == "resolved":
+                    # Match the actual persisted ACTIVE route, including sent jobs.
+                    # Never reroute a resolution from a pending/dead predecessor.
+                    previous = await previous_active_route(db, event_references(event)[0].alert_id)
+                    if previous is not None:
+                        if previous[0] is None:
+                            raise ValueError("Reconcile legacy ACTIVE destination before resolution")
+                        destination, stream = previous[0], previous[1]
+                routed_groups.setdefault((key, destination, stream), []).append(event)
         repository = NotificationOutboxRepository(db)
-        # Acquire all streams in one deterministic order before assigning IDs.
-        await repository.lock_streams([("telegram", value) for value in streams.values()])
-        for key in sorted(groups, key=lambda item: (_ACTION_RANK.get(item[1], 99), item)):
-            group_ids = sorted({ref.alert_id for event in groups[key] for ref in event_references(event)})
+        await repository.lock_streams([("telegram", stream) for _, _, stream in routed_groups])
+        for key, destination, stream in sorted(
+            routed_groups, key=lambda item: (_ACTION_RANK.get(item[0][1], 99), item)
+        ):
+            group = routed_groups[(key, destination, stream)]
+            group_ids = sorted({ref.alert_id for event in group for ref in event_references(event)})
             pending_ids: set[int] = set()
             for offset in range(0, len(group_ids), 500):
-                if key[1] == "resolved":
-                    conflicting_route = await db.scalar(
-                        select(Job.id)
-                        .join(Reference, Reference.outbox_id == Job.id)
-                        .where(
-                            Reference.alert_id.in_(group_ids[offset : offset + 500]),
-                            Reference.action.in_(["active", "active_reminder", "summary_active"]),
-                            Job.channel == "telegram",
-                            Job.status != "sent",
-                            or_(
-                                Job.destination.is_(None),
-                                Job.destination != self.destination,
-                                Job.stream_key != streams[key],
-                            ),
-                        )
-                        .limit(1)
-                        .with_for_update()
-                    )
-                    if conflicting_route is not None:
-                        raise ValueError("Pending ACTIVE uses different routing; reconcile before RESOLVED enqueue")
                 pending_ids.update(
                     (
                         await db.scalars(
@@ -103,7 +98,7 @@ class TelegramOutboxWriter:
                     ).all()
                 )
             selected = []
-            for event in sorted(groups[key], key=lambda item: (str(item.get("alert_id")), str(item.get("alert_type")))):
+            for event in sorted(group, key=lambda item: (str(item.get("alert_id")), str(item.get("alert_type")))):
                 refs = event_references(event)
                 # A locking read sees jobs committed while waiting for the stream.
                 if key[1] != "resolved" and any(ref.alert_id in pending_ids for ref in refs):
@@ -136,10 +131,10 @@ class TelegramOutboxWriter:
                     generation = state.resolved_at if ref.action == "resolved" else state.notified_at
                     identities.append([ref.alert_id, ref.action, generation.isoformat() if generation else None])
                 draft = NotificationDraft(
-                    _hash(["telegram:v1", self.destination, key, identities]),
-                    streams[key],
+                    _hash(["telegram:v1", destination, key, identities]),
+                    stream,
                     "telegram",
                     batch.message,
-                    self.destination,
+                    destination,
                 )
                 await enqueue_alert_notification(db, draft, refs, now=utcnow())

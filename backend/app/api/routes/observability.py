@@ -18,12 +18,14 @@ from ...repositories.incident_repository import IncidentRepository
 from ...repositories.metric_repository import MetricRepository
 from ...repositories.threshold_repository import ThresholdRepository
 from ...services.auth_service import build_auth_observability_summary
+from ...core.config import settings
 from ...core.time import utcnow
 from ...models.collector_run import CollectorRun
 from ...models.metric import Metric
 from ...services.pipeline_control import pipeline_lock_health
 from ...services.notification_outbox_health import (
     build_notification_queue_health,
+    active_notification_workers,
     render_notification_queue_metrics,
 )
 from ...services.observability_service import (
@@ -82,6 +84,8 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
     scheduler_missed_windows = sum(1 for row in scheduler_health if str(row.get("state")) == "stale")
     return {
         "database": "up" if database_ok else "down",
+        "telegram_configured": bool(settings.telegram.bot_token and settings.telegram.chat_id),
+        "notification_workers_alive": await active_notification_workers(db, now=now),
         "notification_outbox": asdict(await build_notification_queue_health(db, now=now)),
         "devices_total": devices_total,
         "metrics_latest_snapshot": metrics_latest_snapshot,
@@ -142,6 +146,7 @@ async def observability_metrics(db: AsyncSession = Depends(get_db)) -> PlainText
     database_ok = await check_database_connection()
     scheduler_statuses = await list_scheduler_job_statuses(db)
     scheduler_alerts = build_scheduler_operational_alerts(scheduler_statuses)
+    workers_alive = await active_notification_workers(db, now=utcnow())
     queue_health = await build_notification_queue_health(db, now=utcnow())
     return PlainTextResponse(
         render_prometheus_metrics(
@@ -149,6 +154,8 @@ async def observability_metrics(db: AsyncSession = Depends(get_db)) -> PlainText
             scheduler_alert_count=len(scheduler_alerts),
             scheduler_statuses=scheduler_statuses,
         )
-        + render_notification_queue_metrics(queue_health),
+        + render_notification_queue_metrics(queue_health)
+        + "# TYPE network_monitoring_notification_workers_alive gauge\n"
+        + f"network_monitoring_notification_workers_alive {workers_alive}\n",
         media_type="text/plain; version=0.0.4; charset=utf-8",
     )

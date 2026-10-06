@@ -1,7 +1,9 @@
 """Fixed-cardinality queue health shared by JSON and Prometheus outputs."""
 
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from sqlalchemy import select, func
+from ..models.notification_worker import NotificationWorker
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,3 +74,17 @@ def render_notification_queue_metrics(health: NotificationQueueHealth) -> str:
             [f"# HELP {name} {help_text}", f"# TYPE {name} gauge", f'{name}{{channel="telegram"}} {values[field]}']
         )
     return "\n".join(lines) + "\n"
+
+
+async def active_notification_workers(db: AsyncSession, *, now: datetime) -> int:
+    return int(
+        await db.scalar(
+            select(func.count())
+            .select_from(NotificationWorker)
+            .where(
+                NotificationWorker.status == "running",
+                NotificationWorker.updated_at >= now - timedelta(seconds=45),
+            )
+        )
+        or 0
+    )

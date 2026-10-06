@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.config import settings
 from ...core.time import utcnow
 from ...models.user import AuthLoginAttempt, AuthSession, User
+from ..retention_batches import delete_rows_in_batches
 
 
 async def list_active_sessions_for_user(
@@ -65,23 +66,17 @@ async def cleanup_auth_data(db: AsyncSession, *, commit: bool = True) -> dict[st
     session_cutoff = now - timedelta(days=auth_settings.session_retention_days)
     attempt_cutoff = now - timedelta(days=auth_settings.login_attempt_retention_days)
 
-    deleted_sessions_result = await db.execute(
-        delete(AuthSession).where(
-            (AuthSession.expires_at < session_cutoff)
-            | ((AuthSession.revoked_at.is_not(None)) & (AuthSession.revoked_at < session_cutoff))
-        )
+    deleted_sessions = await delete_rows_in_batches(
+        db,
+        AuthSession,
+        (AuthSession.expires_at < session_cutoff)
+        | ((AuthSession.revoked_at.is_not(None)) & (AuthSession.revoked_at < session_cutoff)),
+        commit=commit,
     )
-    deleted_attempts_result = await db.execute(
-        delete(AuthLoginAttempt).where(AuthLoginAttempt.attempted_at < attempt_cutoff)
+    deleted_attempts = await delete_rows_in_batches(
+        db, AuthLoginAttempt, AuthLoginAttempt.attempted_at < attempt_cutoff, commit=commit
     )
-    if commit:
-        await db.commit()
-    else:
-        await db.flush()
-    return {
-        "auth_sessions_deleted": int(getattr(deleted_sessions_result, "rowcount", 0) or 0),
-        "auth_login_attempts_deleted": int(getattr(deleted_attempts_result, "rowcount", 0) or 0),
-    }
+    return {"auth_sessions_deleted": deleted_sessions, "auth_login_attempts_deleted": deleted_attempts}
 
 
 async def list_sessions_for_admin(

@@ -44,6 +44,7 @@ class ClaimedNotification:
     message: str
     attempts: int
     destination: str | None = None
+    next_part: int = 0
 
 
 class NotificationOutboxRepository:
@@ -116,7 +117,9 @@ class NotificationOutboxRepository:
         # Failed/exhausted predecessors also block a stream: a resolution must
         # not overtake an undelivered active notification. Other streams proceed.
         predecessor = exists(
-            select(previous.id).where(
+            select(previous.id)
+            .with_hint(previous, "FORCE INDEX (ix_notification_outbox_stream)", dialect_name="mysql")
+            .where(
                 previous.stream_key == Job.stream_key,
                 previous.channel == Job.channel,
                 previous.id < Job.id,
@@ -134,6 +137,7 @@ class NotificationOutboxRepository:
             (
                 await self.db.scalars(
                     select(Job.id)
+                    .with_hint(Job, "FORCE INDEX (ix_notification_outbox_due)", dialect_name="mysql")
                     .where(Job.channel == channel, ready, ~predecessor)
                     .order_by(Job.available_at, Job.id)
                     .limit(32)
@@ -184,7 +188,25 @@ class NotificationOutboxRepository:
         )
         if cast(CursorResult, result).rowcount != 1:
             return None
-        return ClaimedNotification(row.id, token, row.channel, row.message, attempts, row.destination)
+        return ClaimedNotification(row.id, token, row.channel, row.message, attempts, row.destination, row.next_part)
+
+    async def advance_part(
+        self, claim: ClaimedNotification, *, next_part: int, now: datetime, lease_seconds: int
+    ) -> bool:
+        """Persist transport progress only while we still own the live lease."""
+        await self.lock_for_acknowledgement(claim)
+        result = await self.db.execute(
+            update(Job)
+            .where(
+                Job.id == claim.id,
+                Job.status == "processing",
+                Job.lease_token == claim.lease_token,
+                Job.lease_until > now,
+                Job.next_part == next_part - 1,
+            )
+            .values(next_part=next_part, lease_until=now + timedelta(seconds=lease_seconds), updated_at=now)
+        )
+        return cast(CursorResult, result).rowcount == 1
 
     async def lock_for_acknowledgement(self, claim: ClaimedNotification) -> None:
         """Finish any job-lock wait before the service samples the lease clock."""

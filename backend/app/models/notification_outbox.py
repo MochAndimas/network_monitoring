@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.mysql import DATETIME
+from sqlalchemy.dialects.mysql import DATETIME, LONGTEXT
 
 from ..core.time import utcnow
 from ..db.base import Base
@@ -27,8 +27,9 @@ class NotificationOutbox(Base):
     stream_key: Mapped[str] = mapped_column(String(128), nullable=False)
     channel: Mapped[str] = mapped_column(String(30), nullable=False)
     destination: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    message: Mapped[str] = mapped_column(Text, nullable=False)
+    message: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT(), "mysql"), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", server_default="pending")
+    next_part: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     available_at: Mapped[datetime] = mapped_column(OUTBOX_TIMESTAMP, nullable=False, default=utcnow)
     lease_until: Mapped[datetime | None] = mapped_column(OUTBOX_TIMESTAMP, nullable=True)

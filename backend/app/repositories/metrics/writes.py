@@ -1,6 +1,8 @@
 """Metric write and latest-snapshot update operations."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Any
+from shared.metric_contracts import MetricWritePayload
 
 from shared.collection_utils import chunked
 from shared.number_utils import safe_float
@@ -17,12 +19,18 @@ from .helpers import _is_metric_newer, _next_uptime_streak_started_at
 class MetricWriteMixin(MetricRepositoryBase):
     """Write-side metric repository methods."""
 
-    async def create_metrics(self, payloads: Iterable[dict], *, commit: bool = True) -> list[Metric]:
+    async def create_metrics(
+        self, payloads: Iterable[MetricWritePayload | Mapping[str, Any]], *, commit: bool = True
+    ) -> list[Metric]:
         """Insert a batch of raw metrics and update the latest-metric snapshot table."""
         metrics = [
             Metric(
-                **payload,
-                metric_value_numeric=payload.get("metric_value_numeric", safe_float(payload.get("metric_value"))),
+                **{
+                    **payload,
+                    "metric_value_numeric": payload.get(
+                        "metric_value_numeric", safe_float(payload.get("metric_value"))
+                    ),
+                },
             )
             for payload in payloads
         ]

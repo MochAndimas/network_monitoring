@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy import func, select
 
-from backend.app.alerting.engine import evaluate_alerts
-from backend.app.alerting import engine as engine_facade
-from backend.app.alerting.engine_parts import impl
+from backend.app.alerting.engine_parts.impl import evaluate_alerts
+from backend.app.alerting.engine_parts.dependencies import AlertEvaluationDependencies
+from dataclasses import replace
 from backend.app.alerting.engine_parts.notification_formatting import _build_telegram_message
 from backend.app.core.time import utcnow
 from backend.app.models import Alert, Device, Incident, NotificationOutbox, Threshold
@@ -64,9 +64,9 @@ async def write_fixture_events(db, events):
 def test_writer_failure_never_commits_domain_or_threshold_defaults(outbox_sessions, monkeypatch, commit):
     # Stub only the rule decision, leaving repository writes, incident transitions,
     # threshold initialization, event selection, and transaction logic real.
-    monkeypatch.setattr(impl, "_expected_alert_map", AsyncMock(return_value={}))
+    dependencies = AlertEvaluationDependencies(expected_alerts=AsyncMock(return_value={}))
     sender = AsyncMock(side_effect=AssertionError("Direct transport must not run"))
-    monkeypatch.setattr(engine_facade, "send_telegram_alert", sender)
+    dependencies = replace(dependencies, legacy_sender=sender)
 
     async def failed_writer(db, events):
         assert len(events) == 1
@@ -78,7 +78,7 @@ def test_writer_failure_never_commits_domain_or_threshold_defaults(outbox_sessio
             alert_id, _, _ = await seed(db)
         with pytest.raises(RuntimeError, match="enqueue failed"):
             async with outbox_sessions.begin() as db:
-                await evaluate_alerts(db, commit=commit, notification_writer=failed_writer)
+                await evaluate_alerts(db, commit=commit, notification_writer=failed_writer, dependencies=dependencies)
         async with outbox_sessions() as db:
             alert = await db.get(Alert, alert_id)
             assert alert is not None and alert.status == "active" and alert.telegram_notified_at is None
@@ -92,13 +92,15 @@ def test_writer_failure_never_commits_domain_or_threshold_defaults(outbox_sessio
 
 @pytest.mark.parametrize("commit", [True, False])
 def test_pending_active_resolution_is_queued_and_delivered_in_order(outbox_sessions, monkeypatch, commit):
-    monkeypatch.setattr(impl, "_expected_alert_map", AsyncMock(return_value={}))
+    dependencies = AlertEvaluationDependencies(expected_alerts=AsyncMock(return_value={}))
 
     async def scenario():
         async with outbox_sessions.begin() as db:
             alert_id, _, _ = await seed(db)
         async with outbox_sessions.begin() as db:
-            await evaluate_alerts(db, commit=commit, notification_writer=write_fixture_events)
+            await evaluate_alerts(
+                db, commit=commit, notification_writer=write_fixture_events, dependencies=dependencies
+            )
         async with outbox_sessions() as db:
             alert = await db.get(Alert, alert_id)
             assert alert is not None and alert.status == "resolved" and alert.telegram_notified_at is None
@@ -117,14 +119,16 @@ def test_pending_active_resolution_is_queued_and_delivered_in_order(outbox_sessi
 
 
 def test_outer_rollback_after_successful_enqueue_keeps_alert_active(outbox_sessions, monkeypatch):
-    monkeypatch.setattr(impl, "_expected_alert_map", AsyncMock(return_value={}))
+    dependencies = AlertEvaluationDependencies(expected_alerts=AsyncMock(return_value={}))
 
     async def scenario():
         async with outbox_sessions.begin() as db:
             alert_id, _, _ = await seed(db)
         with pytest.raises(RuntimeError, match="outer rollback"):
             async with outbox_sessions.begin() as db:
-                await evaluate_alerts(db, commit=False, notification_writer=write_fixture_events)
+                await evaluate_alerts(
+                    db, commit=False, notification_writer=write_fixture_events, dependencies=dependencies
+                )
                 raise RuntimeError("outer rollback")
         async with outbox_sessions() as db:
             alert = await db.get(Alert, alert_id)
@@ -177,16 +181,14 @@ def test_failed_writer_rolls_back_new_alert_and_incident(outbox_sessions, monkey
             db.add(device)
             await db.flush()
             device_id = device.id
-        monkeypatch.setattr(
-            impl,
-            "_expected_alert_map",
-            AsyncMock(
+        dependencies = AlertEvaluationDependencies(
+            expected_alerts=AsyncMock(
                 return_value={
                     (device_id, "device_down"): dict(
                         device_id=device_id, alert_type="device_down", severity="critical", message="Fixture"
                     )
                 }
-            ),
+            )
         )
 
         async def fail_after_domain_write(db, events):
@@ -196,9 +198,42 @@ def test_failed_writer_rolls_back_new_alert_and_incident(outbox_sessions, monkey
 
         with pytest.raises(RuntimeError, match="writer failure"):
             async with outbox_sessions.begin() as db:
-                await evaluate_alerts(db, commit=commit, notification_writer=fail_after_domain_write)
+                await evaluate_alerts(
+                    db, commit=commit, notification_writer=fail_after_domain_write, dependencies=dependencies
+                )
         async with outbox_sessions() as db:
             for model in (Alert, Incident, Threshold, NotificationOutbox):
                 assert await db.scalar(select(func.count()).select_from(model)) == 0
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("rollback", [True, False])
+def test_operational_evaluator_enqueues_without_transport(outbox_sessions, monkeypatch, rollback):
+    from backend.app.core.config import settings
+    from backend.app.services.operational_alert_service import evaluate_operational_alerts
+    from backend.app.services.telegram_outbox_writer import TelegramOutboxWriter
+    from tests.services.test_telegram_outbox_writer import events
+
+    monkeypatch.setattr(settings, "telegram_chat_id", "123")
+    dependencies = AlertEvaluationDependencies(expected_alerts=AsyncMock(return_value={}))
+    sender = AsyncMock(side_effect=AssertionError("inline transport"))
+    dependencies = replace(dependencies, legacy_sender=sender)
+
+    async def scenario():
+        async with outbox_sessions.begin() as db:
+            await TelegramOutboxWriter("123")(db, await events(db))
+        async with outbox_sessions() as db:
+            await evaluate_operational_alerts(db, commit=False, dependencies=dependencies)
+            async with outbox_sessions() as observer:
+                assert await observer.scalar(select(func.count()).select_from(NotificationOutbox)) == 1
+            if rollback:
+                await db.rollback()
+            else:
+                await db.commit()
+        async with outbox_sessions() as db:
+            assert await db.scalar(select(func.count()).select_from(NotificationOutbox)) == (1 if rollback else 2)
+            assert set((await db.scalars(select(Alert.status))).all()) == ({"active"} if rollback else {"resolved"})
+        sender.assert_not_awaited()
 
     run(scenario())

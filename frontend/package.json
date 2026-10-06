@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "format:features": "prettier --write \"features/devices/**/*.{ts,tsx}\" \"features/accounts/**/*.{ts,tsx}\"",
+    "format:features:check": "prettier --check \"features/devices/**/*.{ts,tsx}\" \"features/accounts/**/*.{ts,tsx}\""
   },
   "dependencies": {
     "@tanstack/react-query": "^5.66.8",
@@ -35,6 +37,7 @@
     "eslint": "^9.39.5",
     "eslint-config-next": "15.5.24",
     "jsdom": "^30.0.1",
+    "prettier": "3.6.2",
     "typescript": "^5.7.3",
     "vitest": "^4.1.11"
   }

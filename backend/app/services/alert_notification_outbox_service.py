@@ -2,13 +2,14 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.time import utcnow
+from ..core.config import settings
 from ..models.alert import Alert
 from ..models.notification_outbox import NotificationOutbox as Job
 from ..models.notification_outbox_alert import NotificationOutboxAlert as Reference
@@ -76,6 +77,39 @@ async def pending_active_notification_ids(db: AsyncSession, alert_ids: set[int])
                 )
             ).all()
         )
+    # Unsent ACTIVE for a recent replaced row still owns the logical issue.
+    # Correlate only concrete devices/types and within the configured window.
+    since = utcnow() - timedelta(seconds=max(settings.telegram.resolved_correlation_window_seconds, 0))
+    for offset in range(0, len(ordered), 500):
+        candidates = (
+            await db.execute(
+                select(Alert.id, Alert.device_id, Alert.alert_type).where(
+                    Alert.id.in_(ordered[offset : offset + 500]),
+                    Alert.device_id.is_not(None),
+                )
+            )
+        ).all()
+        device_ids = {row.device_id for row in candidates}
+        if not device_ids:
+            continue
+        keys = set(
+            (
+                await db.execute(
+                    select(Alert.device_id, Alert.alert_type)
+                    .join(Reference, Reference.alert_id == Alert.id)
+                    .join(Job, Job.id == Reference.outbox_id)
+                    .where(
+                        Alert.device_id.in_(device_ids),
+                        Reference.action.in_(_ACTIVE_ACTIONS),
+                        Job.channel == "telegram",
+                        Job.status != "sent",
+                        Job.created_at >= since,
+                    )
+                    .distinct()
+                )
+            ).all()
+        )
+        pending.update(row.id for row in candidates if (row.device_id, row.alert_type) in keys)
     return pending
 
 
@@ -100,12 +134,17 @@ async def enqueue_alert_notification(
     if draft.channel != "telegram":
         raise ValueError("Alert delivery acknowledgement currently supports Telegram only")
     ordered = sorted(set(references))
-    if not 1 <= len(ordered) <= 250:
-        raise ValueError("An alert notification requires 1..250 unique references")
+    if not ordered:
+        raise ValueError("An alert notification requires references")
     # Domain rows created earlier in this transaction must exist before validation.
     await db.flush()
     ids = {reference.alert_id for reference in ordered}
-    present = set((await db.scalars(select(Alert.id).where(Alert.id.in_(ids)))).all())
+    present: set[int] = set()
+    ordered_ids = sorted(ids)
+    for offset in range(0, len(ordered_ids), 500):
+        present.update(
+            (await db.scalars(select(Alert.id).where(Alert.id.in_(ordered_ids[offset : offset + 500])))).all()
+        )
     if present != ids:
         raise ValueError("Cannot enqueue references to missing alerts")
     job_id = await NotificationOutboxRepository(db).enqueue(draft, now=now)
@@ -137,19 +176,19 @@ async def acknowledge_alert_notification(
     )
     if not references:
         raise RuntimeError("Alert notification job has no domain references")
-    ids = {reference.alert_id for reference in references}
-    alerts = {
-        alert.id: alert
-        for alert in (
+    ids = sorted({reference.alert_id for reference in references})
+    alerts: dict[int, Alert] = {}
+    for offset in range(0, len(ids), 500):
+        rows = (
             await db.scalars(
                 select(Alert)
-                .where(Alert.id.in_(ids))
+                .where(Alert.id.in_(ids[offset : offset + 500]))
                 .order_by(Alert.id)
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
         ).all()
-    }
+        alerts.update({alert.id: alert for alert in rows})
     incidents = IncidentRepository(db)
     for reference in references:
         alert = alerts.get(reference.alert_id)

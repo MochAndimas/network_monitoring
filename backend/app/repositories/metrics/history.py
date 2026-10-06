@@ -2,10 +2,12 @@
 
 from datetime import datetime
 from typing import Any
+from collections.abc import Sequence
 
 from sqlalchemy import Select, and_, desc, func, or_, select
 
 from .base import MetricRepositoryBase
+from .alert_history import ALERT_HISTORY_PAIR_BATCH_SIZE, MetricPair, recent_metric_pairs_query
 from ...models.device import Device
 from ...models.metric import Metric
 
@@ -38,37 +40,32 @@ class MetricHistoryMixin(MetricRepositoryBase):
         metric_name: str,
         per_device_limit: int = 2,
     ) -> dict[int, list[Metric]]:
-        """Return a bounded recent-history list for each requested device."""
-        if not device_ids or per_device_limit < 1:
-            return {}
+        """Return the newest samples per device using bounded index seeks."""
+        history = await self.list_recent_metrics_by_pairs(
+            pairs=[(device_id, metric_name) for device_id in device_ids], per_pair_limit=per_device_limit
+        )
+        return {device_id: by_name[metric_name] for device_id, by_name in history.items()}
 
-        ranked_metrics = (
-            select(
-                Metric.id.label("metric_id"),
-                Metric.device_id.label("device_id"),
-                func.row_number()
-                .over(
-                    partition_by=Metric.device_id,
-                    order_by=(desc(Metric.checked_at), desc(Metric.id)),
-                )
-                .label("row_number"),
-            )
-            .where(
-                Metric.metric_name == metric_name,
-                Metric.device_id.in_(device_ids),
-            )
-            .subquery()
-        )
-        query = (
-            select(Metric)
-            .join(ranked_metrics, Metric.id == ranked_metrics.c.metric_id)
-            .where(ranked_metrics.c.row_number <= per_device_limit)
-            .order_by(Metric.device_id.asc(), desc(Metric.checked_at), desc(Metric.id))
-        )
-        metrics = list((await self.db.scalars(query)).all())
-        payload: dict[int, list[Metric]] = {}
-        for metric in metrics:
-            payload.setdefault(int(metric.device_id), []).append(metric)
+    async def list_recent_metrics_by_pairs(
+        self,
+        *,
+        pairs: Sequence[MetricPair],
+        per_pair_limit: int = 5,
+    ) -> dict[int, dict[str, list[Metric]]]:
+        """Read sample windows with bounded SQL size, round trips and rows per pair.
+
+        Ordering is checked_at DESC, id DESC, without a wall-clock cutoff. This
+        preserves rolling rules across sparse sampling and collector outages.
+        """
+        if not pairs or per_pair_limit < 1:
+            return {}
+        unique_pairs = list(dict.fromkeys(pairs))
+        payload: dict[int, dict[str, list[Metric]]] = {}
+        for offset in range(0, len(unique_pairs), ALERT_HISTORY_PAIR_BATCH_SIZE):
+            batch = unique_pairs[offset : offset + ALERT_HISTORY_PAIR_BATCH_SIZE]
+            query = recent_metric_pairs_query(batch, per_pair_limit=per_pair_limit)
+            for metric in (await self.db.scalars(query)).all():
+                payload.setdefault(metric.device_id, {}).setdefault(metric.metric_name, []).append(metric)
         return payload
 
     async def list_recent_metric_rows(

@@ -87,6 +87,9 @@ x-monitoring-runtime-environment: &monitoring-runtime-environment
   RAW_METRIC_RETENTION_DAYS: ${RAW_METRIC_RETENTION_DAYS:-7}
   RETENTION_ROLLUP_BATCH_SIZE: ${RETENTION_ROLLUP_BATCH_SIZE:-500}
   RETENTION_ARCHIVE_BATCH_SIZE: ${RETENTION_ARCHIVE_BATCH_SIZE:-500}
+  RETENTION_SOURCE_BATCH_SIZE: ${RETENTION_SOURCE_BATCH_SIZE:-1000}
+  RETENTION_DELETE_BATCH_SIZE: ${RETENTION_DELETE_BATCH_SIZE:-1000}
+  RETENTION_MAX_BATCHES_PER_PHASE: ${RETENTION_MAX_BATCHES_PER_PHASE:-100}
   ALERT_RETENTION_DAYS: ${ALERT_RETENTION_DAYS:-180}
   INCIDENT_RETENTION_DAYS: ${INCIDENT_RETENTION_DAYS:-180}
   SCHEDULER_CLEANUP_INTERVAL_HOURS: ${SCHEDULER_CLEANUP_INTERVAL_HOURS:-24}
@@ -185,6 +188,21 @@ services:
     environment:
       <<: *monitoring-runtime-environment
     command: ["sh", "-c", "python /app/scripts/prepare_prometheus_multiproc_dir.py && python -m backend.app.scheduler.worker"]
+
+  notification-worker:
+    build: *backend-build
+    restart: unless-stopped
+    depends_on: *mysql-health-dependency
+    environment:
+      <<: *monitoring-runtime-environment
+    command: ["python", "-m", "backend.app.notifications.worker"]
+    stop_grace_period: 35s
+    healthcheck:
+      test: ["CMD", "python", "-m", "backend.app.notifications.worker", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   frontend:
     build:

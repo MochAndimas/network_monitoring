@@ -1,0 +1,61 @@
+{
+  "devices": 100,
+  "metrics_per_device": 8,
+  "samples_per_pair": 120,
+  "raw_metric_rows": 96000,
+  "transport": "real FastAPI requests over in-process HTTPX ASGI; no network latency",
+  "baseline_one_dashboard": {
+    "http_requests": 100,
+    "sql_selects": 600,
+    "payload_bytes": 32343917,
+    "sequential_refresh_wall_ms": 4452.73,
+    "request_timings": {
+      "median_ms": 37.93,
+      "p95_ms": 64.36,
+      "max_ms": 364.47
+    }
+  },
+  "group_four_dashboards": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "dashboards": 4,
+        "http_requests": 4,
+        "sql_selects": 48
+      },
+      {
+        "cycle": 2,
+        "dashboards": 4,
+        "http_requests": 4,
+        "sql_selects": 48
+      },
+      {
+        "cycle": 3,
+        "dashboards": 4,
+        "http_requests": 4,
+        "sql_selects": 48
+      }
+    ],
+    "timings": {
+      "median_ms": 341.45,
+      "p95_ms": 377.07,
+      "max_ms": 379.24
+    },
+    "min_payload_bytes": 394319,
+    "max_payload_bytes": 397356,
+    "device_page_size": 20,
+    "max_trend_items": 2000,
+    "history_per_response": 100
+  },
+  "request_count_per_15s_refresh": {
+    "old_four_dashboards": 400,
+    "new_four_dashboards": 4
+  },
+  "acceptance": {
+    "passed": true,
+    "max_request_ms": 2000,
+    "max_sql_selects_four_dashboards": 60,
+    "max_payload_bytes": 1048576
+  },
+  "mysql_version": "8.4.11"
+}

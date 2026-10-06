@@ -359,6 +359,15 @@ class DeviceRepository:
         rows = (await self.db.execute(query)).all()
         return {str(status or "unknown"): int(device_count) for status, device_count in rows}
 
+    async def summarize_inventory_counts(self, *, active_only: bool = False) -> dict[str, int]:
+        """Include inventory totals without changing the status-only dashboard contract."""
+        query = select(func.count(Device.id), func.count(case((Device.is_active.is_(True), Device.id))))
+        if active_only:
+            query = query.where(Device.is_active.is_(True))
+        total, active = (await self.db.execute(query)).one()
+        counts = await self.summarize_device_status_counts(active_only=active_only)
+        return {**counts, "total": int(total), "active": int(active)}
+
     async def summarize_device_status_counts(self, *, active_only: bool = False) -> dict[str, int]:
         """Query device status counts from the database."""
         latest_ping_metrics = self._latest_ping_metrics_subquery()

@@ -41,16 +41,17 @@ def test_reference_limit_splits_without_losing_group_members():
     assert [[ref.alert_id for ref in b.references] for b in batches] == [[1, 2], [3, 4]]
 
 
-def test_single_large_event_is_rejected_without_truncation():
-    with pytest.raises(ValueError, match="Individual.*message limit"):
-        split_telegram_events([event(1, "😀" * 4096)])
+def test_single_large_event_keeps_atomic_ownership_without_truncation():
+    batches = split_telegram_events([event(1, "😀" * 4096)])
+    assert len(batches) == 1
+    assert batches[0].message.count("😀") == 4096
 
 
 def test_multi_alert_event_is_never_split_across_acknowledgements():
     item = event(1)
     item["alerts"] = [SimpleNamespace(id=i) for i in range(1, 4)]
-    with pytest.raises(ValueError, match="Individual.*reference limit"):
-        split_telegram_events([item], max_references=2)
+    batches = split_telegram_events([item], max_references=2)
+    assert len(batches) == 1 and len(batches[0].references) == 3
 
 
 def test_overlapping_references_are_rejected():

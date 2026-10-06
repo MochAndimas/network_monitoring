@@ -108,3 +108,34 @@ def test_mysql_timeout_closes_unowned_connection(monkeypatch):
     assert run(locks._acquire_mysql_lock(wait=True, scope="test")) == (None, False)
     connection.close.assert_awaited_once()
     connection.invalidate.assert_not_awaited()
+
+
+@pytest.mark.parametrize("acquired", [True, False])
+def test_cleanup_scheduler_uses_batch_transactions_and_keeps_guard(monkeypatch, acquired):
+    from contextlib import asynccontextmanager
+
+    inside = False
+
+    @asynccontextmanager
+    async def guard(*, wait, scope):
+        nonlocal inside
+        assert wait is False and scope == "cleanup"
+        inside = True
+        try:
+            yield acquired
+        finally:
+            inside = False
+
+    async def cleanup(db, *, commit=True):
+        assert inside and commit is True
+
+    monitoring = AsyncMock(side_effect=cleanup)
+    auth = AsyncMock(side_effect=cleanup)
+    monkeypatch.setattr(jobs, "monitoring_pipeline_guard", guard)
+    monkeypatch.setattr(jobs, "cleanup_monitoring_data", monitoring)
+    monkeypatch.setattr(jobs, "cleanup_auth_data", auth)
+    db = SimpleNamespace(commit=AsyncMock())
+    run(jobs._run_cleanup_job_inner(db))
+    assert monitoring.await_count == auth.await_count == int(acquired)
+    db.commit.assert_not_awaited()
+    assert not inside
