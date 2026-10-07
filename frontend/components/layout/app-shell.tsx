@@ -70,12 +70,12 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
   return <div className={isSidebarOpen ? "app-shell" : "app-shell app-shell-sidebar-hidden"}>
     <button className="sidebar-hover-zone" type="button" aria-label="Buka navigasi" onMouseEnter={() => setIsSidebarOpen(true)} onFocus={() => setIsSidebarOpen(true)} />
-    <aside className="app-sidebar" onMouseLeave={() => setIsSidebarOpen(false)} onMouseEnter={() => setIsSidebarOpen(true)}>
+    <aside className="app-sidebar" onMouseLeave={() => setIsSidebarOpen(false)} onMouseEnter={() => setIsSidebarOpen(true)} onFocusCapture={() => setIsSidebarOpen(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setIsSidebarOpen(false); }}>
       <div className="sidebar-heading">
         <Link className="app-brand" href="/"><span className="app-brand-mark" aria-hidden="true">NM</span><span><strong>Network Monitoring</strong><small>Operations workspace</small></span></Link>
       </div>
       <nav aria-label="Navigasi utama"><p className="sidebar-nav-label">Workspace</p>{NAVIGATION.filter(([href]) => user?.role === "admin" || !ADMIN_ONLY_PATHS.has(href)).map(([href, label]) =>
-        <Link key={href} href={href} onClick={() => setIsSidebarOpen(false)} className={pathname === href ? "nav-link nav-link-active" : "nav-link"}><span className="nav-link-label"><NavIcon href={href} />{label}</span><span className="nav-link-arrow" aria-hidden="true">›</span></Link>
+        <Link key={href} href={href} aria-label={label} title={label} onClick={() => setIsSidebarOpen(false)} className={pathname === href ? "nav-link nav-link-active" : "nav-link"}><span className="nav-link-label"><NavIcon href={href} /><span className="nav-link-text">{label}</span></span><span className="nav-link-arrow" aria-hidden="true">›</span></Link>
       )}</nav>
       <div className="account-panel">
         <div className="account-identity"><span className="account-avatar" aria-hidden="true">{(user?.full_name || user?.username || "U").slice(0, 1).toUpperCase()}</span><span><strong>{user?.full_name || user?.username}</strong><small>{user?.role === "admin" ? "Administrator" : "Viewer"}</small></span></div>

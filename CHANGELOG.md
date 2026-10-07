@@ -20,6 +20,7 @@ dan project ini mengikuti [Semantic Versioning](https://semver.org/).
 - Menambahkan policy release/versioning/changelog di `docs/release-policy.md`.
 
 ### Changed
+- Sidebar desktop menampilkan ikon saat tidak di-hover dan membuka label saat hover atau fokus keyboard.
 - Menyamakan default retention `RAW_METRIC_RETENTION_DAYS` di `docker-compose.yml` menjadi `7` hari agar konsisten dengan konfigurasi aplikasi.
 - Mengubah `requirements.txt` root menjadi entrypoint dependency runtime (`requirements/backend.txt` + `requirements/dashboard.txt`) agar tidak membingungkan pengguna baru.
 

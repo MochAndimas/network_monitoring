@@ -123,3 +123,17 @@
 @media (max-width: 760px) { .devices-page { gap: 1rem; padding-top: 1rem; } .devices-workspace-bar, .devices-table-header { align-items: flex-start; flex-direction: column; } .devices-workspace-bar > p { text-align: left; } .devices-page .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .devices-filter-heading { align-items: flex-start; flex-direction: column; gap: .25rem; } .devices-page .filter-panel label, .devices-page .filter-panel label:not(:first-child) { width: 100%; min-width: 0; } }
 
 .two-column > * { min-width: 0; }
+
+@media (min-width: 901px) {
+  .app-shell.app-shell-sidebar-hidden { grid-template-columns: 72px minmax(0, 1fr); }
+  .app-shell-sidebar-hidden .app-sidebar { opacity: 1; pointer-events: auto; padding-inline: .65rem; border-right: 1px solid var(--border); }
+  .app-shell-sidebar-hidden .sidebar-heading { justify-content: center; padding-inline: 0; }
+  .app-shell-sidebar-hidden .app-brand > span:last-child,
+  .app-shell-sidebar-hidden .sidebar-nav-label,
+  .app-shell-sidebar-hidden .nav-link-text,
+  .app-shell-sidebar-hidden .nav-link-arrow,
+  .app-shell-sidebar-hidden .account-panel { display: none; }
+  .app-shell-sidebar-hidden .nav-link { justify-content: center; padding-inline: .5rem; }
+  .sidebar-hover-zone, .sidebar-hover-zone:hover, .sidebar-hover-zone:focus-visible { width: 8px; }
+  .nav-link-text { white-space: nowrap; }
+}
