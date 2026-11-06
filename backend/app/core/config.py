@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .settings_groups import (
@@ -54,6 +54,20 @@ class Settings(BaseSettings):
     db_pool_timeout_seconds: int = 30
     db_pool_recycle_seconds: int = 1800
     database_auto_create_tables: bool = False
+    bandwidth_inventory_enabled: bool = False
+    bandwidth_inventory_max_gap_seconds: int = Field(default=120, ge=1, le=86400)
+    bandwidth_inventory_target_name: str = ""
+    bandwidth_inventory_api_host: str = ""
+    bandwidth_inventory_api_port: int | None = Field(default=None, ge=1, le=65535)
+    bandwidth_inventory_api_fallback_host: str = ""
+    bandwidth_inventory_api_fallback_port: int | None = Field(default=None, ge=1, le=65535)
+    bandwidth_inventory_router_identity: str = ""
+    bandwidth_inventory_poll_seconds: float = Field(default=60, gt=0, le=3600, allow_inf_nan=False)
+    bandwidth_ingestion_enabled: bool = False
+    bandwidth_spool_directory: str = "/var/lib/bandwidth-spool"
+    bandwidth_flow_policy_file: str = ""
+    bandwidth_ingestion_batch_size: int = Field(default=500, ge=1, le=10000)
+    bandwidth_ingestion_poll_seconds: float = Field(default=1, ge=0.1, le=10)
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     telegram_alert_grace_period_seconds: int = 120
@@ -93,7 +107,7 @@ class Settings(BaseSettings):
     mikrotik_dynamic_max_interfaces: int = 64
     mikrotik_dynamic_max_firewall_rules: int = 128
     mikrotik_dynamic_max_queues: int = 64
-    dashboard_api_url: str = "http://localhost:8000"
+    dashboard_api_url: str = "http://localhost:3001"
     ping_timeout_seconds: float = 2.0
     ping_sample_count: int = 3
     ping_concurrency_limit: int = 32
@@ -181,6 +195,11 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("bandwidth_inventory_api_port", "bandwidth_inventory_api_fallback_port", mode="before")
+    @classmethod
+    def optional_bandwidth_api_port(cls, value: object) -> object:
+        return None if value == "" else value
 
     @model_validator(mode="after")
     def load_file_backed_secrets(self) -> "Settings":

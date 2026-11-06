@@ -163,10 +163,19 @@ async def collect_printer_snmp_metrics(device_id: int, ip_address: str) -> list[
             lambda: _fetch_oid_values(ip_address, community, base_oids),
             retryable_statuses={"timeout", "connection_failed", "collector_error"},
         )
-        toner_result = await retry_transient_collection(
-            lambda: _fetch_oid_values(ip_address, community, toner_oids),
-            retryable_statuses={"timeout", "connection_failed", "collector_error"},
-        )
+        # sysUpTime is required for a valid collection. Do not fan out another
+        # optional OID batch when neither protocol can reach the agent.
+        toner_result = SnmpFetchResult({}, fetch_result.collection_status, fetch_result.protocol)
+        if fetch_result.collection_status == "ok":
+            toner_result = await retry_transient_collection(
+                lambda: _fetch_oid_values_for_version(
+                    ip_address,
+                    community,
+                    toner_oids,
+                    mp_model=0 if fetch_result.protocol == "snmpv1" else 1,
+                ),
+                retryable_statuses={"timeout", "connection_failed", "collector_error"},
+            )
     raw_values = {**fetch_result.values, **toner_result.values}
 
     metrics = [
@@ -223,13 +232,37 @@ async def _fetch_oid_values_for_version(
 ) -> SnmpFetchResult:
     """Fetch all printer OIDs concurrently for one SNMP protocol version."""
     semaphore = asyncio.Semaphore(SNMP_MAX_CONCURRENT_REQUESTS)
+    # MIB loading is expensive. One engine belongs to this event-loop batch,
+    # rather than rebuilding the full SNMP stack for each scalar OID.
+    engine = SnmpEngine()
 
     async def _read_one(oid: str) -> SnmpReadResult:
         async with semaphore:
-            return await _snmp_get_value(ip_address, community, oid, mp_model=mp_model)
+            return await _snmp_get_value(ip_address, community, oid, mp_model=mp_model, engine=engine)
 
-    tasks = {key: asyncio.create_task(_read_one(oid)) for key, oid in oids.items()}
-    results = {key: await task for key, task in tasks.items()}
+    tasks: dict[str, asyncio.Task[SnmpReadResult]] = {}
+    try:
+        uptime_result = await _read_one(oids["printer_uptime_ticks"])
+        results = {"printer_uptime_ticks": uptime_result}
+        if _safe_int(uptime_result.value) is not None:
+            tasks = {
+                key: asyncio.create_task(_read_one(oid)) for key, oid in oids.items() if key != "printer_uptime_ticks"
+            }
+            results.update(zip(tasks, await asyncio.gather(*tasks.values()), strict=True))
+        else:
+            results.update(
+                {key: SnmpReadResult(None, uptime_result.error_category) for key in oids if key not in results}
+            )
+    finally:
+        for task in tasks.values():
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks.values(), return_exceptions=True)
+        try:
+            if engine.transport_dispatcher is not None:
+                engine.transport_dispatcher.close_dispatcher()
+        except Exception:
+            logging.getLogger(__name__).debug("Transport cleanup failed")
     uptime_result = results["printer_uptime_ticks"]
     return SnmpFetchResult(
         values={key: result.value for key, result in results.items()},
@@ -240,9 +273,13 @@ async def _fetch_oid_values_for_version(
     )
 
 
-async def _snmp_get_value(ip_address: str, community: str, oid: str, *, mp_model: int) -> SnmpReadResult:
+async def _snmp_get_value(
+    ip_address: str, community: str, oid: str, *, mp_model: int, engine: SnmpEngine | None = None
+) -> SnmpReadResult:
     """Run snmp get value for device inventory and status."""
-    engine = SnmpEngine()
+    owns_engine = engine is None
+    if engine is None:
+        engine = SnmpEngine()
     try:
         error_indication, error_status, _, var_binds = await get_cmd(
             engine,
@@ -264,7 +301,8 @@ async def _snmp_get_value(ip_address: str, community: str, oid: str, *, mp_model
         return SnmpReadResult(None, "collector_error")
     finally:
         try:
-            engine.transport_dispatcher.close_dispatcher()
+            if owns_engine and engine.transport_dispatcher is not None:
+                engine.transport_dispatcher.close_dispatcher()
         except Exception:
             logging.getLogger(__name__).debug("Transport cleanup failed")
 

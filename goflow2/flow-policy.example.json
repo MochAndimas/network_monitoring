@@ -1,0 +1,8 @@
+{
+  "router_id": 1,
+  "exporter": "192.168.1.1",
+  "lan_interfaces": [13],
+  "wan_interfaces": [10],
+  "lan_networks": ["192.168.1.0/24"],
+  "excluded_remote_networks": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+}

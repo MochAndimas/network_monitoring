@@ -40,6 +40,17 @@ from ...services.observability_service import (
 router = APIRouter()
 
 
+@router.get("/notifications", dependencies=[Depends(require_admin_access)])
+async def notification_health(db: AsyncSession = Depends(get_db)) -> dict:
+    """Small dashboard polling endpoint; never expose payloads or credentials."""
+    now = utcnow()
+    return {
+        "telegram_configured": bool(settings.telegram.bot_token and settings.telegram.chat_id),
+        "notification_workers_alive": await active_notification_workers(db, now=now),
+        "notification_outbox": asdict(await build_notification_queue_health(db, now=now)),
+    }
+
+
 @router.get("/summary", dependencies=[Depends(require_admin_access)])
 async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
     """Handle the observability summary endpoint."""

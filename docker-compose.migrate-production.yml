@@ -1,0 +1,7 @@
+services:
+  migrate:
+    environment:
+      AUTH_PASSWORD_SECRET: ${AUTH_PASSWORD_SECRET:?must be set}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:?must be set}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:?must be set}

@@ -4,3 +4,8 @@ node_modules
 *.tsbuildinfo
 .DS_Store
 .env*
+
+# Synology DSM metadata must never enter application build contexts.
+**/@eaDir
+**/@tmp
+**/.SynologyWorkingDirectory

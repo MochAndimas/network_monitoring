@@ -220,6 +220,7 @@ class NotificationOutboxRepository:
         delivered: bool,
         max_attempts: int,
         retry_seconds: int,
+        error_code: str = "delivery_failed",
     ) -> bool:
         if max_attempts <= 0 or retry_seconds < 0:
             raise ValueError("Invalid retry policy")
@@ -239,7 +240,7 @@ class NotificationOutboxRepository:
                 available_at=now + timedelta(seconds=retry_seconds),
                 lease_until=None,
                 lease_token=None,
-                last_error=None if delivered else "delivery_failed",
+                last_error=None if delivered else error_code,
             )
         )
         return cast(CursorResult, result).rowcount == 1

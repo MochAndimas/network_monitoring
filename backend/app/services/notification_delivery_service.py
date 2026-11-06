@@ -4,11 +4,13 @@ Transport progress and final domain acknowledgement use short transactions.
 """
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from telegram.error import BadRequest, Forbidden, InvalidToken, NetworkError, RetryAfter, TimedOut
 
 from ..core.time import utcnow
 from .telegram_message_parts import telegram_message_parts
@@ -60,6 +62,7 @@ async def deliver_one(
     if claim is None:
         return "idle"
     delivered = True
+    error_code = "delivery_failed"
     parts = telegram_message_parts(claim.message)
     for index in range(claim.next_part, len(parts)):
         try:
@@ -70,9 +73,17 @@ async def deliver_one(
             else:
                 delivery = sender(parts[index])
             delivered = await asyncio.wait_for(delivery, timeout=policy.send_timeout_seconds)
-        except Exception:
+        except Exception as exc:
             # Never persist or log provider exception bodies (they may contain tokens).
             delivered = False
+            for error_type, code in (
+                (InvalidToken, "invalid_token"), (Forbidden, "forbidden"), (RetryAfter, "rate_limited"),
+                (BadRequest, "bad_request"), (TimedOut, "timeout"), (TimeoutError, "timeout"),
+                (NetworkError, "network_error"),
+            ):
+                if isinstance(exc, error_type):
+                    error_code = code
+                    break
         if not delivered:
             break
         async with sessions.begin() as db:
@@ -97,9 +108,15 @@ async def deliver_one(
             delivered=delivered,
             max_attempts=policy.max_attempts,
             retry_seconds=policy.retry_seconds(claim.attempts),
+            error_code=error_code,
         )
         if accepted and delivered and on_delivered is not None:
             await on_delivered(db, claim, acknowledged_at)
     if not accepted:
         return "lease_lost"
+    if not delivered:
+        logging.getLogger(__name__).error(
+            "Telegram delivery failed job_id=%s attempt=%s error=%s exhausted=%s",
+            claim.id, claim.attempts, error_code, claim.attempts >= policy.max_attempts,
+        )
     return "sent" if delivered else ("dead" if claim.attempts >= policy.max_attempts else "retry")

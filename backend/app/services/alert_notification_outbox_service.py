@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
+import re
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -175,6 +176,16 @@ async def acknowledge_alert_notification(
         ).all()
     )
     if not references:
+        # Explicit operator smoke tests have no alert domain state to update.
+        # Keep every other unreferenced job fail-closed, including malformed tests.
+        job = await db.get(Job, claim.id)
+        if (
+            job is not None
+            and job.stream_key == "telegram:operator-test"
+            and re.fullmatch(r"telegram-test:[0-9a-f]{32}", job.idempotency_key)
+            and job.message.startswith("[TEST]")
+        ):
+            return
         raise RuntimeError("Alert notification job has no domain references")
     ids = sorted({reference.alert_id for reference in references})
     alerts: dict[int, Alert] = {}

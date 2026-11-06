@@ -39,3 +39,23 @@ share/
 pyvenv.cfg
 
 !scripts/benchmark_retention.py
+
+# Machine-specific bandwidth exporter policies
+goflow2/*.local.json
+
+# Local credentials and Synology/Finder metadata
+monitoring-settings.env
+.SynologyWorkingDirectory/
+**/@eaDir/
+**/.SynologyWorkingDirectory/
+Icon?
+
+# Source scripts for deployment and diagnostics
+!scripts/benchmark_flow_inserts.py
+!scripts/deploy-flow-spool-fix.sh
+!scripts/deploy-grouped-ingestion.sh
+!scripts/deploy-ingestion-profiling.sh
+!scripts/deploy-reconciliation-cursor-fix.sh
+!scripts/deploy-reconciliation-fix.sh
+!scripts/export_devices.py
+!scripts/generate_env_secrets.py

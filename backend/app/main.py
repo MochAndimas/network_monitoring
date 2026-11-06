@@ -13,6 +13,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .api.deps import require_api_access
 from .api.routes.auth import router as auth_router
+from .api.routes.bandwidth import router as bandwidth_router
 from .api.routes.dashboard import router as dashboard_router
 from .api.routes.devices import router as devices_router
 from .api.routes.metrics import router as metrics_router
@@ -159,6 +160,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 secured = [Depends(require_api_access)]
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(bandwidth_router, prefix="/bandwidth", tags=["bandwidth"], dependencies=secured)
 app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"], dependencies=secured)
 app.include_router(devices_router, prefix="/devices", tags=["devices"], dependencies=secured)
 app.include_router(metrics_router, prefix="/metrics", tags=["metrics"], dependencies=secured)

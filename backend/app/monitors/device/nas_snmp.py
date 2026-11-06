@@ -155,8 +155,23 @@ def _metric_payload(device_id: int, metric: NasMetric, checked_at) -> dict:
 
 
 async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str]) -> NasSnmpFetchResult:
-    tasks = {key: asyncio.create_task(_snmp_get_value(ip_address, community, oid)) for key, oid in oids.items()}
-    results = {key: await task for key, task in tasks.items()}
+    engine = SnmpEngine()
+    tasks = {
+        key: asyncio.create_task(_snmp_get_value(ip_address, community, oid, engine=engine))
+        for key, oid in oids.items()
+    }
+    try:
+        results = dict(zip(tasks, await asyncio.gather(*tasks.values()), strict=True))
+    finally:
+        for task in tasks.values():
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks.values(), return_exceptions=True)
+        try:
+            if engine.transport_dispatcher is not None:
+                engine.transport_dispatcher.close_dispatcher()
+        except Exception:
+            logging.getLogger(__name__).debug("Transport cleanup failed")
     uptime_result = results["nas_uptime_ticks"]
     return NasSnmpFetchResult(
         values={key: result.value for key, result in results.items()},
@@ -166,8 +181,12 @@ async def _fetch_oid_values(ip_address: str, community: str, oids: dict[str, str
     )
 
 
-async def _snmp_get_value(ip_address: str, community: str, oid: str) -> NasSnmpReadResult:
-    engine = SnmpEngine()
+async def _snmp_get_value(
+    ip_address: str, community: str, oid: str, *, engine: SnmpEngine | None = None
+) -> NasSnmpReadResult:
+    owns_engine = engine is None
+    if engine is None:
+        engine = SnmpEngine()
     try:
         error_indication, error_status, _, var_binds = await get_cmd(
             engine,
@@ -189,7 +208,8 @@ async def _snmp_get_value(ip_address: str, community: str, oid: str) -> NasSnmpR
         return NasSnmpReadResult(None, "collector_error")
     finally:
         try:
-            engine.transport_dispatcher.close_dispatcher()
+            if owns_engine and engine.transport_dispatcher is not None:
+                engine.transport_dispatcher.close_dispatcher()
         except Exception:
             logging.getLogger(__name__).debug("Transport cleanup failed")
 

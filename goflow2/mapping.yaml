@@ -1,0 +1,52 @@
+formatter:
+  fields:
+    - type
+    - sampler_address
+    - sequence_num
+    - time_received_ns
+    - time_flow_start_ns
+    - time_flow_end_ns
+    - bytes
+    - packets
+    - src_addr
+    - dst_addr
+    - src_port
+    - dst_port
+    - proto
+    - in_if
+    - out_if
+    - post_nat_src_addr
+    - post_nat_dst_addr
+    - post_nat_src_port
+    - post_nat_dst_port
+
+  protobuf:
+    - name: post_nat_src_addr
+      index: 1001
+      type: bytes
+
+    - name: post_nat_dst_addr
+      index: 1002
+      type: bytes
+
+    - name: post_nat_src_port
+      index: 1003
+      type: varint
+
+    - name: post_nat_dst_port
+      index: 1004
+      type: varint
+
+ipfix:
+  mapping:
+    - field: 225
+      destination: post_nat_src_addr
+
+    - field: 226
+      destination: post_nat_dst_addr
+
+    - field: 227
+      destination: post_nat_src_port
+
+    - field: 228
+      destination: post_nat_dst_port

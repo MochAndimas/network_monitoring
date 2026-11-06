@@ -1,6 +1,9 @@
 """Package marker and public imports for backend.app.models."""
 
 from .admin_audit_log import AdminAuditLog
+from .bandwidth import BandwidthClient, BandwidthInventoryState, BandwidthIPHistory
+from .bandwidth_daily import BandwidthDailyUsage
+from .bandwidth_ingestion import BandwidthFlow, BandwidthFlowRejection, BandwidthFlowSegment, BandwidthFlowStream
 from .alert import Alert
 from .device import Device
 from .incident import Incident, IncidentTimelineEvent
@@ -20,6 +23,14 @@ from .threshold import MaintenanceWindow, Threshold, ThresholdOverride
 from .user import AuthLoginAttempt, AuthSession, User
 
 __all__ = [
+    "BandwidthDailyUsage",
+    "BandwidthFlow",
+    "BandwidthFlowRejection",
+    "BandwidthFlowSegment",
+    "BandwidthFlowStream",
+    "BandwidthClient",
+    "BandwidthInventoryState",
+    "BandwidthIPHistory",
     "NotificationWorker",
     "NotificationOutboxStream",
     "Alert",

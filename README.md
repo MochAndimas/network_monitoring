@@ -5,13 +5,19 @@ Network Monitoring adalah aplikasi observabilitas jaringan dengan backend FastAP
 ## Komponen
 
 - `frontend/` — dashboard Next.js pada `http://localhost:3000`.
-- `backend/` — API FastAPI pada `http://localhost:8000`.
+- `backend/` — API FastAPI pada `http://localhost:3001`.
 - `scripts/` — bootstrap, migrasi, dan utilitas operasional.
 - `alembic/` — migrasi database.
 
+Compose utama menjalankan layanan aplikasi dan bandwidth HO/RO melalui
+`docker compose up -d --build`. Migrasi tetap terpisah pada profile `ops`.
+Mulai dari [panduan konfigurasi bandwidth](docs/ops/bandwidth.md); pemeriksaan
+lokal tersedia lewat `make bandwidth-config`, `make bandwidth-status`, dan
+`make bandwidth-logs`.
+
 ## Menjalankan lokal
 
-Siapkan `.env` dari `.env.example`, lalu isi seluruh secret wajib, khususnya database, auth, bootstrap admin, CORS, dan trusted hosts.
+Siapkan `.env` dari `.env.example`, lalu isi seluruh secret wajib, khususnya database, auth, bootstrap admin, CORS, dan trusted hosts. Isi juga ID router serta path policy bandwidth HO/RO; keduanya wajib untuk startup Compose utama.
 
 Untuk deployment, set `FRONTEND_PUBLIC_API_URL` ke alamat API yang dapat diakses browser pengguna dan sesuaikan `CORS_ORIGINS`. Nilai ini dimasukkan ke bundle frontend saat build; perubahan nilainya memerlukan rebuild frontend (`docker compose up -d --build frontend`). Contoh: `FRONTEND_PUBLIC_API_URL=https://api.example.com`. Nilai ini bersifat publik dan tidak boleh berisi secret.
 
@@ -22,7 +28,7 @@ docker compose up -d --build
 Layanan utama:
 
 - Dashboard: `http://localhost:3000`
-- API: `http://localhost:8000`
+- API: `http://localhost:3001`
 
 Untuk menjalankan frontend tanpa Docker:
 
@@ -33,7 +39,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Gunakan Node.js 22 dan versi pnpm pada `frontend/package.json`. Untuk API selain `http://localhost:8000`, buat `frontend/.env.local` berisi `NEXT_PUBLIC_API_URL=https://api.example.com` sebelum `pnpm dev` atau `pnpm build`. File `.env` di root digunakan Compose/backend; Next.js membaca file environment di direktori frontend.
+Gunakan Node.js 22 dan versi pnpm pada `frontend/package.json`. Untuk API selain `http://localhost:3001`, buat `frontend/.env.local` berisi `NEXT_PUBLIC_API_URL=https://api.example.com` sebelum `pnpm dev` atau `pnpm build`. File `.env` di root digunakan Compose/backend; Next.js membaca file environment di direktori frontend.
 
 Untuk setup backend lokal, gunakan Python 3.12 dengan virtual environment:
 
@@ -44,6 +50,8 @@ python -m pip install -r requirements/dev.txt
 ```
 
 Schema produksi dikelola melalui Alembic. Pada database baru, jalankan `docker compose --profile ops run --rm migrate` sebelum layanan aplikasi dijalankan. `DATABASE_AUTO_CREATE_TABLES` hanya untuk environment development/fixture.
+
+Pengiriman Telegram menggunakan antrean persisten dengan urutan per site. Setelah percobaan pengiriman habis, worker mencoba pesan gagal kembali setelah cooldown 5 menit, termasuk setelah restart, tanpa mengulang bagian pesan yang sudah terkirim. Gangguan permanen seperti token salah tetap membutuhkan perbaikan konfigurasi. Dashboard admin menampilkan peringatan pada semua halaman untuk worker mati, pesan gagal, atau antrean berumur minimal 2 menit; jumlah antrean tersedia di System Health. Log `notification-worker` mencatat ID pesan dan kategori kegagalan tanpa token atau isi exception provider.
 
 ## Validasi
 

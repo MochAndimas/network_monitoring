@@ -30,3 +30,8 @@ lib/
 share/
 pyvenv.cfg
 .ruff_cache/
+
+# Synology DSM metadata must never enter application build contexts.
+**/@eaDir
+**/@tmp
+**/.SynologyWorkingDirectory

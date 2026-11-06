@@ -30,6 +30,16 @@ async def redrive_notification(db: AsyncSession, job_id: int, *, now: datetime) 
     return cast(CursorResult, result).rowcount == 1
 
 
+async def recover_failed_notifications(db: AsyncSession, *, now: datetime) -> int:
+    """Retry exhausted deliveries after a cooldown without discarding FIFO/cursors."""
+    result = await db.execute(
+        update(Job)
+        .where(Job.channel == "telegram", Job.status == "dead", Job.updated_at <= now - timedelta(minutes=5))
+        .values(status="pending", attempts=0, available_at=now, updated_at=now, lease_token=None, lease_until=None)
+    )
+    return cast(CursorResult, result).rowcount
+
+
 async def retain_notifications(db: AsyncSession, *, now: datetime, days: int = 30, batch_size: int = 250) -> int:
     """Keep unfinished streams and live/recent alert correlation identities intact."""
     if days < 1 or not 1 <= batch_size <= 1000:

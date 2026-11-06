@@ -1,5 +1,6 @@
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
 let accessToken: string | undefined;
+let refreshInFlight: Promise<boolean> | undefined;
 
 /** Keep the session token in memory only; browser cookies remain the refresh mechanism. */
 export function setAccessToken(token: string | undefined) {
@@ -13,11 +14,32 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const request = () => fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
     headers: { Accept: "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), ...init.headers }
   });
+  const requestedToken = accessToken;
+  let response = await request();
+  // Authentication endpoints must not recursively restore a session.
+  if (response.status === 401 && !path.startsWith("/auth/")) {
+    if (accessToken && accessToken !== requestedToken) {
+      response = await request();
+    } else {
+      if (!refreshInFlight) {
+        refreshInFlight = fetch(`${API_URL}/auth/restore`, {
+          method: "POST", credentials: "include", headers: { Accept: "application/json" }
+        }).then(async (restored) => {
+          if (restored.status === 401) return false;
+          if (!restored.ok) throw new ApiError("Sesi belum bisa diperbarui. Coba lagi.", restored.status);
+          const body = await restored.json() as { access_token: string };
+          setAccessToken(body.access_token);
+          return true;
+        }).finally(() => { refreshInFlight = undefined; });
+      }
+      if (await refreshInFlight) response = await request();
+    }
+  }
   if (!response.ok) {
     if (response.status === 401 && typeof window !== "undefined") {
       setAccessToken(undefined);

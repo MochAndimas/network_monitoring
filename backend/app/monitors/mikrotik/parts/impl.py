@@ -6,17 +6,20 @@ import asyncio
 import logging
 import re
 from datetime import datetime
+from time import time_ns
 
-from shared.device_utils import is_mikrotik_device
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.device_utils import is_mikrotik_device
+
+from ....bandwidth.discovery import InventoryMetricBatch, InventorySnapshot, build_inventory_snapshot
 from ....core.config import settings
 from ....core.settings_groups import MikrotikSettings
+from ....core.time import utcnow
 from ....models.device import Device
 from ....models.metric import Metric
 from ....repositories.device_repository import DeviceRepository
 from ....repositories.metric_repository import MetricRepository
-from ....core.time import utcnow
 from ...helpers import bounded_gather, build_ping_check_metrics, collect_ping_probe_samples
 
 try:
@@ -65,17 +68,23 @@ async def run_mikrotik_checks(db: AsyncSession) -> list[dict]:
         # order; only independent RouterOS network work runs concurrently.
         work.append((target_device, target, await _latest_metric_map(db, target_device.id)))
 
+    snapshots: list[InventorySnapshot] | None = [] if settings.bandwidth_inventory_enabled else None
     api_results = await bounded_gather(
-        [_collect_mikrotik_api_metrics(device, target, previous) for device, target, previous in work]
+        [
+            _collect_mikrotik_api_metrics(device, target, previous, snapshots=snapshots)
+            for device, target, previous in work
+        ]
     )
     metrics.extend(metric for target_metrics in api_results for metric in target_metrics)
-    return metrics
+    return InventoryMetricBatch(metrics, tuple(snapshots)) if snapshots is not None else metrics
 
 
 async def _collect_mikrotik_api_metrics(
     target_device: Device,
     mikrotik_settings: MikrotikSettings,
     previous_metrics: dict[str, Metric],
+    *,
+    snapshots: list[InventorySnapshot] | None = None,
 ) -> list[dict]:
     """Collect one RouterOS target; failures stay scoped to that device."""
     if connect is None:
@@ -268,6 +277,8 @@ async def _collect_mikrotik_api_metrics(
                     max_items=mikrotik_settings.dynamic_max_queues,
                 )
             )
+        if snapshots is not None:
+            snapshots.append(build_inventory_snapshot(target_device.id, time_ns(), dhcp_leases, arp_entries))
     except Exception as exc:
         logger.exception("Mikrotik API check failed for host %s", mikrotik_settings.host)
         checked_at = utcnow()

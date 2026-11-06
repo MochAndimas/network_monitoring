@@ -244,6 +244,8 @@ def test_observability_summary_endpoint():
 
             response = client.get("/observability/summary", headers=admin_headers)
             metrics_response = client.get("/observability/metrics", headers=admin_headers)
+            notification_response = client.get("/observability/notifications", headers=admin_headers)
+            assert client.get("/observability/notifications").status_code in (401, 403)
 
         assert response.status_code == 200
         payload = response.json()
@@ -261,6 +263,9 @@ def test_observability_summary_endpoint():
         assert payload["notification_outbox"]["dead"] == 1
         assert payload["notification_outbox"]["pending"] == 0
         assert "private-outbox" not in response.text
+        assert notification_response.status_code == 200
+        assert notification_response.json()["notification_outbox"]["dead"] == 1
+        assert "private-outbox" not in notification_response.text
         assert metrics_response.status_code == 200
         assert "network_monitoring_database_up 1" in metrics_response.text
         assert "network_monitoring_observability_multiprocess_enabled" in metrics_response.text

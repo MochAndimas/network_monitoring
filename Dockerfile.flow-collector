@@ -1,0 +1,18 @@
+# Use an explicitly selected/pinned image compatible with the verified mapping.
+ARG GOFLOW2_IMAGE=netsampler/goflow2@sha256:d0a2491563211b91be9c2709c4ac3f9b02036ad3df5a2523d635101f92c98887
+FROM ${GOFLOW2_IMAGE} AS decoder
+
+# GoFlow2's official binary uses Alpine; keep its musl runtime compatible.
+FROM python:3.12-alpine
+RUN addgroup -g 10001 flowapp && adduser -D -u 10001 -G flowapp flowapp \
+    && mkdir -p /var/lib/bandwidth-spool && chown flowapp:flowapp /var/lib/bandwidth-spool
+WORKDIR /app
+COPY --from=decoder /goflow2 /usr/local/bin/goflow2
+COPY backend/__init__.py /app/backend/__init__.py
+COPY backend/app/__init__.py /app/backend/app/__init__.py
+COPY backend/app/bandwidth /app/backend/app/bandwidth
+RUN chmod -R u=rwX,go=rX /app \
+    && python -m compileall -q /app/backend
+USER 10001:10001
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENTRYPOINT ["python", "-m", "backend.app.bandwidth.collector"]

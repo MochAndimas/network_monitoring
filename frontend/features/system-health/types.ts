@@ -17,6 +17,12 @@ export type SystemHealthSummary = {
   database: string;
   telegram_configured?: boolean;
   notification_workers_alive?: number;
+  notification_outbox?: {
+    pending: number;
+    processing: number;
+    dead: number;
+    oldest_pending_age_seconds: number;
+  };
   devices_total: number;
   metrics_latest_snapshot: number;
   alerts_active: number;

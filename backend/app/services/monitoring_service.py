@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Mapping, Sequence
 from time import perf_counter
-from collections.abc import Callable, Sequence, Mapping
 from typing import Any
-from shared.metric_contracts import MetricWritePayload
-from ..models.metric import Metric
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.metric_contracts import MetricWritePayload
+
+from ..bandwidth.discovery import InventoryMetricBatch
+from ..core.config import settings
+from ..models.metric import Metric
 from ..repositories.alert_repository import AlertRepository
 from ..repositories.device_repository import DeviceRepository
 from ..repositories.metric_repository import MetricRepository
-
+from .bandwidth_inventory_service import sync_inventory
 
 logger = logging.getLogger("network_monitoring.service")
 
@@ -27,7 +30,14 @@ async def persist_metrics(
     repository_factory: Callable[[AsyncSession], MetricRepository] = MetricRepository,
 ) -> list[Metric]:
     """Persist a batch of collected metric payloads."""
+    if isinstance(metrics, InventoryMetricBatch):
+        # Fixed lock order for multi-router batches; all writes join the caller's
+        # transaction. Failed collection never carries an authoritative snapshot.
+        for snapshot in sorted(metrics.snapshots, key=lambda item: item.router_id):
+            await sync_inventory(db, snapshot, max_observation_gap_seconds=settings.bandwidth_inventory_max_gap_seconds)
     persisted_metrics = await repository_factory(db).create_metrics(metrics, commit=commit)
+    if commit and isinstance(metrics, InventoryMetricBatch) and not metrics:
+        await db.commit()
     if persisted_metrics:
         from .dashboard_overview_service import invalidate_dashboard_overview_cache
 

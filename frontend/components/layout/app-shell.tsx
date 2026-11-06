@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -8,6 +9,7 @@ import { apiFetch, setAccessToken } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
 import { useAuth } from "@/features/auth/auth-provider";
 import { ThemeToggle } from "./theme-toggle";
+import { NotificationHealthBanner } from "./notification-health-banner";
 
 const NAVIGATION = [
   ["/", "Overview"], ["/daily-summary", "Daily Summary"], ["/live-monitoring", "Live Monitoring"],
@@ -72,7 +74,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     <button className="sidebar-hover-zone" type="button" aria-label="Buka navigasi" onMouseEnter={() => setIsSidebarOpen(true)} onFocus={() => setIsSidebarOpen(true)} />
     <aside className="app-sidebar" onMouseLeave={() => setIsSidebarOpen(false)} onMouseEnter={() => setIsSidebarOpen(true)} onFocusCapture={() => setIsSidebarOpen(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setIsSidebarOpen(false); }}>
       <div className="sidebar-heading">
-        <Link className="app-brand" href="/"><span className="app-brand-mark" aria-hidden="true">NM</span><span><strong>Network Monitoring</strong><small>Operations workspace</small></span></Link>
+        <Link className="app-brand" href="/"><span className="app-brand-mark" aria-hidden="true"><Image src="/favicon.ico" alt="" width={40} height={40} unoptimized className="app-brand-logo" /></span><span><strong>Network Monitoring</strong><small>Operations workspace</small></span></Link>
       </div>
       <nav aria-label="Navigasi utama"><p className="sidebar-nav-label">Workspace</p>{NAVIGATION.filter(([href]) => user?.role === "admin" || !ADMIN_ONLY_PATHS.has(href)).map(([href, label]) =>
         <Link key={href} href={href} aria-label={label} title={label} onClick={() => setIsSidebarOpen(false)} className={pathname === href ? "nav-link nav-link-active" : "nav-link"}><span className="nav-link-label"><NavIcon href={href} /><span className="nav-link-text">{label}</span></span><span className="nav-link-arrow" aria-hidden="true">›</span></Link>
@@ -94,6 +96,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             <div className="global-menu-footer"><ThemeToggle /><button type="button" className="global-menu-logout" onClick={() => void logout()}>Keluar</button></div>
           </div> : null}
       </div>
+      <NotificationHealthBanner enabled={user?.role === "admin"} />
       {children}
     </div>
   </div>;

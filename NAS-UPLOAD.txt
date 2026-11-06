@@ -1,0 +1,24 @@
+PANDUAN UPLOAD SOURCE KE SYNOLOGY
+
+Folder tujuan:
+/volume1/12. IT and Surveillance/04. App/Network Monitoring
+
+1. Upload network_monitoring-nas-source.zip ke folder tersebut lewat File Station.
+2. Ekstrak isi ZIP langsung ke folder Network Monitoring.
+3. Pastikan docker-compose.yml, Dockerfile.backend, backend/, frontend/, scripts/,
+   requirements/, shared/, alembic/, dan goflow2/ berada langsung di folder ini.
+4. Berhenti setelah ekstraksi. Jangan klik Build/Start dulu.
+
+Paket berisi source saat ini, termasuk perubahan lokal yang belum di-commit.
+.env, credential lokal, policy router lokal, database, dependency lokal,
+dan hasil build tidak disertakan. Tidak ada database lama dalam paket.
+
+TAHAP KONFIGURASI BERIKUTNYA
+- Siapkan .env khusus NAS dan secret baru melalui jalur privat.
+- Tentukan URL dashboard/API privat sebelum build frontend.
+- Siapkan policy HO/RO, router ID, bind UDP, dan koneksi NAS ke perangkat.
+- Tentukan apakah database baru atau restore dari database lama.
+- Validasi Compose, jalankan MySQL, migrasi, lalu aplikasi secara bertahap.
+- Verifikasi kemampuan Docker/BuildKit NAS untuk Dockerfile frontend.
+
+Paket ini sudah dicek kelengkapan arsip; image belum dibangun atau diuji di NAS.

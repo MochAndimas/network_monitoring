@@ -1,0 +1,13 @@
+PERBAIKAN IZIN SOURCE PADA IMAGE NAS
+
+Penyebab terkonfirmasi: scripts/run-migrations.sh di image memiliki mode 000.
+Ekstrak ZIP langsung ke root folder Network Monitoring, overwrite kedua Dockerfile.
+Pastikan Dockerfile.backend memuat baris chmod -R u=rwX,go=rX /app.
+
+Di terminal NAS dari folder project:
+sudo docker compose --profile ops build migrate
+sudo docker compose --profile ops run --rm migrate
+
+Perbaikan menormalkan izin hanya pada source /app di dalam image.
+Tidak mengubah .env, database, volume, atau izin shared folder NAS.
+Runtime tetap memakai pengguna non-root. Tidak perlu chmod 777 atau menghapus volume.

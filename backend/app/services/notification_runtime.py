@@ -2,10 +2,11 @@
 
 import asyncio
 import uuid
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ..core.time import utcnow
 from .notification_delivery_service import DeliveryPolicy, RoutedNotificationSender
-from .notification_maintenance import record_worker_heartbeat, retain_notifications
+from .notification_maintenance import record_worker_heartbeat, retain_notifications, recover_failed_notifications
 from .notification_worker import NotificationWorkerPolicy, NotificationWorkerReport, run_alert_notification_worker
 
 
@@ -33,8 +34,11 @@ async def run_notification_runtime(
         while not stop.is_set():
             async with sessions.begin() as db:
                 await record_worker_heartbeat(db, worker_id=identity, status="running", now=utcnow())
+                recovered = await recover_failed_notifications(db, now=utcnow())
                 if cycle % 360 == 0:
                     await retain_notifications(db, now=utcnow())
+            if recovered:
+                logging.getLogger(__name__).warning("Telegram retry recovery: requeued %s failed jobs", recovered)
             cycle += 1
             try:
                 await asyncio.wait_for(stop.wait(), heartbeat_seconds)

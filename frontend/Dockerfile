@@ -12,13 +12,14 @@ RUN --mount=type=cache,id=network-monitoring-pnpm-store,target=/pnpm/store \
 FROM node:22-alpine AS builder
 
 WORKDIR /app
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ARG NEXT_PUBLIC_API_URL=http://localhost:3001
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 RUN --mount=type=cache,id=network-monitoring-next-cache,target=/app/.next/cache \
-  npm run build
+  mkdir -p public \
+  && npm run build
 
 FROM node:22-alpine AS runner
 

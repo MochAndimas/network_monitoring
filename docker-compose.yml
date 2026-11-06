@@ -20,6 +20,8 @@ x-monitoring-runtime-environment: &monitoring-runtime-environment
   DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
   DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS:-30}
   DB_POOL_RECYCLE_SECONDS: ${DB_POOL_RECYCLE_SECONDS:-1800}
+  BANDWIDTH_INVENTORY_ENABLED: ${BANDWIDTH_INVENTORY_ENABLED:-false}
+  BANDWIDTH_INVENTORY_MAX_GAP_SECONDS: ${BANDWIDTH_INVENTORY_MAX_GAP_SECONDS:-120}
   TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
   TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
   TELEGRAM_ALERT_GRACE_PERIOD_SECONDS: ${TELEGRAM_ALERT_GRACE_PERIOD_SECONDS:-60}
@@ -131,6 +133,22 @@ x-monitoring-runtime-environment: &monitoring-runtime-environment
   PROMETHEUS_MULTIPROC_DIR: ${PROMETHEUS_MULTIPROC_DIR:-/tmp/network_monitoring_prometheus}
   PROMETHEUS_MULTIPROC_CLEAN_ON_STARTUP: ${PROMETHEUS_MULTIPROC_CLEAN_ON_STARTUP:-false}
 
+x-bandwidth-policy-mount: &bandwidth-policy-mount "${BANDWIDTH_FLOW_POLICY_PATH:?Set the reviewed host policy JSON path}:/etc/bandwidth/policy.json:ro"
+x-bandwidth-runtime-environment: &bandwidth-runtime-environment
+  APP_ENV: production
+  DATABASE_URL: mysql+pymysql://${MYSQL_USER:-network_monitoring}:${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}@mysql:3306/${MYSQL_DATABASE:-network_monitoring}
+  AUTH_PASSWORD_SECRET: ${AUTH_PASSWORD_SECRET:?AUTH_PASSWORD_SECRET must be set}
+  AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET must be set}
+  CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+  TRUSTED_HOSTS: ${TRUSTED_HOSTS:?TRUSTED_HOSTS must be set}
+  BANDWIDTH_FLOW_POLICY_FILE: /etc/bandwidth/policy.json
+x-bandwidth-backend-service: &bandwidth-backend-service
+  build: *backend-build
+  restart: unless-stopped
+  depends_on:
+    mysql:
+      condition: service_healthy
+
 services:
   mysql:
     image: mysql:8.4
@@ -159,7 +177,7 @@ services:
       <<: *monitoring-runtime-environment
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:3001:8000"
     healthcheck:
       test:
         [
@@ -179,6 +197,10 @@ services:
     depends_on: *mysql-health-dependency
     environment:
       <<: *app-base-environment
+      AUTH_PASSWORD_SECRET: ${AUTH_PASSWORD_SECRET:-}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:?TRUSTED_HOSTS must be set}
     command: ["sh", "/app/scripts/run-migrations.sh"]
 
   scheduler:
@@ -209,7 +231,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${FRONTEND_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_API_URL: ${FRONTEND_PUBLIC_API_URL:-http://localhost:3001}
     restart: unless-stopped
     depends_on:
       backend:
@@ -229,5 +251,125 @@ services:
       retries: 5
       start_period: 30s
 
+  flow-collector: &bandwidth-collector
+    build:
+      context: .
+      dockerfile: Dockerfile.flow-collector
+      args:
+        GOFLOW2_IMAGE: ${GOFLOW2_IMAGE:?Set a tested GoFlow2 tag or digest}
+    restart: unless-stopped
+    environment:
+      BANDWIDTH_ROUTER_ID: ${BANDWIDTH_ROUTER_ID:?Set the existing router device ID}
+    command: ["--router-id", "${BANDWIDTH_ROUTER_ID:?Set the existing router device ID}"]
+    ports:
+      - "${BANDWIDTH_LISTEN_ADDRESS:-127.0.0.1}:${BANDWIDTH_LISTEN_PORT:-2055}:2055/udp"
+    volumes:
+      - bandwidth_flow_spool:/var/lib/bandwidth-spool
+      - ./goflow2/mapping.yaml:/etc/goflow2/mapping.yaml:ro
+    stop_grace_period: 15s
+    # Readiness only: the manifest must exist before the worker opens the spool.
+    # UDP reception and completeness are verified separately during acceptance.
+    healthcheck:
+      test: ["CMD", "python", "-m", "backend.app.bandwidth.collector_health"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  flow-worker: &bandwidth-worker
+    <<: *bandwidth-backend-service
+    user: "10001:10001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      flow-collector:
+        condition: service_healthy
+    environment: &bandwidth-worker-environment
+      <<: *bandwidth-runtime-environment
+      BANDWIDTH_INGESTION_ENABLED: "true"
+      BANDWIDTH_SPOOL_DIRECTORY: /var/lib/bandwidth-spool
+      BANDWIDTH_INGESTION_BATCH_SIZE: ${BANDWIDTH_INGESTION_BATCH_SIZE:-500}
+      BANDWIDTH_INGESTION_POLL_SECONDS: ${BANDWIDTH_INGESTION_POLL_SECONDS:-1}
+    volumes:
+      - bandwidth_flow_spool:/var/lib/bandwidth-spool
+      - *bandwidth-policy-mount
+    command: ["python", "-m", "backend.app.bandwidth.worker"]
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-m", "backend.app.bandwidth.worker", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  flow-inventory: &bandwidth-inventory
+    <<: *bandwidth-backend-service
+    environment: &bandwidth-inventory-environment
+      <<: *bandwidth-runtime-environment
+      MIKROTIK_TARGETS: ${MIKROTIK_TARGETS:-}
+      BANDWIDTH_INVENTORY_ENABLED: "true"
+      BANDWIDTH_INVENTORY_TARGET_NAME: ${BANDWIDTH_INVENTORY_TARGET_NAME:-}
+      BANDWIDTH_INVENTORY_API_HOST: ${BANDWIDTH_INVENTORY_API_HOST:-}
+      BANDWIDTH_INVENTORY_API_PORT: ${BANDWIDTH_INVENTORY_API_PORT:-}
+      BANDWIDTH_INVENTORY_API_FALLBACK_HOST: ${BANDWIDTH_INVENTORY_API_FALLBACK_HOST:-}
+      BANDWIDTH_INVENTORY_API_FALLBACK_PORT: ${BANDWIDTH_INVENTORY_API_FALLBACK_PORT:-}
+      BANDWIDTH_INVENTORY_ROUTER_IDENTITY: ${BANDWIDTH_INVENTORY_ROUTER_IDENTITY:-}
+      BANDWIDTH_INVENTORY_POLL_SECONDS: ${BANDWIDTH_INVENTORY_POLL_SECONDS:-60}
+      BANDWIDTH_INVENTORY_MAX_GAP_SECONDS: ${BANDWIDTH_INVENTORY_MAX_GAP_SECONDS:-120}
+    volumes:
+      - *bandwidth-policy-mount
+    command: ["python", "-m", "backend.app.bandwidth.inventory_worker"]
+    stop_grace_period: 35s
+    healthcheck:
+      test: ["CMD", "python", "-m", "backend.app.bandwidth.inventory_worker", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+
+  # Each additional router reuses runtime templates, but owns its listener,
+  # immutable policy, spool manifest, and inventory binding.
+  flow-collector-ro:
+    <<: *bandwidth-collector
+    environment:
+      BANDWIDTH_ROUTER_ID: ${BANDWIDTH_RO_ROUTER_ID:?Set the existing RO router device ID}
+    command: ["--router-id", "${BANDWIDTH_RO_ROUTER_ID:?Set the existing RO router device ID}"]
+    ports:
+      - "${BANDWIDTH_RO_LISTEN_ADDRESS:-127.0.0.1}:${BANDWIDTH_RO_LISTEN_PORT:-2056}:2055/udp"
+    volumes:
+      - bandwidth_ro_flow_spool:/var/lib/bandwidth-spool
+      - ./goflow2/mapping.yaml:/etc/goflow2/mapping.yaml:ro
+
+  flow-worker-ro:
+    <<: *bandwidth-worker
+    depends_on:
+      mysql:
+        condition: service_healthy
+      flow-collector-ro:
+        condition: service_healthy
+    environment: *bandwidth-worker-environment
+    volumes:
+      - bandwidth_ro_flow_spool:/var/lib/bandwidth-spool
+      - "${BANDWIDTH_RO_FLOW_POLICY_PATH:?Set the reviewed RO host policy JSON path}:/etc/bandwidth/policy.json:ro"
+
+  flow-inventory-ro:
+    <<: *bandwidth-inventory
+    environment:
+      <<: *bandwidth-inventory-environment
+      BANDWIDTH_INVENTORY_TARGET_NAME: ${BANDWIDTH_RO_INVENTORY_TARGET_NAME:-regional-office}
+      BANDWIDTH_INVENTORY_API_HOST: ${BANDWIDTH_RO_INVENTORY_API_HOST:-}
+      BANDWIDTH_INVENTORY_API_PORT: ${BANDWIDTH_RO_INVENTORY_API_PORT:-}
+      BANDWIDTH_INVENTORY_API_FALLBACK_HOST: ${BANDWIDTH_RO_INVENTORY_API_FALLBACK_HOST:-}
+      BANDWIDTH_INVENTORY_API_FALLBACK_PORT: ${BANDWIDTH_RO_INVENTORY_API_FALLBACK_PORT:-}
+      BANDWIDTH_INVENTORY_ROUTER_IDENTITY: ${BANDWIDTH_RO_INVENTORY_ROUTER_IDENTITY:-}
+      BANDWIDTH_INVENTORY_POLL_SECONDS: ${BANDWIDTH_RO_INVENTORY_POLL_SECONDS:-60}
+    volumes:
+      - "${BANDWIDTH_RO_FLOW_POLICY_PATH:?Set the reviewed RO host policy JSON path}:/etc/bandwidth/policy.json:ro"
+
 volumes:
   mysql_data:
+  bandwidth_flow_spool:
+    name: ${BANDWIDTH_FLOW_SPOOL_VOLUME:-network_monitoring_bandwidth_flow_spool}
+  bandwidth_ro_flow_spool:
+    name: ${BANDWIDTH_RO_FLOW_SPOOL_VOLUME:-network_monitoring_bandwidth_ro_flow_spool}

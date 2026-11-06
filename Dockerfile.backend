@@ -21,6 +21,12 @@ COPY backend ./backend
 COPY shared ./shared
 COPY scripts ./scripts
 
+# Synology uploads/extraction can strip source read permissions. Normalize only
+# the copied application tree so non-root workers can read it, then precompile
+# bytecode for frequent healthcheck interpreter startups.
+RUN chmod -R u=rwX,go=rX /app \
+    && python -m compileall -q backend shared scripts
+
 RUN chown -R appuser:appuser /app /home/appuser
 
 USER appuser

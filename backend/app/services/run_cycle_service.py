@@ -2,21 +2,20 @@
 
 import asyncio
 import logging
-from time import perf_counter
 from collections.abc import Awaitable, Callable
+from time import perf_counter
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ..services.operational_alert_service import evaluate_operational_alerts as evaluate_alerts
+from ..bandwidth.discovery import InventoryMetricBatch
 from ..db.session import SessionLocal
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from ..monitors.device.service import run_device_checks
 from ..monitors.internet.service import run_internet_checks
 from ..monitors.mikrotik.service import run_mikrotik_checks
 from ..monitors.server.service import run_server_checks
-from .monitoring_service import persist_metrics
+from ..services.operational_alert_service import evaluate_operational_alerts as evaluate_alerts
 from .collector_ownership import device_collector_ownership
-
+from .monitoring_service import persist_metrics
 
 logger = logging.getLogger("network_monitoring.run_cycle")
 
@@ -41,7 +40,8 @@ async def run_monitoring_cycle(
     async with db.begin():
         metrics_collected = 0
         for runner_metrics in runner_results:
-            if not runner_metrics:
+            has_inventory = isinstance(runner_metrics, InventoryMetricBatch) and bool(runner_metrics.snapshots)
+            if not runner_metrics and not has_inventory:
                 continue
             persisted = await persist_metrics(db, runner_metrics, commit=False)
             metrics_collected += len(persisted)
@@ -69,7 +69,11 @@ async def run_monitoring_cycle(
 async def collect_monitoring_metrics() -> list[dict]:
     """Collect metrics from all configured monitor runners concurrently."""
     runner_results = await collect_monitoring_metrics_by_runner()
-    return [metric for metrics in runner_results for metric in metrics]
+    metrics = [metric for batch in runner_results for metric in batch]
+    snapshots = tuple(
+        snapshot for batch in runner_results if isinstance(batch, InventoryMetricBatch) for snapshot in batch.snapshots
+    )
+    return InventoryMetricBatch(metrics, snapshots) if snapshots else metrics
 
 
 async def collect_monitoring_metrics_by_runner(

@@ -1,0 +1,3 @@
+Ekstrak langsung di root folder Network Monitoring dan overwrite file yang sama.
+Update ini hanya berisi file optimasi dan laporan. .env dan database tidak disertakan.
+Image perlu di-build ulang; konfigurasi NAS tetap perlu disiapkan sebelum Build/Start.

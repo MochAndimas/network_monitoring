@@ -1,4 +1,15 @@
-.PHONY: setup precommit-install precommit-run lint lint-staged format format-check dependency-check typecheck test test-fast test-unit test-integration test-slow test-mysql migration-check ci backend-check backend scheduler frontend-check docker-up docker-logs security security-dependencies security-bandit security-semgrep
+.PHONY: setup precommit-install precommit-run lint lint-staged format format-check dependency-check typecheck test test-fast test-unit test-integration test-slow test-mysql migration-check ci backend-check backend scheduler frontend-check docker-up docker-logs security security-dependencies security-bandit security-semgrep bandwidth-config bandwidth-status bandwidth-logs
+
+BANDWIDTH_SITE ?= ho
+ifeq ($(BANDWIDTH_SITE),ho)
+BANDWIDTH_SUFFIX =
+else ifeq ($(BANDWIDTH_SITE),ro)
+BANDWIDTH_SUFFIX = -ro
+else
+$(error BANDWIDTH_SITE must be ho or ro)
+endif
+BANDWIDTH_COMPOSE = docker compose
+BANDWIDTH_SERVICES = flow-collector$(BANDWIDTH_SUFFIX) flow-worker$(BANDWIDTH_SUFFIX) flow-inventory$(BANDWIDTH_SUFFIX)
 
 setup:
 	python -m pip install --upgrade pip
@@ -59,7 +70,7 @@ backend-check: dependency-check lint lint-staged format-check typecheck test
 ci: backend-check frontend-check
 
 backend:
-	uvicorn backend.app.main:app --reload
+	uvicorn backend.app.main:app --reload --port 3001
 
 scheduler:
 	python -m backend.app.scheduler.worker
@@ -80,3 +91,17 @@ security-bandit:
 
 security-semgrep:
 	semgrep scan --config p/security-audit --config p/python --error --metrics=off --exclude venv --exclude tests backend shared scripts
+
+bandwidth-config:
+	$(BANDWIDTH_COMPOSE) config --quiet
+
+bandwidth-status:
+	$(BANDWIDTH_COMPOSE) ps $(BANDWIDTH_SERVICES)
+	$(BANDWIDTH_COMPOSE) exec -T flow-worker$(BANDWIDTH_SUFFIX) python -m backend.app.bandwidth.diagnostics status
+
+bandwidth-logs:
+	$(BANDWIDTH_COMPOSE) logs --tail 50 $(BANDWIDTH_SERVICES)
+
+.PHONY: bandwidth-up
+bandwidth-up:
+	$(BANDWIDTH_COMPOSE) up -d --build $(BANDWIDTH_SERVICES)

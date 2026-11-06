@@ -3,7 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { GroupMonitoringSummary } from "./group-monitoring-summary";
 import { useGroupMonitoring } from "./use-group-monitoring";
-import { useState } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
+import { BandwidthWorkspace } from "./bandwidth/bandwidth-workspace";
 import { useSearchParams } from "next/navigation";
 import { CsvExport } from "@/components/ui/csv-export";
 import { DataTable } from "@/components/ui/data-table";
@@ -60,6 +61,80 @@ function initialChartWindow(value: string | null) {
 export function LiveMonitoringPage() {
   const params = useSearchParams();
   const [deviceId, setDeviceId] = useState(() => params.get("device") ?? "");
+  const [tab, setTab] = useState(() =>
+    params.get("tab") === "bandwidth" ? "bandwidth" : "metrics",
+  );
+  const focusTab = useRef(false);
+  useEffect(() => {
+    if (focusTab.current) {
+      document.getElementById(`monitoring-${tab}-tab`)?.focus();
+      focusTab.current = false;
+    }
+  }, [tab]);
+  const tabs = (
+    <div
+      className="devices-tabs monitoring-tabs"
+      role="tablist"
+      aria-label="Tampilan Live Monitoring"
+      onKeyDown={(event) => {
+        const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+        if (!keys.includes(event.key)) return;
+        event.preventDefault();
+        const next =
+          event.key === "Home"
+            ? "metrics"
+            : event.key === "End"
+              ? "bandwidth"
+              : tab === "metrics"
+                ? "bandwidth"
+                : "metrics";
+        focusTab.current = true;
+        setTab(next);
+      }}
+    >
+      {(
+        [
+          ["metrics", "Metrik perangkat"],
+          ["bandwidth", "Bandwidth"],
+        ] as const
+      ).map(([value, label]) => (
+        <button
+          key={value}
+          id={`monitoring-${value}-tab`}
+          role="tab"
+          className={tab === value ? "tab-active" : ""}
+          aria-selected={tab === value}
+          aria-controls={`monitoring-${value}-panel`}
+          tabIndex={tab === value ? 0 : -1}
+          onClick={() => {
+            focusTab.current = true;
+            setTab(value);
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+  return tab === "bandwidth" ? (
+    <BandwidthWorkspace
+      deviceId={deviceId}
+      onDeviceChange={setDeviceId}
+      tabs={tabs}
+    />
+  ) : (
+    <MetricsMonitoringPage
+      deviceId={deviceId}
+      setDeviceId={setDeviceId}
+      tabs={tabs}
+    />
+  );
+}
+
+function MetricsMonitoringPage({ deviceId, setDeviceId, tabs }: {
+  deviceId: string; setDeviceId: (value: string) => void; tabs: ReactNode;
+}) {
+  const params = useSearchParams();
   const [metric, setMetric] = useState(() => params.get("metric") ?? "");
   const [status, setStatus] = useState(() => params.get("status") ?? "");
   const [monitoringMode, setMonitoringMode] = useState<MonitoringMode>(() => params.get("mode") === "range" ? "range" : "live");
@@ -121,9 +196,58 @@ export function LiveMonitoringPage() {
   const pagedHistoryRange = isRangeMode ? { checked_from: wibRangeBoundary(rangeFrom), checked_to: wibRangeBoundary(rangeTo, true) } : liveRange();
   const historyPage = useQuery({ queryKey: ["live-history-page", apiDeviceId, metric, status, monitoringMode, rangeFrom, rangeTo, historyCursor], queryFn: ({ signal }) => apiFetch<{ items: MetricSample[]; meta: { total: number | null; limit: number; next_cursor: string | null; has_more: boolean } }>(withQuery("/metrics/history/paged", { device_id: apiDeviceId, metric_name: metric || undefined, status: status || undefined, limit: 10, cursor: historyCursor, ...pagedHistoryRange }), { signal }), enabled: !isDeviceGroup && hasValidRange });
 
-  if (!hasValidRange) return <ErrorState message="Tanggal mulai harus diisi dan tidak boleh melewati tanggal akhir." onRetry={() => undefined} />;
-  if (monitoring.isPending || devices.isPending || (deviceMetrics.isPending && Boolean(deviceId) && !isDeviceGroup)) return <LoadingState />;
-  if (monitoring.isError || (!isDeviceGroup && historyPage.isError) || devices.isError || (!isDeviceGroup && deviceMetrics.isError)) return <ErrorState message="Live monitoring tidak dapat dimuat." onRetry={() => { void monitoring.refetch(); void devices.refetch(); if (!isDeviceGroup) { void historyPage.refetch(); void deviceMetrics.refetch(); } }} />;
+  if (!hasValidRange)
+    return (
+      <main className="app-page live-monitoring-page">
+        <PageHeader
+          title="Live Monitoring"
+          description="Metrik kesehatan dan penggunaan bandwidth perangkat."
+        />
+        {tabs}
+        <ErrorState message="Tanggal mulai harus diisi dan tidak boleh melewati tanggal akhir." />
+      </main>
+    );
+  if (
+    monitoring.isPending ||
+    devices.isPending ||
+    (deviceMetrics.isPending && Boolean(deviceId) && !isDeviceGroup)
+  )
+    return (
+      <main className="app-page live-monitoring-page">
+        <PageHeader
+          title="Live Monitoring"
+          description="Metrik kesehatan dan penggunaan bandwidth perangkat."
+        />
+        {tabs}
+        <LoadingState />
+      </main>
+    );
+  if (
+    monitoring.isError ||
+    (!isDeviceGroup && historyPage.isError) ||
+    devices.isError ||
+    (!isDeviceGroup && deviceMetrics.isError)
+  )
+    return (
+      <main className="app-page live-monitoring-page">
+        <PageHeader
+          title="Live Monitoring"
+          description="Metrik kesehatan dan penggunaan bandwidth perangkat."
+        />
+        {tabs}
+        <ErrorState
+          message="Live monitoring tidak dapat dimuat."
+          onRetry={() => {
+            void monitoring.refetch();
+            void devices.refetch();
+            if (!isDeviceGroup) {
+              void historyPage.refetch();
+              void deviceMetrics.refetch();
+            }
+          }}
+        />
+      </main>
+    );
 
   const data = monitoring.data;
   const metricOptions = isDeviceGroup ? data.metric_names : deviceId ? deviceMetrics.data ?? [] : data.metric_names;
@@ -163,6 +287,8 @@ export function LiveMonitoringPage() {
   }
   return <main className="app-page live-monitoring-page">
     <PageHeader className="live-monitoring-header" title="Live Monitoring" description={isRangeMode ? `Riwayat metric untuk rentang ${rangeFrom} s.d. ${rangeTo}.` : "Snapshot 24 jam terakhir, riwayat metric, dan trend perangkat secara real-time."} />
+    {tabs}
+    <div id="monitoring-metrics-panel" role="tabpanel" aria-labelledby="monitoring-metrics-tab" className="monitoring-metrics-panel">
     <MetricGrid columns={5}>
       <MetricCard label={isDeviceGroup ? "Data riwayat ditampilkan" : "Total data"} value={data.history.meta.total.toLocaleString("id-ID")} />
       <MetricCard label="Device terpantau" value={monitoredDevices.toLocaleString("id-ID")} />
@@ -205,5 +331,6 @@ export function LiveMonitoringPage() {
       <DataTable columns={historyColumns} rows={historyPage.data?.items ?? data.history.items} />
       {historyPage.data ? <CursorPagination itemCount={historyPage.data.items.length} limit={historyPage.data.meta.limit} total={historyPage.data.meta.total} pageIndex={historyCursorTrail.length} hasNext={historyPage.data.meta.has_more} hasPrevious={historyCursorTrail.length > 0} onNext={nextHistoryPage} onPrevious={previousHistoryPage} /> : null}
     </section>
+    </div>
   </main>;
 }

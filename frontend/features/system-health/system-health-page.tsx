@@ -8,8 +8,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { MetaStrip } from "@/components/ui/meta-strip";
 import { CsvExport } from "@/components/ui/csv-export";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { apiFetch } from "@/lib/api/client";
 import { formatWib } from "@/lib/formatters";
+import { fetchHealthData } from "./health-query";
 import { CapacityCards } from "./capacity-cards";
 import type { FreshnessSummary, SchedulerJob, SystemHealthSummary, UnknownRecord } from "./types";
 
@@ -24,13 +24,15 @@ function KeyValueTable({ rows }: { rows: UnknownRecord }) {
 export function SystemHealthPage() {
   const health = useQuery({
     queryKey: ["observability", "summary"],
-    queryFn: () => apiFetch<SystemHealthSummary>("/observability/summary"),
+    queryFn: ({ signal }) => fetchHealthData<SystemHealthSummary>("/observability/summary", signal),
+    retry: false,
     refetchInterval: 15_000
   });
-  const freshness = useQuery({ queryKey: ["metrics", "freshness", "summary"], queryFn: () => apiFetch<FreshnessSummary>("/metrics/freshness/summary?active_only=true"), refetchInterval: 15_000 });
+  const freshness = useQuery({ queryKey: ["metrics", "freshness", "summary"], queryFn: ({ signal }) => fetchHealthData<FreshnessSummary>("/metrics/freshness/summary?active_only=true", signal), retry: false, refetchInterval: 15_000 });
+
+  if (health.isError || freshness.isError) return <ErrorState message="System Health belum dapat dimuat. Permintaan gagal atau melebihi batas waktu 30 detik." onRetry={() => { void health.refetch(); void freshness.refetch(); }} />;
 
   if (health.isPending || freshness.isPending) return <LoadingState />;
-  if (health.isError || freshness.isError) return <ErrorState message="System health tidak dapat dimuat." onRetry={() => { void health.refetch(); void freshness.refetch(); }} />;
 
   const summary = health.data;
   const runningJobs = summary.scheduler_health.filter((item) => value(item, "state") === "running").length;
@@ -58,6 +60,17 @@ export function SystemHealthPage() {
     ) : null}
 
     <CapacityCards summary={summary} />
+
+    {summary.notification_outbox ? <section>
+      <h2>Pengiriman Telegram</h2>
+      <MetricGrid columns={4}>
+        <MetricCard label="Menunggu" value={summary.notification_outbox.pending} />
+        <MetricCard label="Sedang dikirim" value={summary.notification_outbox.processing} />
+        <MetricCard label="Gagal" value={summary.notification_outbox.dead} />
+        <MetricCard label="Antrean tertua" value={`${Math.floor(summary.notification_outbox.oldest_pending_age_seconds / 60)} menit`} />
+      </MetricGrid>
+      <p className="section-caption">Pesan gagal dicoba kembali otomatis setelah 5 menit. Urutan pesan dipertahankan; periksa log notification-worker jika antrean terus menumpuk.</p>
+    </section> : null}
 
     <section>
       <div className="section-header"><h2>Operational Alerts</h2><CsvExport filename="system-health-operational-alerts.csv" columns={["Job", "Agent / Site", "Severity", "Penyebab", "Detail", "Error terakhir"]} rows={summary.operational_alerts.map((item) => [value(item, "job_name"), schedulerOwner(item), value(item, "severity"), value(item, "reason"), value(item, "message"), value(item, "last_error")])} /></div>
