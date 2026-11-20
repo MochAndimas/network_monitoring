@@ -23,6 +23,7 @@ def recent_metric_pairs_query(pairs: Sequence[MetricPair], *, per_pair_limit: in
     for device_id, metric_name in pairs:
         newest_ids = (
             select(Metric.id)
+            .with_hint(Metric, "FORCE INDEX (ix_metrics_history_lookup_with_id)", dialect_name="mysql")
             .where(Metric.device_id == device_id, Metric.metric_name == metric_name)
             .order_by(desc(Metric.checked_at), desc(Metric.id))
             .limit(per_pair_limit)
@@ -32,6 +33,8 @@ def recent_metric_pairs_query(pairs: Sequence[MetricPair], *, per_pair_limit: in
     bounded_ids = union_all(*branches).subquery()
     return (
         select(Metric)
-        .join(bounded_ids, Metric.id == bounded_ids.c.id)
+        .select_from(bounded_ids)
+        .join(Metric, Metric.id == bounded_ids.c.id)
+        .prefix_with("STRAIGHT_JOIN", dialect="mysql")
         .order_by(Metric.device_id, Metric.metric_name, desc(Metric.checked_at), desc(Metric.id))
     )

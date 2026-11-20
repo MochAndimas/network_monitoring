@@ -93,7 +93,7 @@ def test_run_cycle_endpoint_rejects_during_actual_scheduler_write(monkeypatch, s
     monkeypatch.setattr(settings, "collector_agent_site", site)
     monkeypatch.setattr(locks, "engine", SimpleNamespace(dialect=SimpleNamespace(name="sqlite")))
     monkeypatch.setattr(locks, "_monitoring_pipeline_locks", {})
-    monkeypatch.setattr(jobs, "run_device_checks", AsyncMock(return_value=[]))
+    monkeypatch.setattr(jobs, "run_device_checks", AsyncMock(return_value=[{"device_id": 1}]))
     monkeypatch.setattr(jobs, "evaluate_alerts", AsyncMock(return_value=[]))
     db = Mock()
     db.commit = AsyncMock()

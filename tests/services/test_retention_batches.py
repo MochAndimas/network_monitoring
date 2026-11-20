@@ -41,9 +41,9 @@ def retention_fixture(monkeypatch):
         run(drop_all(engine))
 
 
-async def seed(sessions, count=9):
+async def seed(sessions, count=9, *, ip_address="192.0.2.1"):
     async with sessions() as db:
-        device = Device(name="Retention fixture", ip_address="192.0.2.1", device_type="voip", site="A")
+        device = Device(name="Retention fixture", ip_address=ip_address, device_type="voip", site="A")
         db.add(device)
         await db.commit()
         device_id = device.id
@@ -75,6 +75,17 @@ async def assert_complete(sessions, count):
         latest = (await db.scalars(select(LatestMetric))).one()
         assert remaining[0].id == latest.metric_id
         assert archive.last_metric_value == str(count - 1)
+
+
+def test_metric_insert_profile_counts_raw_inserts_per_flush(retention_fixture, caplog):
+    _, sessions = retention_fixture
+    caplog.set_level("INFO", logger="network_monitoring.metric_writes")
+    run(seed(sessions, 3))
+    run(seed(sessions, 2, ip_address="192.0.2.2"))
+    profiles = [record.message for record in caplog.records if record.message.startswith("metric_insert_profile")]
+    assert len(profiles) == 2
+    assert profiles[0].startswith("metric_insert_profile metrics=3 execute_calls=3 executemany_calls=0")
+    assert profiles[1].startswith("metric_insert_profile metrics=2 execute_calls=2 executemany_calls=0")
 
 
 def test_backlog_respects_run_budget_and_resumes(retention_fixture, monkeypatch):

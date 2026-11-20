@@ -147,11 +147,20 @@ async def monitoring_pipeline_guard(*, wait: bool, scope: str | None = None) -> 
             _pipeline_lock_contention_count += 1
             if wait:
                 raise PipelineLockTimeoutError(scope)
+        body_failed = False
         try:
             yield acquired
+        except BaseException:
+            body_failed = True
+            raise
         finally:
             if acquired and connection is not None:
-                await _release_mysql_lock(connection, scope=scope)
+                try:
+                    await _release_mysql_lock(connection, scope=scope)
+                except Exception:
+                    if not body_failed:
+                        raise
+                    logger.exception("Failed to release MySQL advisory lock after operation failed scope=%s", scope)
         return
 
     process_lock = _process_lock_for_scope(scope)

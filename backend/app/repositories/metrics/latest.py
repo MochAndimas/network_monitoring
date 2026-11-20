@@ -294,6 +294,9 @@ class MetricLatestMixin(MetricRepositoryBase):
                     func.max(Metric.checked_at).label("last_checked_at"),
                 )
                 .select_from(Metric)
+                # Scan the recent time range once before joining device metadata.
+                .prefix_with("STRAIGHT_JOIN", dialect="mysql")
+                .with_hint(Metric, "FORCE INDEX (ix_metrics_checked_at)", dialect_name="mysql")
                 .join(Device, Device.id == Metric.device_id)
                 .where(
                     Device.is_active.is_(True),

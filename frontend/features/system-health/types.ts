@@ -46,3 +46,6 @@ export type FreshnessSummary = {
   stale_after_minutes: number;
   items: Array<{ collector: string; site: string; total_devices: number; devices_with_data: number; fresh_devices: number; stale_devices: number; no_data_devices: number; freshness_status: string; latest_checked_at: string | null; oldest_checked_at: string | null }>;
 };
+
+export type SystemHealthHistory = Pick<SystemHealthSummary, "collector_health" | "collector_health_window_hours" | "collector_runs" | "raw_metric_write_rate">;
+export type SystemHealthCurrent = Omit<SystemHealthSummary, keyof SystemHealthHistory>;

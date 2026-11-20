@@ -276,3 +276,31 @@ def test_observability_summary_endpoint():
         assert "private-outbox" not in metrics_response.text
     finally:
         observability_module.check_database_connection = original_check
+
+
+def test_current_health_does_not_run_historical_queries(monkeypatch):
+    from unittest.mock import AsyncMock
+    import backend.app.api.routes.observability as module
+
+    monkeypatch.setattr(module, "check_database_connection", AsyncMock(return_value=True))
+    history = AsyncMock(side_effect=RuntimeError("historical query unavailable"))
+    monkeypatch.setattr(module, "observability_history", history)
+    with client_context() as (client, sessions):
+        headers = _admin_headers(client, sessions)
+        response = client.get("/observability/summary?include_history=false", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["database"] == "up"
+    assert "raw_metric_write_rate" not in response.json()
+    assert "collector_health" not in response.json()
+    history.assert_not_awaited()
+
+
+def test_historical_health_is_separate_and_admin_protected():
+    with client_context() as (client, sessions):
+        assert client.get("/observability/history").status_code in (401, 403)
+        headers = _admin_headers(client, sessions)
+        response = client.get("/observability/history", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["collector_health_window_hours"] == 24
+    assert response.json()["raw_metric_write_rate"]["last_hour"] == 0
+    assert "notification_workers_alive" not in response.json()

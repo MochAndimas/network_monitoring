@@ -13,6 +13,7 @@ from shared.metric_contracts import MetricWritePayload
 
 from ..bandwidth.discovery import InventoryMetricBatch
 from ..core.config import settings
+from ..core.phase_timing import timed_phase
 from ..models.metric import Metric
 from ..repositories.alert_repository import AlertRepository
 from ..repositories.device_repository import DeviceRepository
@@ -33,8 +34,11 @@ async def persist_metrics(
     if isinstance(metrics, InventoryMetricBatch):
         # Fixed lock order for multi-router batches; all writes join the caller's
         # transaction. Failed collection never carries an authoritative snapshot.
-        for snapshot in sorted(metrics.snapshots, key=lambda item: item.router_id):
-            await sync_inventory(db, snapshot, max_observation_gap_seconds=settings.bandwidth_inventory_max_gap_seconds)
+        with timed_phase(logger, "metric_inventory_sync", "mikrotik"):
+            for snapshot in sorted(metrics.snapshots, key=lambda item: item.router_id):
+                await sync_inventory(
+                    db, snapshot, max_observation_gap_seconds=settings.bandwidth_inventory_max_gap_seconds
+                )
     persisted_metrics = await repository_factory(db).create_metrics(metrics, commit=commit)
     if commit and isinstance(metrics, InventoryMetricBatch) and not metrics:
         await db.commit()

@@ -2,6 +2,7 @@
 
 from dataclasses import asdict
 from datetime import timedelta
+import logging
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
@@ -19,6 +20,7 @@ from ...repositories.metric_repository import MetricRepository
 from ...repositories.threshold_repository import ThresholdRepository
 from ...services.auth_service import build_auth_observability_summary
 from ...core.config import settings
+from ...core.phase_timing import timed_phase
 from ...core.time import utcnow
 from ...models.collector_run import CollectorRun
 from ...models.metric import Metric
@@ -38,6 +40,7 @@ from ...services.observability_service import (
 )
 
 router = APIRouter()
+logger = logging.getLogger("network_monitoring.observability")
 
 
 @router.get("/notifications", dependencies=[Depends(require_admin_access)])
@@ -51,22 +54,15 @@ async def notification_health(db: AsyncSession = Depends(get_db)) -> dict:
     }
 
 
-@router.get("/summary", dependencies=[Depends(require_admin_access)])
-async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
-    """Handle the observability summary endpoint."""
-    database_ok = await check_database_connection()
-    devices_total = await DeviceRepository(db).count_devices(active_only=False)
-    metrics_latest_snapshot = await MetricRepository(db).count_latest_metrics()
-    alerts_active = await AlertRepository(db).count_active_alerts()
-    incidents_active = await IncidentRepository(db).count_active_incidents()
-    thresholds_total = await ThresholdRepository(db).count_thresholds()
-    auth = AuthObservabilitySummary(**await build_auth_observability_summary(db))
-    scheduler_statuses = await list_scheduler_job_statuses(db)
-    scheduler_alerts = build_scheduler_operational_alerts(scheduler_statuses)
-    scheduler_health = build_scheduler_job_health_rows(scheduler_statuses)
-    collector_health = build_collector_health_rows(
-        await MetricRepository(db).summarize_collector_health(checked_from=utcnow() - timedelta(hours=24))
-    )
+@router.get("/history", dependencies=[Depends(require_admin_access)])
+async def observability_history(db: AsyncSession = Depends(get_db)) -> dict:
+    """Historical aggregates load independently from current process health."""
+    now = utcnow()
+    day_start = now - timedelta(hours=24)
+    with timed_phase(logger, "collector_health_history", "observability"):
+        collector_health = build_collector_health_rows(
+            await MetricRepository(db).summarize_collector_health(checked_from=day_start)
+        )
     collector_run_rows = (
         await db.execute(
             select(
@@ -78,12 +74,11 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
                 func.sum(CollectorRun.metric_count).label("metric_writes"),
                 func.max(CollectorRun.checked_at).label("last_checked_at"),
             )
-            .where(CollectorRun.checked_at >= utcnow() - timedelta(hours=24))
+            .where(CollectorRun.checked_at >= day_start)
             .group_by(CollectorRun.collector_name)
             .order_by(CollectorRun.collector_name)
         )
     ).all()
-    now = utcnow()
     metric_write_rows = await db.execute(
         select(
             func.sum(case((Metric.checked_at >= now - timedelta(minutes=1), 1), else_=0)).label("last_minute"),
@@ -91,6 +86,44 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
         ).where(Metric.checked_at >= now - timedelta(hours=1))
     )
     write_rate = metric_write_rows.one()
+    return {
+        "collector_health": collector_health,
+        "collector_health_window_hours": 24,
+        "collector_runs": [
+            {
+                "collector": row.collector_name,
+                "runs": int(row.runs or 0),
+                "successful_runs": int(row.successful_runs or 0),
+                "average_duration_ms": float(row.average_duration_ms or 0),
+                "max_duration_ms": float(row.max_duration_ms or 0),
+                "metric_writes": int(row.metric_writes or 0),
+                "last_checked_at": row.last_checked_at,
+            }
+            for row in collector_run_rows
+        ],
+        "raw_metric_write_rate": {
+            "last_minute": int(write_rate.last_minute or 0),
+            "last_hour": int(write_rate.last_hour or 0),
+            "per_minute_last_hour": round(float(write_rate.last_hour or 0) / 60, 2),
+        },
+    }
+
+
+@router.get("/summary", dependencies=[Depends(require_admin_access)])
+async def observability_summary(db: AsyncSession = Depends(get_db), include_history: bool = True) -> dict:
+    """Handle the observability summary endpoint."""
+    database_ok = await check_database_connection()
+    devices_total = await DeviceRepository(db).count_devices(active_only=False)
+    metrics_latest_snapshot = await MetricRepository(db).count_latest_metrics()
+    alerts_active = await AlertRepository(db).count_active_alerts()
+    incidents_active = await IncidentRepository(db).count_active_incidents()
+    thresholds_total = await ThresholdRepository(db).count_thresholds()
+    auth = AuthObservabilitySummary(**await build_auth_observability_summary(db))
+    scheduler_statuses = await list_scheduler_job_statuses(db)
+    scheduler_alerts = build_scheduler_operational_alerts(scheduler_statuses)
+    scheduler_health = build_scheduler_job_health_rows(scheduler_statuses)
+    history = await observability_history(db) if include_history else {}
+    now = utcnow()
     scheduler_queue_risk = sum(1 for row in scheduler_health if float(row.get("schedule_lag_seconds") or 0) > 0)
     scheduler_missed_windows = sum(1 for row in scheduler_health if str(row.get("state")) == "stale")
     return {
@@ -112,11 +145,6 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
             "note": "Missed window diturunkan dari heartbeat stale; APScheduler coalescing aktif.",
         },
         "pipeline_locks": pipeline_lock_health(),
-        "raw_metric_write_rate": {
-            "last_minute": int(write_rate.last_minute or 0),
-            "last_hour": int(write_rate.last_hour or 0),
-            "per_minute_last_hour": round(float(write_rate.last_hour or 0) / 60, 2),
-        },
         "scheduler_jobs": [
             {
                 "job_name": job.job_name,
@@ -133,20 +161,7 @@ async def observability_summary(db: AsyncSession = Depends(get_db)) -> dict:
             for job in scheduler_statuses
         ],
         "scheduler_health": scheduler_health,
-        "collector_health": collector_health,
-        "collector_health_window_hours": 24,
-        "collector_runs": [
-            {
-                "collector": row.collector_name,
-                "runs": int(row.runs or 0),
-                "successful_runs": int(row.successful_runs or 0),
-                "average_duration_ms": float(row.average_duration_ms or 0),
-                "max_duration_ms": float(row.max_duration_ms or 0),
-                "metric_writes": int(row.metric_writes or 0),
-                "last_checked_at": row.last_checked_at,
-            }
-            for row in collector_run_rows
-        ],
+        **history,
         "operational_alerts": scheduler_alerts,
     }
 

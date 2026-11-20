@@ -1,5 +1,6 @@
 """Resumable retention: each operational batch commits its own checkpoint."""
 
+import logging
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -7,6 +8,7 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
+from ..core.phase_timing import timed_phase
 from ..core.time import utcnow
 from ..models.alert import Alert
 from ..models.collector_run import CollectorRun
@@ -25,6 +27,8 @@ from .retention_aggregates import (
     _upsert_archive_payloads,
     _upsert_rollup_payloads,
 )
+
+logger = logging.getLogger("network_monitoring.retention")
 
 
 async def cleanup_monitoring_data(db: AsyncSession, *, commit: bool = True) -> dict[str, int]:
@@ -54,7 +58,7 @@ async def cleanup_monitoring_data(db: AsyncSession, *, commit: bool = True) -> d
 
 
 async def _aggregate_batches(db: AsyncSession, kind: BucketKind, cutoff: datetime, *, commit: bool) -> int:
-    repository = RetentionRepository(db)
+    repository = RetentionRepository(db, commit=commit)
     group_limit = settings.retention.rollup_batch_size if kind == "rollup" else settings.retention.archive_batch_size
     limit = min(settings.retention.source_batch_size, max(group_limit, 1))
     processed: set[Any] = set()
@@ -63,19 +67,21 @@ async def _aggregate_batches(db: AsyncSession, kind: BucketKind, cutoff: datetim
         if not ids:
             await finish_retention_batch(db, commit)
             break
-        if kind == "rollup":
-            rollup_payloads = {key: payload async for key, payload in _iter_rollup_payloads(db, cutoff, ids)}
-            if not rollup_payloads:
-                raise RuntimeError("Retention source batch disappeared before aggregation")
-            await _upsert_rollup_payloads(db, rollup_payloads)
-            processed.update(rollup_payloads)
-        else:
-            archive_payloads = {key: payload async for key, payload in _iter_archive_payloads(db, cutoff, ids)}
-            if not archive_payloads:
-                raise RuntimeError("Retention source batch disappeared before aggregation")
-            await _upsert_archive_payloads(db, archive_payloads)
-            processed.update(archive_payloads)
-        await finish_retention_batch(db, commit)
+        with timed_phase(logger, "retention_aggregate", kind):
+            if kind == "rollup":
+                rollup_payloads = {key: payload async for key, payload in _iter_rollup_payloads(db, cutoff, ids)}
+                if not rollup_payloads:
+                    raise RuntimeError("Retention source batch disappeared before aggregation")
+                await _upsert_rollup_payloads(db, rollup_payloads)
+                processed.update(rollup_payloads)
+            else:
+                archive_payloads = {key: payload async for key, payload in _iter_archive_payloads(db, cutoff, ids)}
+                if not archive_payloads:
+                    raise RuntimeError("Retention source batch disappeared before aggregation")
+                await _upsert_archive_payloads(db, archive_payloads)
+                processed.update(archive_payloads)
+        with timed_phase(logger, "retention_finish_batch", kind):
+            await finish_retention_batch(db, commit)
     return len(processed)
 
 
@@ -89,11 +95,13 @@ async def archive_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) 
 
 async def delete_expired_raw_metrics(db: AsyncSession, *, commit: bool = True) -> int:
     total = 0
-    repository = RetentionRepository(db)
+    repository = RetentionRepository(db, commit=commit)
     cutoff = _raw_metric_cutoff()
     for _ in range(settings.retention.max_batches_per_phase):
-        count = await repository.delete_raw_batch(cutoff, settings.retention.delete_batch_size)
-        await finish_retention_batch(db, commit)
+        with timed_phase(logger, "retention_delete_batch", "raw_metrics"):
+            count = await repository.delete_raw_batch(cutoff, settings.retention.delete_batch_size)
+        with timed_phase(logger, "retention_finish_batch", "raw_metrics"):
+            await finish_retention_batch(db, commit)
         total += count
         if not count:
             break

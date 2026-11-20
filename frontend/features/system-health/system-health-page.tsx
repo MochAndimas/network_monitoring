@@ -11,7 +11,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { formatWib } from "@/lib/formatters";
 import { fetchHealthData } from "./health-query";
 import { CapacityCards } from "./capacity-cards";
-import type { FreshnessSummary, SchedulerJob, SystemHealthSummary, UnknownRecord } from "./types";
+import type { FreshnessSummary, SchedulerJob, SystemHealthCurrent, SystemHealthHistory, UnknownRecord } from "./types";
 
 const value = (record: UnknownRecord, key: string) => String(record[key] ?? "-");
 const number = (record: UnknownRecord, key: string) => Number(record[key] ?? 0).toLocaleString("id-ID");
@@ -23,24 +23,34 @@ function KeyValueTable({ rows }: { rows: UnknownRecord }) {
 
 export function SystemHealthPage() {
   const health = useQuery({
-    queryKey: ["observability", "summary"],
-    queryFn: ({ signal }) => fetchHealthData<SystemHealthSummary>("/observability/summary", signal),
+    queryKey: ["observability", "summary", "current"],
+    queryFn: ({ signal }) => fetchHealthData<SystemHealthCurrent>("/observability/summary?include_history=false", signal),
     retry: false,
     refetchInterval: 15_000
   });
-  const freshness = useQuery({ queryKey: ["metrics", "freshness", "summary"], queryFn: ({ signal }) => fetchHealthData<FreshnessSummary>("/metrics/freshness/summary?active_only=true", signal), retry: false, refetchInterval: 15_000 });
+  const freshness = useQuery({ queryKey: ["metrics", "freshness", "summary"], queryFn: ({ signal }) => fetchHealthData<FreshnessSummary>("/metrics/freshness/summary?active_only=true", signal), enabled: Boolean(health.data), retry: false, refetchInterval: 15_000 });
 
-  if (health.isError || freshness.isError) return <ErrorState message="System Health belum dapat dimuat. Permintaan gagal atau melebihi batas waktu 30 detik." onRetry={() => { void health.refetch(); void freshness.refetch(); }} />;
+  const history = useQuery({
+    queryKey: ["observability", "history"],
+    queryFn: ({ signal }) => fetchHealthData<SystemHealthHistory>("/observability/history", signal),
+    enabled: Boolean(health.data),
+    retry: false,
+    staleTime: 60_000,
+    refetchInterval: 60_000
+  });
 
-  if (health.isPending || freshness.isPending) return <LoadingState />;
+  if (health.isError && !health.data) return <ErrorState message="System Health belum dapat dimuat. Permintaan gagal atau melebihi batas waktu 30 detik." onRetry={() => void health.refetch()} />;
 
-  const summary = health.data;
+  if (health.isPending) return <LoadingState />;
+
+  const summary = { ...health.data, ...history.data };
   const runningJobs = summary.scheduler_health.filter((item) => value(item, "state") === "running").length;
   const failingJobs = summary.scheduler_health.filter((item) => value(item, "state") === "failing").length;
   const staleJobs = summary.scheduler_health.filter((item) => value(item, "state") === "stale").length;
   const maxLagSeconds = Math.max(0, ...summary.scheduler_health.map((item) => Number(item.schedule_lag_seconds ?? 0)));
   return <main className="app-page">
-    <PageHeader title="System Health" description="Kesehatan backend, scheduler, collector, dan pipeline monitoring. Diperbarui setiap 15 detik." />
+    <PageHeader title="System Health" description="Status utama diperbarui setiap 15 detik. Statistik historis diperbarui setiap 60 detik." />
+    {health.isError ? <p className="form-error" role="status">Pembaruan status utama gagal. Menampilkan data terakhir yang berhasil dimuat.</p> : null}
     <MetaStrip items={[{ label: "Refresh otomatis", value: "Aktif (15 dtk)" }, { label: "Database", value: summary.database }, { label: "Operational alert", value: summary.operational_alerts.length }, { label: "Terakhir dirender", value: formatWib(new Date().toISOString()) }]} />
 
     <MetricGrid columns={8}>
@@ -123,9 +133,11 @@ export function SystemHealthPage() {
       />
     </section>
 
+    {history.data && history.isError ? <p className="form-error" role="status">Pembaruan statistik historis gagal. Menampilkan data terakhir.</p> : null}
+    {history.data ? <>
     <section>
-      <div className="section-header"><h2>Kesehatan Collector</h2><CsvExport filename="system-health-collectors.csv" columns={["Collector", "Site", "Tipe device", "Protocol", "Status", "Success rate", "Sampel", "Timeout", "OID tidak didukung", "Check terakhir", "Tindakan"]} rows={summary.collector_health.map((item) => [value(item, "collector"), value(item, "site"), value(item, "device_type"), value(item, "protocol"), value(item, "state"), value(item, "success_rate_percent"), value(item, "sample_count"), value(item, "timeout_count"), value(item, "unsupported_oid_count"), formatWib(value(item, "last_checked_at") === "-" ? null : value(item, "last_checked_at")), value(item, "action")])} /></div>
-      <p className="section-caption">Agregasi {summary.collector_health_window_hours ?? 24} jam terakhir dari metric status collector.</p>
+      <div className="section-header"><h2>Kesehatan Collector</h2><CsvExport filename="system-health-collectors.csv" columns={["Collector", "Site", "Tipe device", "Protocol", "Status", "Success rate", "Sampel", "Timeout", "OID tidak didukung", "Check terakhir", "Tindakan"]} rows={history.data.collector_health.map((item) => [value(item, "collector"), value(item, "site"), value(item, "device_type"), value(item, "protocol"), value(item, "state"), value(item, "success_rate_percent"), value(item, "sample_count"), value(item, "timeout_count"), value(item, "unsupported_oid_count"), formatWib(value(item, "last_checked_at") === "-" ? null : value(item, "last_checked_at")), value(item, "action")])} /></div>
+      <p className="section-caption">Agregasi {history.data.collector_health_window_hours ?? 24} jam terakhir dari metric status collector.</p>
       <DataTable
         columns={[
           { key: "collector", label: "Collector", render: (item) => value(item, "collector") },
@@ -140,12 +152,12 @@ export function SystemHealthPage() {
           { key: "checked", label: "Check terakhir", render: (item) => formatWib(value(item, "last_checked_at") === "-" ? null : value(item, "last_checked_at")) },
           { key: "action", label: "Tindakan", render: (item) => value(item, "action") }
         ]}
-        rows={summary.collector_health}
+        rows={history.data.collector_health}
       />
     </section>
 
     <section>
-      <div className="section-header"><h2>Performa Collector 24 Jam</h2><CsvExport filename="system-health-collector-runs.csv" columns={["Collector", "Run", "Berhasil", "Rata-rata durasi", "Terakhir"]} rows={summary.collector_runs.map((item) => [value(item, "collector"), value(item, "runs"), value(item, "successful_runs"), value(item, "average_duration_ms"), value(item, "last_checked_at")])} /></div>
+      <div className="section-header"><h2>Performa Collector 24 Jam</h2><CsvExport filename="system-health-collector-runs.csv" columns={["Collector", "Run", "Berhasil", "Rata-rata durasi", "Terakhir"]} rows={history.data.collector_runs.map((item) => [value(item, "collector"), value(item, "runs"), value(item, "successful_runs"), value(item, "average_duration_ms"), value(item, "last_checked_at")])} /></div>
       <DataTable
         columns={[
           { key: "collector", label: "Collector", render: (item) => value(item, "collector") },
@@ -154,14 +166,19 @@ export function SystemHealthPage() {
           { key: "duration", label: "Rata-rata durasi", render: (item) => `${number(item, "average_duration_ms")} ms` },
           { key: "last", label: "Terakhir", render: (item) => formatWib(value(item, "last_checked_at") === "-" ? null : value(item, "last_checked_at")) }
         ]}
-        rows={summary.collector_runs}
+        rows={history.data.collector_runs}
       />
     </section>
 
+    </> : history.isError ? <ErrorState inline message="Statistik historis belum dapat dimuat." retrying={history.isFetching} onRetry={() => void history.refetch({ cancelRefetch: false })} /> : <LoadingState inline label="Memuat statistik collector 24 jam…" />}
+
+    {freshness.data ? <>
     <section>
       <div className="section-header"><div><h2>Freshness per Collector/Site</h2><p>Stale bila tidak ada metric baru dalam {freshness.data.stale_after_minutes} menit.</p></div><CsvExport filename="system-health-freshness.csv" columns={["Collector", "Site", "Freshness", "Total device", "Dengan data", "Fresh", "Stale", "Tanpa data", "Check terbaru WIB", "Check terlama WIB"]} rows={freshness.data.items.map((item) => [item.collector, item.site, item.freshness_status, item.total_devices, item.devices_with_data, item.fresh_devices, item.stale_devices, item.no_data_devices, formatWib(item.latest_checked_at), formatWib(item.oldest_checked_at)])} /></div>
       <DataTable columns={[{ key: "collector", label: "Collector", render: (item) => item.collector }, { key: "site", label: "Site", render: (item) => item.site }, { key: "status", label: "Freshness", render: (item) => <StatusBadge value={item.freshness_status} /> }, { key: "total", label: "Total device", render: (item) => item.total_devices }, { key: "data", label: "Dengan data", render: (item) => item.devices_with_data }, { key: "fresh", label: "Fresh", render: (item) => item.fresh_devices }, { key: "stale", label: "Stale", render: (item) => item.stale_devices }, { key: "none", label: "Tanpa data", render: (item) => item.no_data_devices }, { key: "latest", label: "Check terbaru (WIB)", render: (item) => formatWib(item.latest_checked_at) }]} rows={freshness.data.items} emptyLabel="Belum ada data freshness." />
     </section>
+
+    </> : freshness.isError ? <ErrorState inline message="Freshness belum dapat dimuat." retrying={freshness.isFetching} onRetry={() => void freshness.refetch({ cancelRefetch: false })} /> : <LoadingState inline label="Memuat freshness perangkat…" />}
 
     <section className="two-column">
       <section>

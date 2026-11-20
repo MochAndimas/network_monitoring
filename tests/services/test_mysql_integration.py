@@ -168,7 +168,7 @@ def test_mysql_cleanup_monitoring_data_rolls_back_when_transaction_fails():
 
 
 @pytest.mark.parametrize("blocked_scope", ["metrics:device:central", "alerts"])
-def test_mysql_scheduler_timeout_stops_protected_work(monkeypatch, blocked_scope):
+def test_mysql_scheduler_handles_contended_scopes(monkeypatch, blocked_scope):
     """Exercise the actual scheduler path against locks held on another connection."""
     from unittest.mock import AsyncMock, Mock
 
@@ -190,21 +190,29 @@ def test_mysql_scheduler_timeout_stops_protected_work(monkeypatch, blocked_scope
         before = pipeline_control.pipeline_lock_health()["contention_count"]
         async with monitoring_pipeline_guard(wait=False, scope=blocked_scope) as acquired:
             assert acquired
-            with pytest.raises(pipeline_control.PipelineLockTimeoutError, match=blocked_scope):
-                await jobs._persist_runner(AsyncMock(return_value=[]), db, lock_scope="device:central")
-            evaluate.assert_not_awaited()
+            operation = jobs._persist_runner(AsyncMock(return_value=[]), db, lock_scope="device:central")
             if blocked_scope.startswith("metrics:"):
+                with pytest.raises(pipeline_control.PipelineLockTimeoutError, match=blocked_scope):
+                    await operation
                 persist.assert_not_awaited()
                 db.add.assert_not_called()
                 db.commit.assert_not_awaited()
             else:
+                await operation
                 persist.assert_awaited_once()
                 db.commit.assert_awaited_once()
-            # The failed waiter must not release the original owner's lock.
+                await jobs._run_alert_job_inner(db)
+                db.commit.assert_awaited_once()
+            evaluate.assert_not_awaited()
+            # Contention must leave the original owner's lock intact.
             async with monitoring_pipeline_guard(wait=False, scope=blocked_scope) as acquired_again:
                 assert not acquired_again
         async with monitoring_pipeline_guard(wait=True, scope=blocked_scope) as acquired:
             assert acquired
+        if blocked_scope == "alerts":
+            await jobs._run_alert_job_inner(db)
+            evaluate.assert_awaited_once_with(db, commit=False)
+            assert db.commit.await_count == 2
         assert pipeline_control.pipeline_lock_health()["contention_count"] >= before + 1
 
     try:
@@ -271,6 +279,71 @@ def test_mysql_full_cycle_blocks_actual_device_scheduler(monkeypatch, site):
         run(scenario())
     finally:
         run(engine.dispose())
+
+
+def test_mysql_device_scheduler_releases_first_lock_before_committing_second_device(monkeypatch):
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from backend.app.scheduler import jobs
+
+    _require_mysql()
+    run(engine.dispose())
+    suffix = uuid.uuid4().hex
+    monkeypatch.setattr(settings, "monitoring_lock_name", f"test.device-batches.{suffix}")
+    scope = f"test:{suffix[:8]}"
+
+    async def scenario():
+        async with SessionLocal() as db:
+            devices = [
+                Device(
+                    name=f"MySQL Retention Device {suffix}",
+                    ip_address=f"batch-{suffix}-{index}",
+                    device_type="voip",
+                    site="integration",
+                    description="mysql retention integration test",
+                )
+                for index in range(2)
+            ]
+            db.add_all(devices)
+            await db.commit()
+            first_id, second_id = (device.id for device in devices)
+
+        persist = jobs.persist_metrics
+
+        async def check_first_commit(db, batch, *, commit):
+            if batch[0]["device_id"] == second_id:
+                async with SessionLocal.begin() as observer:
+                    locked_id = await observer.scalar(
+                        select(Device.id).where(Device.id == first_id).with_for_update(nowait=True)
+                    )
+                    assert locked_id == first_id
+                    raw_id = await observer.scalar(select(Metric.id).where(Metric.device_id == first_id))
+                    latest_id = await observer.scalar(
+                        select(LatestMetric.metric_id).where(LatestMetric.device_id == first_id)
+                    )
+                    assert raw_id is not None and latest_id == raw_id
+            return await persist(db, batch, commit=commit)
+
+        monkeypatch.setattr(jobs, "persist_metrics", check_first_commit)
+        collector = AsyncMock(
+            return_value=[
+                dict(device_id=device_id, metric_name="ping", metric_value="1", checked_at=utcnow())
+                for device_id in (first_id, second_id)
+            ]
+        )
+        from backend.app.models.collector_run import CollectorRun
+
+        try:
+            async with SessionLocal() as db:
+                await asyncio.wait_for(jobs._persist_runner(collector, db, lock_scope=scope, commit_per_device=True), 10)
+        finally:
+            await _delete_mysql_retention_fixture(suffix)
+            async with SessionLocal.begin() as db:
+                await db.execute(delete(CollectorRun).where(CollectorRun.collector_name == f"{scope}_checks"))
+            await engine.dispose()
+
+    run(scenario())
 
 
 @pytest.mark.parametrize("existing_snapshot", [False, True])
@@ -363,6 +436,20 @@ def test_mysql_concurrent_snapshot_writers_preserve_latest_and_allow_other_devic
                 await db.refresh(row)
                 assert row.metric_id == newer[0].id
                 assert row.metric_value == "30"
+                # MySQL DATETIME stores seconds. Within a batch, the original
+                # input precision must still decide the winner before ID order.
+                same_second = row.checked_at + timedelta(seconds=1)
+                bulk = await MetricRepository(db).create_metrics(
+                    [
+                        payload(device_ids[0], same_second + timedelta(microseconds=200), "40"),
+                        payload(device_ids[0], same_second + timedelta(microseconds=100), "50"),
+                    ]
+                )
+                assert all(metric.insert_token is not None for metric in bulk)
+                assert bulk[0].id < bulk[1].id
+                await db.refresh(row)
+                assert row.metric_id == bulk[0].id
+                assert row.metric_value == "40"
         finally:
             if device_ids:
                 async with SessionLocal() as db:
@@ -1166,7 +1253,7 @@ def test_mysql_retention_batch_budget_resumes_without_losing_archive(monkeypatch
     run(scenario())
 
 
-def test_mysql_retention_waits_for_writer_and_sees_lower_id_commit():
+def test_mysql_retention_defers_locked_device_and_resumes_after_writer_commit():
     _require_mysql()
     run(engine.dispose())
 
@@ -1179,7 +1266,6 @@ def test_mysql_retention_waits_for_writer_and_sees_lower_id_commit():
         ready, release = asyncio.Event(), asyncio.Event()
         timestamp = utcnow() - timedelta(days=10)
         task = None
-        cleanup_task = None
         try:
             async with SessionLocal() as db:
                 devices = [
@@ -1218,7 +1304,7 @@ def test_mysql_retention_waits_for_writer_and_sees_lower_id_commit():
 
             async def retention():
                 async with SessionLocal() as db:
-                    await rollup_completed_raw_metrics(db)
+                    return await rollup_completed_raw_metrics(db)
 
             task = asyncio.create_task(held_writer())
             await asyncio.wait_for(ready.wait(), 5)
@@ -1227,11 +1313,19 @@ def test_mysql_retention_waits_for_writer_and_sees_lower_id_commit():
                 await MetricRepository(db).create_metrics(
                     [dict(device_id=second_id, metric_name="ping", metric_value="3", status="up", checked_at=timestamp)]
                 )
-            cleanup_task = asyncio.create_task(retention())
-            await asyncio.sleep(0.05)
-            assert not cleanup_task.done()
+            assert await asyncio.wait_for(retention(), 5) == 1
+            async with SessionLocal() as db:
+                rolled_up_devices = set(
+                    await db.scalars(
+                        select(MetricDailyRollup.device_id).where(
+                            MetricDailyRollup.device_id.in_([first_id, second_id])
+                        )
+                    )
+                )
+                assert rolled_up_devices == {second_id}
             release.set()
-            await asyncio.wait_for(asyncio.gather(task, cleanup_task), 10)
+            await asyncio.wait_for(task, 5)
+            assert await asyncio.wait_for(retention(), 5) == 1
             async with SessionLocal() as db:
                 rollup = await db.scalar(select(MetricDailyRollup).where(MetricDailyRollup.device_id == first_id))
                 assert rollup is not None
@@ -1246,9 +1340,8 @@ def test_mysql_retention_waits_for_writer_and_sees_lower_id_commit():
                 assert marker.source_metric_count == 2
         finally:
             release.set()
-            pending = [item for item in (task, cleanup_task) if item is not None]
-            if pending:
-                await asyncio.gather(*pending, return_exceptions=True)
+            if task is not None:
+                await asyncio.gather(task, return_exceptions=True)
             await _delete_mysql_retention_fixture(suffix)
             await engine.dispose()
 
